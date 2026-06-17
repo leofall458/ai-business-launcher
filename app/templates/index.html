@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Business Launcher</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center">
+    <div class="max-w-xl w-full p-8">
+        <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
+        <p class="text-gray-400 mb-8">From idea to operating business in 72 hours.</p>
+
+        <form hx-post="/screen-name" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner">
+            <div class="mb-4">
+                <label class="block text-sm text-gray-400 mb-1">Your business idea</label>
+                <textarea
+                    name="business_idea"
+                    rows="3"
+                    placeholder="e.g. A mobile dog grooming service for busy professionals"
+                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
+                    required
+                ></textarea>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-sm text-gray-400 mb-1">Your state</label>
+                <input
+                    name="state"
+                    type="text"
+                    placeholder="e.g. Virginia"
+                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
+                    required
+                />
+            </div>
+
+            <button
+                type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+            >
+                Screen My Business Name →
+            </button>
+        </form>
+
+        <div id="spinner" class="htmx-indicator text-center mt-6 text-gray-400">
+            Gemini is thinking...
+        </div>
+
+        <div id="result" class="mt-8"></div>
+    </div>
+</body>
+</html>
