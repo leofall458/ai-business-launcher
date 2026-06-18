@@ -7,47 +7,221 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center">
-    <div class="max-w-xl w-full p-8">
-        <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
-        <p class="text-gray-400 mb-8">From idea to operating business in 72 hours.</p>
+<body class="bg-gray-950 text-white min-h-screen py-12">
+    <div class="max-w-2xl mx-auto p-8">
 
-        <form hx-post="/screen-name" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner">
-            <div class="mb-4">
-                <label class="block text-sm text-gray-400 mb-1">Your business idea</label>
-                <textarea
-                    name="business_idea"
-                    rows="3"
-                    placeholder="e.g. A mobile dog grooming service for busy professionals"
-                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
-                    required
-                ></textarea>
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
+            <p class="text-gray-400 mb-3">From idea to operating Virginia LLC in 72 hours.</p>
+            <div class="inline-block bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">🏛️ Virginia LLCs Only · $299 flat fee · $100 VA state fee passed through</div>
+        </div>
+
+        <!-- Quick SCC Name Check -->
+        <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank"
+           class="flex items-center justify-between w-full bg-gray-800 border border-gray-600 hover:border-blue-500 rounded-lg px-5 py-3 mb-10 transition group">
+            <div>
+                <p class="text-sm font-semibold text-white">🔍 Check Virginia SCC Name Database First</p>
+                <p class="text-xs text-gray-400">Verify your business name is available before filling out the form</p>
+            </div>
+            <span class="text-blue-400 group-hover:text-blue-300 text-lg">→</span>
+        </a>
+
+        <!-- Master Intake Form -->
+        <form hx-post="/launch" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner">
+
+            <!-- SECTION A: Personal Info -->
+            <div class="mb-8">
+                <h2 class="text-lg font-semibold text-blue-400 mb-4 pb-2 border-b border-gray-700">A · Your Personal Information</h2>
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">First Name *</label>
+                        <input name="first_name" type="text" placeholder="John" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Middle Name</label>
+                        <input name="middle_name" type="text" placeholder="Michael (optional)"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Last Name *</label>
+                        <input name="last_name" type="text" placeholder="Smith" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Email Address *</label>
+                        <input name="email" type="email" placeholder="john@example.com" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Phone Number *</label>
+                        <input name="phone" type="tel" placeholder="(703) 555-0100" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Virginia Street Address *</label>
+                    <input name="address" type="text" placeholder="123 Main Street" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">City/Town *</label>
+                        <input name="city" type="text" placeholder="Arlington" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">ZIP Code *</label>
+                        <input name="zipcode" type="text" placeholder="22201" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    </div>
+                </div>
             </div>
 
-            <div class="mb-6">
-                <label class="block text-sm text-gray-400 mb-1">Your state</label>
-                <input
-                    name="state"
-                    type="text"
-                    placeholder="e.g. Virginia"
-                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
-                    required
-                />
+            <!-- SECTION B: Business Info -->
+            <div class="mb-8">
+                <h2 class="text-lg font-semibold text-green-400 mb-4 pb-2 border-b border-gray-700">B · Your Business</h2>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Business Idea / Description *</label>
+                    <textarea name="business_idea" rows="3" required
+                        placeholder="e.g. A mobile dog grooming service for busy professionals in Northern Virginia"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Desired Business Name (if you have one)</label>
+                    <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC (leave blank for AI suggestions)"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Business Purpose (one sentence) *</label>
+                    <input name="business_purpose" type="text" placeholder="e.g. Mobile pet grooming services for residential customers" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Target Customer *</label>
+                    <input name="target_customer" type="text" placeholder="e.g. Busy professionals in Northern Virginia with dogs" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Industry Code *</label>
+                    <select name="industry_code"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-green-500 focus:outline-none text-sm">
+                        <option value="0">0 - General (most businesses)</option>
+                        <option value="35">35 - Insurance Agencies</option>
+                        <option value="36">36 - Mortgage Co</option>
+                        <option value="65">65 - Churches and Religious Denominations</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">LLC Duration *</label>
+                    <select name="duration"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-green-500 focus:outline-none text-sm">
+                        <option value="Perpetual">Perpetual (recommended — no end date)</option>
+                        <option value="Fixed">Fixed Term (specify end date)</option>
+                    </select>
+                </div>
             </div>
 
-            <button
-                type="submit"
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
-            >
-                Screen My Business Name →
+            <!-- SECTION C: Signatures -->
+            <div class="mb-8">
+                <h2 class="text-lg font-semibold text-yellow-400 mb-4 pb-2 border-b border-gray-700">C · Member Signatures</h2>
+                <p class="text-xs text-gray-400 mb-4">By signing below all members authorize filing of this Virginia LLC. Electronic signatures are legally valid under the E-SIGN Act.</p>
+
+                <!-- Primary Member (always shown) -->
+                <div class="bg-gray-900 border border-yellow-700 rounded-lg p-4 mb-3">
+                    <p class="text-xs text-yellow-400 font-semibold mb-3">Member 1 (Primary)</p>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">First Name *</label>
+                            <input name="sig_first" type="text" placeholder="John" required
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-yellow-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Middle Name</label>
+                            <input name="sig_middle" type="text" placeholder="Michael"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-yellow-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Last Name *</label>
+                            <input name="sig_last" type="text" placeholder="Smith" required
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-yellow-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Members Container -->
+                <div id="additional-members"></div>
+
+                <!-- Add Member Button -->
+                <button type="button" onclick="addMember()"
+                    class="w-full border border-dashed border-gray-600 hover:border-yellow-500 text-gray-400 hover:text-yellow-400 font-semibold py-3 rounded-lg transition text-sm mt-2">
+                    + Add Another Member
+                </button>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit"
+                class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition text-lg">
+                🚀 Launch My Virginia LLC →
             </button>
+            <p class="text-xs text-gray-500 text-center mt-2">$299 service fee + $100 Virginia state fee · We file on your behalf within 24 hours</p>
+
         </form>
 
-        <div id="spinner" class="htmx-indicator text-center mt-6 text-gray-400">
-            Gemini is thinking...
+        <div id="spinner" class="htmx-indicator text-center mt-8 text-gray-400">
+            <p class="text-lg">🤖 AI agents are building your business package...</p>
+            <p class="text-sm text-gray-500 mt-1">This takes about 30-60 seconds</p>
         </div>
 
         <div id="result" class="mt-8"></div>
+
     </div>
+
+    <script>
+        let memberCount = 1;
+
+        function addMember() {
+            memberCount++;
+            const container = document.getElementById('additional-members');
+            const div = document.createElement('div');
+            div.id = `member-${memberCount}`;
+            div.className = 'bg-gray-900 border border-gray-700 rounded-lg p-4 mb-3';
+            div.innerHTML = `
+                <div class="flex justify-between items-center mb-3">
+                    <p class="text-xs text-gray-400 font-semibold">Member ${memberCount}</p>
+                    <button type="button" onclick="removeMember(${memberCount})"
+                        class="text-xs text-red-400 hover:text-red-300 transition">
+                        − Remove
+                    </button>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">First Name *</label>
+                        <input name="extra_sig_first_${memberCount}" type="text" placeholder="Jane" required
+                            class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Middle Name</label>
+                        <input name="extra_sig_middle_${memberCount}" type="text" placeholder="Optional"
+                            class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Last Name *</label>
+                        <input name="extra_sig_last_${memberCount}" type="text" placeholder="Doe" required
+                            class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function removeMember(id) {
+            const el = document.getElementById(`member-${id}`);
+            if (el) el.remove();
+        }
+    </script>
 </body>
 </html>

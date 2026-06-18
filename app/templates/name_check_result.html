@@ -1,0 +1,27 @@
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+    <h2 class="text-xl font-semibold mb-4 text-green-400">✅ Name Check: "{{ result.desired_name }}"</h2>
+
+    <!-- Domain Status -->
+    <div class="mb-4 p-4 rounded-lg bg-gray-700 border border-gray-600">
+        <p class="font-semibold">
+            🌐 Domain — {{ result.domain }}:
+            {% if result.domain_available == true %}
+                <span class="text-green-400">Likely Available</span>
+            {% elif result.domain_available == false %}
+                <span class="text-red-400">Already Taken</span>
+            {% else %}
+                <span class="text-gray-400">Could not check</span>
+            {% endif %}
+        </p>
+    </div>
+
+    <!-- Gemini Analysis -->
+    <div class="text-gray-300 whitespace-pre-wrap leading-relaxed mb-6">{{ result.gemini_analysis }}</div>
+
+    <!-- SCC Link -->
+    <a href="{{ result.scc_url }}" target="_blank"
+       class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition mb-2">
+        🔍 Check on Virginia SCC Official Website →
+    </a>
+    <p class="text-gray-500 text-xs text-center">Opens the official Virginia SCC name availability checker with your name pre-filled</p>
+</div>
