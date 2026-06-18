@@ -4,70 +4,108 @@
     <div class="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-6 border border-blue-700">
         <h2 class="text-2xl font-bold mb-1">🎉 Your Business Package is Ready!</h2>
         <p class="text-blue-300">{{ business_name }} · {{ full_name }} · Virginia</p>
+        <p class="text-blue-400 text-sm mt-2">We will file your LLC, apply for your EIN, and open your {{ bank_preference }} account within 24 hours.</p>
+    </div>
+
+    <!-- What Happens Next -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h3 class="text-lg font-semibold text-white mb-4">✅ What Happens Next</h3>
+        <div class="space-y-3">
+            <div class="flex gap-3">
+                <span class="text-blue-400 font-bold text-sm w-16 shrink-0">Day 1</span>
+                <p class="text-sm text-gray-300">We file your LLC with Virginia SCC and apply for your EIN at IRS.gov</p>
+            </div>
+            <div class="flex gap-3">
+                <span class="text-blue-400 font-bold text-sm w-16 shrink-0">Day 1-2</span>
+                <p class="text-sm text-gray-300">EIN issued · We apply for your {{ bank_preference }} business bank account</p>
+            </div>
+            <div class="flex gap-3">
+                <span class="text-blue-400 font-bold text-sm w-16 shrink-0">Day 2-4</span>
+                <p class="text-sm text-gray-300">Virginia SCC approves your LLC · Certificate of Organization issued</p>
+            </div>
+            <div class="flex gap-3">
+                <span class="text-blue-400 font-bold text-sm w-16 shrink-0">Day 3-5</span>
+                <p class="text-sm text-gray-300">{{ bank_preference }} approves your account · You receive login credentials directly from {{ bank_preference }}</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-4">Questions? Email us at support@launchbridge.com</p>
     </div>
 
     <!-- Download PDF -->
     <div class="bg-gray-800 rounded-xl p-6 border border-purple-700">
-        <h3 class="text-lg font-semibold text-purple-400 mb-3">📄 LLC Documents</h3>
+        <h3 class="text-lg font-semibold text-purple-400 mb-3">📄 Your LLC Documents</h3>
         <a href="/download-pdf/{{ pdf_filename }}"
-           class="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition mb-3">
+           class="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition mb-2">
             ⬇️ Download Signed LLC Package (PDF)
         </a>
-        <a href="https://cis.scc.virginia.gov" target="_blank"
-           class="block w-full text-center bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-lg transition">
-            📋 File with Virginia SCC ($100 state fee) →
-        </a>
-        <div class="mt-3 p-3 bg-gray-900 rounded-lg">
-            <p class="text-xs text-gray-400 font-semibold mb-2">SCC Filing Details:</p>
-            <p class="text-xs text-gray-400">Business: {{ business_name }}</p>
-            <p class="text-xs text-gray-400">Owner: {{ full_name }}</p>
-            <p class="text-xs text-gray-400">Address: {{ principal_address }}</p>
-            <p class="text-xs text-gray-400">Industry Code: {{ industry_code }}</p>
-            <p class="text-xs text-gray-400">Duration: {{ duration }}</p>
-            <p class="text-xs text-gray-400 mt-2 font-semibold">Member Signatures:</p>
-            {% for sig in all_signatures %}
-            <p class="text-xs text-gray-300 font-serif italic">{{ loop.index }}. {{ sig }}</p>
-            {% endfor %}
-        </div>
+        <p class="text-xs text-gray-500 text-center">Articles of Organization · Operating Agreement · Filing Instructions · Post-Filing Checklist</p>
     </div>
 
     <!-- Name Ideas -->
     <div class="bg-gray-800 rounded-xl p-6 border border-blue-700">
-        <h3 class="text-lg font-semibold text-blue-400 mb-3">💡 Business Name Ideas</h3>
+        <h3 class="text-lg font-semibold text-blue-400 mb-3">💡 Additional Name Ideas (for reference)</h3>
         <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ name_result.result }}</div>
     </div>
 
     <!-- EIN Guidance -->
     <div class="bg-gray-800 rounded-xl p-6 border border-yellow-700">
-        <h3 class="text-lg font-semibold text-yellow-400 mb-3">🔢 EIN Application Guide</h3>
-        <a href="https://www.irs.gov/businesses/small-businesses-self-employed/apply-for-an-employer-identification-number-ein-online" target="_blank"
-           class="block w-full text-center bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 rounded-lg transition mb-3 text-sm">
-            Apply for EIN at IRS.gov →
-        </a>
+        <h3 class="text-lg font-semibold text-yellow-400 mb-3">🔢 EIN Guide (for your records)</h3>
         <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ ein_result.result }}</div>
     </div>
 
     <!-- Brand Kit -->
     <div class="bg-gray-800 rounded-xl p-6 border border-pink-700">
-        <h3 class="text-lg font-semibold text-pink-400 mb-3">🎨 Brand Kit</h3>
+        <h3 class="text-lg font-semibold text-pink-400 mb-3">🎨 Your Brand Kit</h3>
         <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ brand_result.result }}</div>
     </div>
 
     <!-- Marketing Plan -->
     <div class="bg-gray-800 rounded-xl p-6 border border-orange-700">
-        <h3 class="text-lg font-semibold text-orange-400 mb-3">📣 30-Day Marketing Plan</h3>
+        <h3 class="text-lg font-semibold text-orange-400 mb-3">📣 Your 30-Day Marketing Plan</h3>
         <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ marketing_result.result }}</div>
     </div>
 
-    <!-- Next Steps -->
-    <div class="bg-gray-900 rounded-xl p-6 border border-gray-700">
-        <h3 class="text-lg font-semibold text-white mb-3">✅ What Happens Next</h3>
-        <div class="space-y-2 text-sm text-gray-300">
-            <p>1. We will file your LLC with Virginia SCC within 24 hours</p>
-            <p>2. Virginia processes in 1-3 business days</p>
-            <p>3. You'll receive your Certificate of Organization by email at {{ email }}</p>
-            <p>4. Use the EIN guide above to get your tax ID from IRS.gov</p>
-            <p>5. Open a business bank account with your Certificate + EIN</p>
+    <!-- ADMIN PANEL — Filing Details -->
+    <div class="bg-red-950 rounded-xl p-6 border border-red-800">
+        <h3 class="text-lg font-semibold text-red-400 mb-1">🔐 Admin Filing Panel</h3>
+        <p class="text-xs text-red-400 mb-4">INTERNAL USE ONLY · Do not share with customer · SSN visible here only</p>
+
+        <div class="space-y-2 text-sm">
+            <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Personal Info</p>
+            <p class="text-gray-300">Name: <span class="text-white font-semibold">{{ full_name }}</span></p>
+            <p class="text-gray-300">Email: <span class="text-white">{{ email }}</span></p>
+            <p class="text-gray-300">Phone: <span class="text-white">{{ phone }}</span></p>
+            <p class="text-gray-300">Date of Birth: <span class="text-white">{{ dob }}</span></p>
+            <p class="text-gray-300">Address: <span class="text-white">{{ principal_address }}</span></p>
+            <p class="text-red-300">SSN: <span class="text-red-200 font-mono">{{ ssn }}</span></p>
+
+            <div class="border-t border-red-800 my-3"></div>
+            <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">SCC Filing Info</p>
+            <p class="text-gray-300">Business Name: <span class="text-white font-semibold">{{ business_name }}</span></p>
+            <p class="text-gray-300">Industry Code: <span class="text-white">{{ industry_code }}</span></p>
+            <p class="text-gray-300">Duration: <span class="text-white">{{ duration }}</span></p>
+            <p class="text-gray-300">Member Signatures:</p>
+            {% for sig in all_signatures %}
+            <p class="text-white font-serif italic ml-4">{{ loop.index }}. {{ sig }}</p>
+            {% endfor %}
+
+            <div class="border-t border-red-800 my-3"></div>
+            <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Bank Application</p>
+            <p class="text-gray-300">Bank: <span class="text-white font-semibold">{{ bank_preference }}</span></p>
+            {% if bank_preference == "Mercury" %}
+            <a href="https://mercury.com/apply" target="_blank"
+               class="block w-full text-center bg-red-800 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition text-sm mt-2">
+                Apply on Mercury →
+            </a>
+            {% elif bank_preference == "Relay" %}
+            <a href="https://relayfi.com/apply" target="_blank"
+               class="block w-full text-center bg-red-800 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition text-sm mt-2">
+                Apply on Relay →
+            </a>
+            {% endif %}
+
+            <div class="border-t border-red-800 my-3"></div>
+            <p class="text-xs text-gray-500">⚠️ Delete SSN from browser after filing is complete</p>
         </div>
     </div>
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Business Launcher</title>
+    <title>Launch Bridge LLC</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -12,22 +12,66 @@
 
         <!-- Header -->
         <div class="text-center mb-10">
+            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Launch Bridge LLC</p>
             <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
             <p class="text-gray-400 mb-3">From idea to operating Virginia LLC in 72 hours.</p>
             <div class="inline-block bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">🏛️ Virginia LLCs Only · $299 flat fee · $100 VA state fee passed through</div>
         </div>
 
-        <!-- Quick SCC Name Check -->
-        <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank"
-           class="flex items-center justify-between w-full bg-gray-800 border border-gray-600 hover:border-blue-500 rounded-lg px-5 py-3 mb-10 transition group">
-            <div>
-                <p class="text-sm font-semibold text-white">🔍 Check Virginia SCC Name Database First</p>
-                <p class="text-xs text-gray-400">Verify your business name is available before filling out the form</p>
+        <!-- What's Included Banner -->
+        <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-8">
+            <p class="text-sm font-semibold text-white mb-3">✅ Everything included in your $299:</p>
+            <div class="grid grid-cols-2 gap-2 text-xs text-gray-300">
+                <p>🏛️ Virginia LLC filing (we do it)</p>
+                <p>🔢 EIN application (we do it)</p>
+                <p>🏦 Mercury bank account (we apply)</p>
+                <p>📄 Signed LLC documents PDF</p>
+                <p>🎨 Brand kit (colors, fonts, tagline)</p>
+                <p>📣 30-day marketing plan</p>
             </div>
-            <span class="text-blue-400 group-hover:text-blue-300 text-lg">→</span>
-        </a>
+            <p class="text-xs text-gray-500 mt-3">+ $100 Virginia state fee passed through directly</p>
+        </div>
 
-        <!-- Master Intake Form -->
+        <!-- Name Idea Generator -->
+        <div class="bg-gray-900 border border-blue-800 rounded-xl p-6 mb-8">
+            <h2 class="text-lg font-semibold text-blue-400 mb-1">💡 Not sure what to name your business?</h2>
+            <p class="text-xs text-gray-400 mb-4">Describe your idea and our AI will suggest strong Virginia business names.</p>
+            <form hx-post="/screen-name" hx-target="#name-ideas" hx-swap="innerHTML" hx-indicator="#name-spinner">
+                <div class="flex gap-3">
+                    <textarea name="business_idea" rows="2"
+                        placeholder="e.g. Mobile dog grooming for busy professionals in Northern Virginia"
+                        class="flex-1 bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"></textarea>
+                    <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 rounded-lg transition text-sm whitespace-nowrap">
+                        Get Ideas →
+                    </button>
+                </div>
+            </form>
+            <div id="name-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Gemini is thinking...</div>
+            <div id="name-ideas" class="mt-4 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></div>
+
+            <div class="border-t border-gray-700 mt-4 pt-4">
+                <p class="text-xs text-gray-400 mb-2">Already have a name? Check if it's available:</p>
+                <div class="flex gap-3">
+                    <form hx-post="/check-name" hx-target="#name-check-result" hx-swap="innerHTML" hx-indicator="#check-spinner" class="flex gap-3 flex-1">
+                        <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC"
+                            class="flex-1 bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                        <button type="submit"
+                            class="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 rounded-lg transition text-sm whitespace-nowrap">
+                            Check →
+                        </button>
+                    </form>
+                    <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank"
+                       class="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-4 rounded-lg transition text-sm flex items-center whitespace-nowrap">
+                        SCC →
+                    </a>
+                </div>
+                <div id="check-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Checking...</div>
+                <div id="name-check-result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Main Intake Form -->
         <form hx-post="/launch" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner">
 
             <!-- SECTION A: Personal Info -->
@@ -62,22 +106,35 @@
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="block text-xs text-gray-400 mb-1">Virginia Street Address *</label>
-                    <input name="address" type="text" placeholder="123 Main Street" required
-                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-2 gap-3 mb-3">
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">City/Town *</label>
-                        <input name="city" type="text" placeholder="Arlington" required
-                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <label class="block text-xs text-gray-400 mb-1">Date of Birth *</label>
+                        <input name="dob" type="date" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">ZIP Code *</label>
                         <input name="zipcode" type="text" placeholder="22201" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
                     </div>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Virginia Street Address *</label>
+                    <input name="address" type="text" placeholder="123 Main Street" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">City/Town *</label>
+                    <input name="city" type="text" placeholder="Arlington" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                </div>
+
+                <!-- SSN Field -->
+                <div class="bg-gray-900 border border-gray-600 rounded-lg p-4">
+                    <label class="block text-xs text-yellow-400 font-semibold mb-1">🔒 Social Security Number *</label>
+                    <p class="text-xs text-gray-500 mb-2">Required for EIN application and bank account setup. Never stored in our database. See our <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.</p>
+                    <input name="ssn" type="password" placeholder="XXX-XX-XXXX" required
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest"/>
                 </div>
             </div>
 
@@ -91,8 +148,8 @@
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"></textarea>
                 </div>
                 <div class="mb-3">
-                    <label class="block text-xs text-gray-400 mb-1">Desired Business Name (if you have one)</label>
-                    <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC (leave blank for AI suggestions)"
+                    <label class="block text-xs text-gray-400 mb-1">Chosen Business Name (include LLC) *</label>
+                    <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
                 </div>
                 <div class="mb-3">
@@ -123,6 +180,19 @@
                         <option value="Fixed">Fixed Term (specify end date)</option>
                     </select>
                 </div>
+
+                <!-- Bank Account Preference -->
+                <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                    <label class="block text-xs text-white font-semibold mb-1">🏦 Business Bank Account</label>
+                    <p class="text-xs text-gray-400 mb-3">We will apply for a business bank account on your behalf after your EIN is issued. Which bank do you prefer?</p>
+                    <select name="bank_preference"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm">
+                        <option value="Mercury">Mercury (recommended — free, fully online, great for LLCs)</option>
+                        <option value="Relay">Relay (great for multi-member LLCs, expense tracking)</option>
+                        <option value="Chase">Chase Business (in-person, established brand)</option>
+                        <option value="CapitalOne">Capital One Spark (cash back rewards)</option>
+                    </select>
+                </div>
             </div>
 
             <!-- SECTION C: Signatures -->
@@ -130,7 +200,6 @@
                 <h2 class="text-lg font-semibold text-yellow-400 mb-4 pb-2 border-b border-gray-700">C · Member Signatures</h2>
                 <p class="text-xs text-gray-400 mb-4">By signing below all members authorize filing of this Virginia LLC. Electronic signatures are legally valid under the E-SIGN Act.</p>
 
-                <!-- Primary Member (always shown) -->
                 <div class="bg-gray-900 border border-yellow-700 rounded-lg p-4 mb-3">
                     <p class="text-xs text-yellow-400 font-semibold mb-3">Member 1 (Primary)</p>
                     <div class="grid grid-cols-3 gap-3">
@@ -152,14 +221,21 @@
                     </div>
                 </div>
 
-                <!-- Additional Members Container -->
                 <div id="additional-members"></div>
 
-                <!-- Add Member Button -->
                 <button type="button" onclick="addMember()"
                     class="w-full border border-dashed border-gray-600 hover:border-yellow-500 text-gray-400 hover:text-yellow-400 font-semibold py-3 rounded-lg transition text-sm mt-2">
                     + Add Another Member
                 </button>
+            </div>
+
+            <!-- Terms Checkbox -->
+            <div class="mb-6 bg-gray-900 border border-gray-700 rounded-lg p-4">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="agree_terms" required
+                        class="mt-1 w-4 h-4 accent-blue-500"/>
+                    <span class="text-xs text-gray-300">I have read and agree to the <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a> and <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>. I authorize Launch Bridge LLC to file my Virginia LLC, apply for my EIN, and apply for a business bank account on my behalf.</span>
+                </label>
             </div>
 
             <!-- Submit -->
@@ -178,6 +254,15 @@
 
         <div id="result" class="mt-8"></div>
 
+        <!-- Footer -->
+        <div class="text-center mt-12 pt-6 border-t border-gray-800">
+            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
+                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
+                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
+                Not legal advice
+            </p>
+        </div>
+
     </div>
 
     <script>
@@ -193,9 +278,7 @@
                 <div class="flex justify-between items-center mb-3">
                     <p class="text-xs text-gray-400 font-semibold">Member ${memberCount}</p>
                     <button type="button" onclick="removeMember(${memberCount})"
-                        class="text-xs text-red-400 hover:text-red-300 transition">
-                        − Remove
-                    </button>
+                        class="text-xs text-red-400 hover:text-red-300 transition">− Remove</button>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                     <div>
