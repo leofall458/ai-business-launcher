@@ -1,10 +1,12 @@
 import os
+import asyncio
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
+from app.agents.scc_name_check import check_name_on_scc
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
@@ -41,8 +43,19 @@ async def check_name(
     request: Request,
     desired_name: str = Form(...)
 ):
-    result = check_business_name(desired_name, "Virginia")
-    return templates.TemplateResponse(request, "name_check_result.html", {"result": result})
+    loop = asyncio.get_event_loop()
+
+    # Run SCC check and Gemini analysis in parallel
+    scc_result, gemini_result = await asyncio.gather(
+        loop.run_in_executor(None, check_name_on_scc, desired_name),
+        loop.run_in_executor(None, check_business_name, desired_name, "Virginia"),
+    )
+
+    return templates.TemplateResponse(request, "name_check_result.html", {
+        "result": gemini_result,
+        "scc": scc_result,
+        "desired_name": desired_name
+    })
 
 @app.post("/launch", response_class=HTMLResponse)
 async def launch(request: Request):
@@ -64,7 +77,6 @@ async def launch(request: Request):
     target_customer = form.get("target_customer", "")
     industry_code = form.get("industry_code", "0")
     duration = form.get("duration", "Perpetual")
-    bank_preference = form.get("bank_preference", "Mercury")
     sig_first = form.get("sig_first", "")
     sig_middle = form.get("sig_middle", "")
     sig_last = form.get("sig_last", "")
@@ -88,40 +100,28 @@ async def launch(request: Request):
     all_signatures = [primary_sig] + additional_members
     business_name = desired_name.strip() if desired_name.strip() else f"{last_name} Ventures LLC"
 
-    # Run all agents
-    name_result = screen_business_name(business_idea)
-    llc_result = generate_llc_paperwork(
-        business_name=business_name,
-        owner_name=full_name,
-        business_purpose=business_purpose,
-        registered_agent=full_name,
-        principal_address=principal_address
-    )
-    ein_result = generate_ein_guidance(
-        business_name=business_name,
-        owner_name=full_name,
-        state="Virginia"
-    )
-    brand_result = generate_brand_kit(
-        business_name=business_name,
-        business_idea=business_idea,
-        target_customer=target_customer
-    )
-    marketing_result = generate_marketing_plan(
-        business_name=business_name,
-        business_idea=business_idea,
-        state="Virginia",
-        target_customer=target_customer
+    loop = asyncio.get_event_loop()
+
+    (
+        name_result,
+        llc_result,
+        ein_result,
+        brand_result,
+        marketing_result
+    ) = await asyncio.gather(
+        loop.run_in_executor(None, screen_business_name, business_idea),
+        loop.run_in_executor(None, generate_llc_paperwork,
+            business_name, full_name, business_purpose, full_name, principal_address),
+        loop.run_in_executor(None, generate_ein_guidance,
+            business_name, full_name, "Virginia"),
+        loop.run_in_executor(None, generate_brand_kit,
+            business_name, business_idea, target_customer),
+        loop.run_in_executor(None, generate_marketing_plan,
+            business_name, business_idea, "Virginia", target_customer),
     )
 
-    pdf_path = generate_llc_pdf(
-        business_name=business_name,
-        owner_name=full_name,
-        business_purpose=business_purpose,
-        registered_agent=full_name,
-        principal_address=principal_address,
-        signature=primary_sig
-    )
+    pdf_path = await loop.run_in_executor(None, generate_llc_pdf,
+        business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
 
     safe_name = business_name.replace(" ", "_").replace("/", "_")
     pdf_filename = f"{safe_name}_LLC_Package.pdf"
@@ -136,7 +136,6 @@ async def launch(request: Request):
         "principal_address": principal_address,
         "industry_code": industry_code,
         "duration": duration,
-        "bank_preference": bank_preference,
         "all_signatures": all_signatures,
         "name_result": name_result,
         "llc_result": llc_result,

@@ -24,10 +24,11 @@
             <div class="grid grid-cols-2 gap-2 text-xs text-gray-300">
                 <p>🏛️ Virginia LLC filing (we do it)</p>
                 <p>🔢 EIN application (we do it)</p>
-                <p>🏦 Mercury bank account (we apply)</p>
+                <p>💳 Stripe account setup guidance</p>
                 <p>📄 Signed LLC documents PDF</p>
                 <p>🎨 Brand kit (colors, fonts, tagline)</p>
                 <p>📣 30-day marketing plan</p>
+                <p>🌐 Custom business website</p>
             </div>
             <p class="text-xs text-gray-500 mt-3">+ $100 Virginia state fee passed through directly</p>
         </div>
@@ -52,21 +53,15 @@
 
             <div class="border-t border-gray-700 mt-4 pt-4">
                 <p class="text-xs text-gray-400 mb-2">Already have a name? Check if it's available:</p>
-                <div class="flex gap-3">
-                    <form hx-post="/check-name" hx-target="#name-check-result" hx-swap="innerHTML" hx-indicator="#check-spinner" class="flex gap-3 flex-1">
-                        <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC"
-                            class="flex-1 bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
-                        <button type="submit"
-                            class="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 rounded-lg transition text-sm whitespace-nowrap">
-                            Check →
-                        </button>
-                    </form>
-                    <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank"
-                       class="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-4 rounded-lg transition text-sm flex items-center whitespace-nowrap">
-                        SCC →
-                    </a>
-                </div>
-                <div id="check-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Checking...</div>
+                <form hx-post="/check-name" hx-target="#name-check-result" hx-swap="innerHTML" hx-indicator="#check-spinner" class="flex gap-3">
+                    <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC"
+                        class="flex-1 bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                    <button type="submit"
+                        class="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 rounded-lg transition text-sm whitespace-nowrap">
+                        Check →
+                    </button>
+                </form>
+                <div id="check-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Checking on Virginia SCC...</div>
                 <div id="name-check-result" class="mt-3"></div>
             </div>
         </div>
@@ -132,7 +127,7 @@
                 <!-- SSN Field -->
                 <div class="bg-gray-900 border border-gray-600 rounded-lg p-4">
                     <label class="block text-xs text-yellow-400 font-semibold mb-1">🔒 Social Security Number *</label>
-                    <p class="text-xs text-gray-500 mb-2">Required for EIN application and bank account setup. Never stored in our database. See our <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.</p>
+                    <p class="text-xs text-gray-500 mb-2">Required for EIN application. Never stored in our database. See our <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.</p>
                     <input name="ssn" type="password" placeholder="XXX-XX-XXXX" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest"/>
                 </div>
@@ -180,19 +175,6 @@
                         <option value="Fixed">Fixed Term (specify end date)</option>
                     </select>
                 </div>
-
-                <!-- Bank Account Preference -->
-                <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
-                    <label class="block text-xs text-white font-semibold mb-1">🏦 Business Bank Account</label>
-                    <p class="text-xs text-gray-400 mb-3">We will apply for a business bank account on your behalf after your EIN is issued. Which bank do you prefer?</p>
-                    <select name="bank_preference"
-                        class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm">
-                        <option value="Mercury">Mercury (recommended — free, fully online, great for LLCs)</option>
-                        <option value="Relay">Relay (great for multi-member LLCs, expense tracking)</option>
-                        <option value="Chase">Chase Business (in-person, established brand)</option>
-                        <option value="CapitalOne">Capital One Spark (cash back rewards)</option>
-                    </select>
-                </div>
             </div>
 
             <!-- SECTION C: Signatures -->
@@ -234,7 +216,7 @@
                 <label class="flex items-start gap-3 cursor-pointer">
                     <input type="checkbox" name="agree_terms" required
                         class="mt-1 w-4 h-4 accent-blue-500"/>
-                    <span class="text-xs text-gray-300">I have read and agree to the <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a> and <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>. I authorize Launch Bridge LLC to file my Virginia LLC, apply for my EIN, and apply for a business bank account on my behalf.</span>
+                    <span class="text-xs text-gray-300">I have read and agree to the <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a> and <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>. I authorize Launch Bridge LLC to file my Virginia LLC and apply for my EIN on my behalf.</span>
                 </label>
             </div>
 
