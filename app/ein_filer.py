@@ -16,6 +16,26 @@ def fill_field(page, selector, value):
         print(f"⚠️ Could not fill {selector}: {e}")
         return False
 
+def type_field(page, selector, value):
+    """Some IRS fields run JS keystroke validation that ignores Playwright's
+    .fill() (which sets the value via a single synthetic event) and reverts
+    to empty on blur. Typing character-by-character fires real key events
+    the page's handler actually processes."""
+    try:
+        field = page.locator(selector).first
+        field.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+        field.click()
+        page.wait_for_timeout(200)
+        field.press("Control+A")
+        field.press("Delete")
+        field.type(value, delay=30)
+        page.wait_for_timeout(300)
+        return True
+    except Exception as e:
+        print(f"⚠️ Could not type into {selector}: {e}")
+        return False
+
 def select_field(page, selector, value=None, label=None):
     try:
         field = page.locator(selector).first
@@ -141,11 +161,25 @@ def file_ein_with_irs(customer_data: dict, interactive=True):
         # === STEP 4b: BUSINESS ACTIVITY ===
         print("📌 Step 4b: Business Activity...")
         click_radio(page, "entityBusinessCategoryInput", "OTHER")
-        page.wait_for_timeout(800)
+        page.wait_for_selector('input[name="otherInput"]', state="visible", timeout=10000)
         click_radio(page, "otherInput", "OTHER")
-        page.wait_for_timeout(800)
-        fill_field(page, "#otherActivityTextInput", business_description)
+        page.wait_for_selector("#otherActivityTextInput", state="visible", timeout=10000)
+
+        for attempt in range(3):
+            type_field(page, "#otherActivityTextInput", business_description)
+            actual_value = page.eval_on_selector("#otherActivityTextInput", "el => el.value")
+            if actual_value.strip():
+                break
+            print(f"⚠️ Other Activity text field empty after type attempt {attempt + 1}, retrying...")
+            page.wait_for_timeout(500)
+
         click_continue(page)
+
+        if "is now required based on previous selection" in page.inner_text("body").lower():
+            print("⚠️ Business Activity validation error after Continue - retrying...")
+            page.wait_for_selector("#otherActivityTextInput", state="visible", timeout=10000)
+            type_field(page, "#otherActivityTextInput", business_description)
+            click_continue(page)
 
         # === STEP 5: REVIEW & SUBMIT ===
         print("📌 Step 5: Review & Submit...")
