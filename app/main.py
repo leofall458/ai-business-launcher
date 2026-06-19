@@ -1,6 +1,7 @@
 import os
 import asyncio
-from fastapi import FastAPI, Request, Form
+import datetime
+from fastapi import FastAPI, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +13,8 @@ from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
 from app.agents.ein_agent import generate_ein_guidance
 from app.agents.pdf_agent import generate_llc_pdf
+from app.scc_llc_filer import file_llc_on_scc
+from app.ein_filer import file_ein_with_irs
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -57,8 +60,19 @@ async def check_name(
         "desired_name": desired_name
     })
 
+def run_llc_and_ein_filing(llc_customer_data: dict, ein_customer_data: dict):
+    """Fires the SCC LLC filer, then the IRS EIN filer right after the LLC
+    paperwork is filled - not waiting for SCC to actually approve the LLC.
+    Both filers stop before final payment/submission and leave their browser
+    tab open on the Review page for manual completion."""
+    llc_filled = file_llc_on_scc(llc_customer_data, interactive=False)
+    if llc_filled:
+        file_ein_with_irs(ein_customer_data, interactive=False)
+    else:
+        print("⚠️ Skipping EIN filing - LLC filing did not complete successfully")
+
 @app.post("/launch", response_class=HTMLResponse)
-async def launch(request: Request):
+async def launch(request: Request, background_tasks: BackgroundTasks):
     form = await request.form()
 
     first_name = form.get("first_name", "")
@@ -69,6 +83,7 @@ async def launch(request: Request):
     dob = form.get("dob", "")
     address = form.get("address", "")
     city = form.get("city", "")
+    county = form.get("county", "")
     zipcode = form.get("zipcode", "")
     ssn = form.get("ssn", "")
     business_idea = form.get("business_idea", "")
@@ -125,6 +140,39 @@ async def launch(request: Request):
 
     safe_name = business_name.replace(" ", "_").replace("/", "_")
     pdf_filename = f"{safe_name}_LLC_Package.pdf"
+
+    today = datetime.date.today()
+    llc_customer_data = {
+        "business_name": business_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "last_name": last_name,
+        "email": email,
+        "phone": phone,
+        "address": address,
+        "city": city,
+        "zipcode": zipcode,
+        "industry_code": industry_code,
+        "duration": duration,
+    }
+    ein_customer_data = {
+        "business_name": business_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "last_name": last_name,
+        "ssn": ssn,
+        "address": address,
+        "city": city,
+        "state": "VA",
+        "zipcode": zipcode,
+        "phone": phone,
+        "county": county,
+        "start_month": today.strftime("%B"),
+        "start_year": str(today.year),
+        "members": str(len(all_signatures)),
+        "business_description": business_purpose,
+    }
+    background_tasks.add_task(run_llc_and_ein_filing, llc_customer_data, ein_customer_data)
 
     return templates.TemplateResponse(request, "launch_result.html", {
         "full_name": full_name,
