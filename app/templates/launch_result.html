@@ -31,6 +31,23 @@
         <p class="text-xs text-gray-500 mt-4">Questions? Email us at support@launchbridge.com</p>
     </div>
 
+    <!-- Website -->
+    {% if website_url %}
+    <div class="bg-gray-800 rounded-xl p-6 border border-green-700">
+        <h3 class="text-lg font-semibold text-green-400 mb-3">🌐 Your Business Website is Live!</h3>
+        <a href="{{ website_url }}" target="_blank"
+           class="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition mb-2 break-all">
+            {{ website_url }} →
+        </a>
+        <p class="text-xs text-gray-500 text-center">Custom-generated for {{ business_name }} based on your business details</p>
+    </div>
+    {% else %}
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h3 class="text-lg font-semibold text-gray-400 mb-2">🌐 Your Business Website</h3>
+        <p class="text-sm text-gray-500">We hit a snag generating your website automatically — our team will follow up with a link shortly.</p>
+    </div>
+    {% endif %}
+
     <!-- Download PDF -->
     <div class="bg-gray-800 rounded-xl p-6 border border-purple-700">
         <h3 class="text-lg font-semibold text-purple-400 mb-3">📄 Your LLC Documents</h3>

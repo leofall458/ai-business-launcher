@@ -1,10 +1,12 @@
 import os
 import asyncio
 import datetime
+from google.cloud import firestore
 from fastapi import FastAPI, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from app.config import FIREBASE_PROJECT_ID
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc
@@ -15,6 +17,8 @@ from app.agents.ein_agent import generate_ein_guidance
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc
 from app.ein_filer import file_ein_with_irs
+from app.agents.website_agent import generate_website
+from app.deployer import deploy_website
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -60,6 +64,21 @@ async def check_name(
         "desired_name": desired_name
     })
 
+def build_and_deploy_website(business_name, business_idea, target_customer, email, phone, address, template_style, order_id):
+    """Generates tailored website copy, renders it into the chosen template,
+    and deploys it to its own GitHub Pages site. Returns the live URL,
+    or None if generation/deployment failed."""
+    template_override = None if template_style == "auto" else template_style
+    try:
+        result = generate_website(
+            business_name, business_idea, target_customer, email, phone, address,
+            template_override=template_override
+        )
+    except Exception as e:
+        print(f"⚠️ Website content generation failed: {e}")
+        return None
+    return deploy_website(business_name, result["html"], order_id=order_id)
+
 def run_llc_and_ein_filing(llc_customer_data: dict, ein_customer_data: dict):
     """Fires the SCC LLC filer, then the IRS EIN filer right after the LLC
     paperwork is filled - not waiting for SCC to actually approve the LLC.
@@ -92,6 +111,7 @@ async def launch(request: Request, background_tasks: BackgroundTasks):
     target_customer = form.get("target_customer", "")
     industry_code = form.get("industry_code", "0")
     duration = form.get("duration", "Perpetual")
+    template_style = form.get("template_style", "auto")
     sig_first = form.get("sig_first", "")
     sig_middle = form.get("sig_middle", "")
     sig_last = form.get("sig_last", "")
@@ -115,6 +135,18 @@ async def launch(request: Request, background_tasks: BackgroundTasks):
     all_signatures = [primary_sig] + additional_members
     business_name = desired_name.strip() if desired_name.strip() else f"{last_name} Ventures LLC"
 
+    db = firestore.Client(project=FIREBASE_PROJECT_ID)
+    order_ref = db.collection("orders").document()
+    order_id = order_ref.id
+    order_ref.set({
+        "business_name": business_name,
+        "full_name": full_name,
+        "email": email,
+        "phone": phone,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "status": "processing",
+    })
+
     loop = asyncio.get_event_loop()
 
     (
@@ -122,7 +154,8 @@ async def launch(request: Request, background_tasks: BackgroundTasks):
         llc_result,
         ein_result,
         brand_result,
-        marketing_result
+        marketing_result,
+        website_url
     ) = await asyncio.gather(
         loop.run_in_executor(None, screen_business_name, business_idea),
         loop.run_in_executor(None, generate_llc_paperwork,
@@ -133,6 +166,8 @@ async def launch(request: Request, background_tasks: BackgroundTasks):
             business_name, business_idea, target_customer),
         loop.run_in_executor(None, generate_marketing_plan,
             business_name, business_idea, "Virginia", target_customer),
+        loop.run_in_executor(None, build_and_deploy_website,
+            business_name, business_idea, target_customer, email, phone, principal_address, template_style, order_id),
     )
 
     pdf_path = await loop.run_in_executor(None, generate_llc_pdf,
@@ -190,7 +225,8 @@ async def launch(request: Request, background_tasks: BackgroundTasks):
         "ein_result": ein_result,
         "brand_result": brand_result,
         "marketing_result": marketing_result,
-        "pdf_filename": pdf_filename
+        "pdf_filename": pdf_filename,
+        "website_url": website_url
     })
 
 @app.get("/download-pdf/{filename}")
