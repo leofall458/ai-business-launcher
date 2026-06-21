@@ -15,14 +15,20 @@
             <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Launch Bridge LLC</p>
             <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
             <p class="text-gray-400 mb-3">From idea to operating Virginia LLC in 72 hours.</p>
-            <div class="inline-block bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">🏛️ Virginia LLCs Only · $299 flat fee · $100 VA state fee passed through</div>
+            <div class="inline-block bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">🏛️ Virginia LLCs Only · $350 flat fee, all inclusive</div>
         </div>
+
+        {% if cancelled %}
+        <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-4 mb-6 text-center">
+            <p class="text-sm text-yellow-300">Your payment was cancelled — no charge was made. You can fill out the form again whenever you're ready.</p>
+        </div>
+        {% endif %}
 
         <!-- What's Included Banner -->
         <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-8">
-            <p class="text-sm font-semibold text-white mb-3">✅ Everything included in your $299:</p>
+            <p class="text-sm font-semibold text-white mb-3">✅ Everything included in your $350:</p>
             <div class="grid grid-cols-2 gap-2 text-xs text-gray-300">
-                <p>🏛️ Virginia LLC filing (we do it)</p>
+                <p>🏛️ Virginia LLC filing + $100 state fee (we cover it)</p>
                 <p>🔢 EIN application (we do it)</p>
                 <p>💳 Stripe account setup guidance</p>
                 <p>📄 Signed LLC documents PDF</p>
@@ -30,7 +36,6 @@
                 <p>📣 30-day marketing plan</p>
                 <p>🌐 Custom business website</p>
             </div>
-            <p class="text-xs text-gray-500 mt-3">+ $100 Virginia state fee passed through directly</p>
         </div>
 
         <!-- Name Idea Generator -->
@@ -241,13 +246,12 @@
                 class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition text-lg">
                 🚀 Launch My Virginia LLC →
             </button>
-            <p class="text-xs text-gray-500 text-center mt-2">$299 service fee + $100 Virginia state fee · We file on your behalf within 24 hours</p>
+            <p class="text-xs text-gray-500 text-center mt-2">$350 flat fee, all inclusive · Secure payment via Stripe · We file on your behalf within 24 hours of payment</p>
 
         </form>
 
         <div id="spinner" class="htmx-indicator text-center mt-8 text-gray-400">
-            <p class="text-lg">🤖 AI agents are building your business package...</p>
-            <p class="text-sm text-gray-500 mt-1">This takes about 30-60 seconds</p>
+            <p class="text-lg">🔒 Redirecting you to secure payment...</p>
         </div>
 
         <div id="result" class="mt-8"></div>

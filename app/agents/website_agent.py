@@ -82,8 +82,11 @@ def generate_website_content(business_name: str, business_idea: str, target_cust
     import json
     return json.loads(response.text)
 
-def render_website_html(content: dict, business_name: str, email: str, phone: str, address: str, template_override: str = None) -> tuple[str, str]:
-    """Returns (html, template_name) with all placeholders filled in."""
+def render_website_html(content: dict, business_name: str, email: str, phone: str, address: str,
+                         template_override: str = None, payment_link_url: str = None) -> tuple[str, str]:
+    """Returns (html, template_name) with all placeholders filled in. Until a
+    Stripe Connect Payment Link exists for this customer, the Pay Now button
+    falls back to emailing the business owner instead of a dead link."""
     template_name = template_override if template_override in TEMPLATE_FILES else content.get("template", "professional")
     if template_name not in TEMPLATE_FILES:
         template_name = "professional"
@@ -104,6 +107,7 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         "{{PHONE}}": phone,
         "{{EMAIL}}": email,
         "{{ADDRESS}}": address,
+        "{{PAYMENT_LINK_URL}}": payment_link_url or f"mailto:{email}?subject=Booking%20Request",
     }
     for i, service in enumerate(services[:3], start=1):
         replacements[f"{{{{SERVICE_{i}_NAME}}}}"] = service["name"]

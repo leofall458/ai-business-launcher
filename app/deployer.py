@@ -67,18 +67,52 @@ def enable_pages(repo_name: str) -> bool:
         return False
     return True
 
-def save_url_to_order(order_id: str, url: str):
+def get_index_html_sha(repo_name: str) -> str:
+    resp = requests.get(
+        f"{GITHUB_API}/repos/{GITHUB_USERNAME}/{repo_name}/contents/index.html",
+        headers=_headers(),
+        params={"ref": "main"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        print(f"⚠️ Could not read index.html sha for {repo_name}: {resp.status_code} {resp.text}")
+        return None
+    return resp.json()["sha"]
+
+def update_index_html(repo_name: str, html: str) -> bool:
+    """Overwrites an already-deployed site's index.html (e.g. once the real
+    Stripe Payment Link is ready and needs to replace the mailto fallback).
+    The Contents API requires the current file's sha to update it."""
+    sha = get_index_html_sha(repo_name)
+    if not sha:
+        return False
+
+    content_b64 = base64.b64encode(html.encode()).decode()
+    resp = requests.put(
+        f"{GITHUB_API}/repos/{GITHUB_USERNAME}/{repo_name}/contents/index.html",
+        headers=_headers(),
+        json={"message": "Update website", "content": content_b64, "branch": "main", "sha": sha},
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        print(f"⚠️ Could not update index.html for {repo_name}: {resp.status_code} {resp.text}")
+        return False
+    return True
+
+def save_website_to_order(order_id: str, url: str, repo_name: str):
     try:
         db = firestore.Client(project=FIREBASE_PROJECT_ID)
-        db.collection("orders").document(order_id).set({"website_url": url}, merge=True)
+        db.collection("orders").document(order_id).set(
+            {"website_url": url, "website_repo": repo_name}, merge=True
+        )
     except Exception as e:
         print(f"⚠️ Could not save website URL to Firestore order {order_id}: {e}")
 
-def deploy_website(business_name: str, html_content: str, order_id: str = None) -> str:
+def deploy_website(business_name: str, html_content: str, order_id: str = None) -> dict:
     """Deploys the given HTML as a new GitHub Pages site under the
-    launchbridge-sites GitHub account and returns its live URL, or None
-    if deployment failed. If order_id is given, saves the URL onto that
-    order's Firestore document."""
+    launchbridge-sites GitHub account. Returns {"url": ..., "repo": ...},
+    or None if deployment failed. If order_id is given, saves the URL and
+    repo name onto that order's Firestore document."""
     repo_name = slugify_repo_name(business_name)
 
     if not create_repo(repo_name):
@@ -91,6 +125,6 @@ def deploy_website(business_name: str, html_content: str, order_id: str = None) 
     url = f"https://{GITHUB_USERNAME}.github.io/{repo_name}"
 
     if order_id:
-        save_url_to_order(order_id, url)
+        save_website_to_order(order_id, url, repo_name)
 
-    return url
+    return {"url": url, "repo": repo_name}
