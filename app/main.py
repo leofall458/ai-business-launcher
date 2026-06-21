@@ -1,24 +1,25 @@
 import os
+import secrets
 import asyncio
 import datetime
 from google.cloud import firestore
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from app.config import FIREBASE_PROJECT_ID
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
-from app.agents.ein_agent import generate_ein_guidance
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc
 from app.ein_filer import file_ein_with_irs
-from app.agents.website_agent import generate_website, render_website_html
-from app.deployer import deploy_website, update_index_html
+from app.agents.website_agent import generate_website_content, render_website_html
+from app.deployer import deploy_website
 from app.stripe_service import (
     create_checkout_session,
     retrieve_checkout_session,
@@ -26,7 +27,7 @@ from app.stripe_service import (
     create_account_link,
     create_pay_what_you_want_payment_link,
 )
-from app.ssn_cache import stash as stash_ssn, pop as pop_ssn
+from app.ssn_cache import stash as stash_ssn, peek as peek_ssn, discard as discard_ssn
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -34,6 +35,39 @@ templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
+
+# Canonical order of the order state machine. An order's "state" field is
+# always one of these. Progression is mostly linear, but filing_confirmed
+# and ein_requested/ein_issued can land out of this textbook order in real
+# wall-clock time (SCC and the IRS move at their own pace) - the admin
+# dashboard lets the admin set filing_confirmed and ein_issued independently
+# of where the automated steps currently are.
+ORDER_STATES = [
+    "draft", "paid", "name_cleared", "review_approved", "filing_submitted",
+    "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete",
+]
+
+STATE_MESSAGES = {
+    "draft": "We're waiting for your payment to go through.",
+    "paid": "Payment received. We're checking your business name's availability with the Virginia State Corporation Commission.",
+    "name_cleared": "Your business name is available. Your order is queued for review before we file.",
+    "review_approved": "Your order has been approved and we're preparing your filing.",
+    "filing_submitted": "Your LLC paperwork has been submitted to the Virginia SCC and your EIN application is underway. SCC approval typically takes several business days - we don't control their timeline and can't promise an exact date.",
+    "filing_confirmed": "Your Virginia LLC has been officially approved by the SCC.",
+    "ein_requested": "Your EIN application has been submitted to the IRS.",
+    "ein_issued": "Your EIN has been issued. We're now generating your brand kit, marketing plan, and business website.",
+    "assets_generated": "Your brand kit, marketing plan, and business website are ready.",
+    "complete": "Everything is ready - here's your full business package.",
+}
+
+security = HTTPBasic()
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    if not ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="Admin panel not configured - set ADMIN_PASSWORD in .env")
+    if not secrets.compare_digest(credentials.password, ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="Incorrect password", headers={"WWW-Authenticate": "Basic"})
+    return True
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -75,8 +109,8 @@ async def check_name(request: Request):
 def parse_intake_form(form: dict) -> dict:
     """Pulls every derived field the agents need out of the raw intake
     form dict. Used both right after submission (to size the Checkout
-    description) and again in /success when re-reading the same fields
-    back out of the Firestore order document."""
+    description) and again whenever a background step re-reads the same
+    fields back out of the Firestore order document."""
     first_name = form.get("first_name", "")
     middle_name = form.get("middle_name", "")
     last_name = form.get("last_name", "")
@@ -114,213 +148,192 @@ def parse_intake_form(form: dict) -> dict:
         "business_name": business_name,
     }
 
-def build_and_deploy_website(business_name, business_idea, target_customer, email, phone, address, template_style, order_id):
-    """Generates tailored website copy, renders it into the chosen template,
-    and deploys it to its own GitHub Pages site. Returns the live URL, or
-    None if generation/deployment failed. The Pay Now button starts out as
-    a mailto fallback - it gets swapped for a real Stripe Payment Link once
-    the customer's Connect account exists (see setup_connect_and_payment_link)."""
-    template_override = None if template_style == "auto" else template_style
-    try:
-        result = generate_website(
-            business_name, business_idea, target_customer, email, phone, address,
-            template_override=template_override
-        )
-    except Exception as e:
-        print(f"⚠️ Website content generation failed: {e}")
-        return None
-
-    deployed = deploy_website(business_name, result["html"], order_id=order_id)
-    if not deployed:
-        return None
-
-    try:
-        db.collection("orders").document(order_id).set({
-            "website_template": result["template"],
-            "website_content": result["content"],
-        }, merge=True)
-    except Exception as e:
-        print(f"⚠️ Could not save website content to Firestore order {order_id}: {e}")
-
-    return deployed["url"]
-
-def run_llc_and_ein_filing(llc_customer_data: dict, ein_customer_data: dict):
-    """Fires the SCC LLC filer, then the IRS EIN filer right after the LLC
-    paperwork is filled - not waiting for SCC to actually approve the LLC.
-    Both filers stop before final payment/submission and leave their browser
-    tab open on the Review page for manual completion."""
-    llc_filled = file_llc_on_scc(llc_customer_data, interactive=False)
-    if llc_filled:
-        file_ein_with_irs(ein_customer_data, interactive=False)
-    else:
-        print("⚠️ Skipping EIN filing - LLC filing did not complete successfully")
-
-def setup_connect_and_payment_link(order_id: str, base_url: str) -> dict:
-    """Part 2 + 3: create the customer's Stripe Connect Express account
-    (pre-filled as an LLC), then - since their website is already live -
-    create a Payment Link on that account and push it into their site,
-    replacing the mailto fallback. Returns the onboarding entry point for
-    the results page; the actual Account Link is minted fresh on each visit
-    to /connect/onboard since Stripe's links expire in minutes, not the 24
-    hours one might assume."""
-    order_ref = db.collection("orders").document(order_id)
-    order = order_ref.get().to_dict() or {}
-
-    try:
-        account = create_connect_account(
-            email=order.get("email", ""),
-            first_name=order.get("first_name", ""),
-            last_name=order.get("last_name", ""),
-            business_name=order.get("business_name", ""),
-            multi_member=len(order.get("all_signatures", [])) > 1,
-        )
-    except Exception as e:
-        print(f"⚠️ Could not create Stripe Connect account for order {order_id}: {e}")
-        return {"connect_account_id": None, "onboarding_url": None}
-
-    order_ref.set({"stripe_connect_account_id": account.id}, merge=True)
-
-    website_repo = order.get("website_repo")
-    if website_repo:
-        try:
-            payment_link_url = create_pay_what_you_want_payment_link(account.id, order.get("business_name", ""))
-            template_name = order.get("website_template")
-            content = order.get("website_content")
-            if template_name and content:
-                html, _ = render_website_html(
-                    content, order.get("business_name", ""), order.get("email", ""),
-                    order.get("phone", ""), order.get("principal_address", ""),
-                    template_override=template_name, payment_link_url=payment_link_url,
-                )
-                update_index_html(website_repo, html)
-                order_ref.set({"payment_link_url": payment_link_url}, merge=True)
-        except Exception as e:
-            print(f"⚠️ Could not create/embed Payment Link for order {order_id}: {e}")
-
-    return {
-        "connect_account_id": account.id,
-        "onboarding_url": f"{base_url}connect/onboard/{order_id}",
-    }
-
-async def process_paid_order(order_id: str, base_url: str, background_tasks: BackgroundTasks) -> dict:
-    """Runs every AI agent for a now-paid order, deploys the website, kicks
-    off the slow Playwright-driven LLC+EIN filing in the background, then
-    sets up Stripe Connect. Returns the results-page context and stores it
-    on the order doc so a /success refresh re-displays it instead of
-    re-running everything (and re-charging nothing, but re-filing things)."""
+def run_name_check(order_id: str):
+    """Runs automatically right after payment. Advances paid -> name_cleared
+    if the business name is available on Virginia SCC; otherwise leaves the
+    order at "paid" with the check result stored for the admin to see and
+    act on (the automated pipeline doesn't know how to fix a taken name)."""
     order_ref = db.collection("orders").document(order_id)
     order = order_ref.get().to_dict()
+    if not order:
+        return
 
-    business_name = order["business_name"]
-    full_name = order["full_name"]
-    business_purpose = order["business_purpose"]
-    principal_address = order["principal_address"]
-    primary_sig = order["primary_sig"]
-    all_signatures = order["all_signatures"]
-    email = order["email"]
-    phone = order["phone"]
-    business_idea = order["business_idea"]
-    target_customer = order["target_customer"]
-    template_style = order["template_style"]
-    first_name = order["first_name"]
-    middle_name = order.get("middle_name", "")
-    last_name = order["last_name"]
-    address = order["address"]
-    city = order["city"]
-    county = order["county"]
-    zipcode = order["zipcode"]
-    industry_code = order["industry_code"]
-    duration = order["duration"]
-    dob = order.get("dob", "")
+    try:
+        result = check_name_on_scc(order["business_name"])
+        order_ref.set({"name_check": result}, merge=True)
+        if result.get("available"):
+            order_ref.set({"state": "name_cleared"}, merge=True)
+        else:
+            print(f"⚠️ Name check did not clear for order {order_id}: {result.get('message')}")
+    except Exception as e:
+        print(f"⚠️ Name check crashed for order {order_id}: {e}")
+        order_ref.set({"name_check_error": str(e)}, merge=True)
 
-    loop = asyncio.get_event_loop()
+SCC_FILED_STATES = {"filing_submitted", "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete"}
 
-    (
-        name_result,
-        llc_result,
-        ein_result,
-        brand_result,
-        marketing_result,
-        website_url
-    ) = await asyncio.gather(
-        loop.run_in_executor(None, screen_business_name, business_idea),
-        loop.run_in_executor(None, generate_llc_paperwork,
-            business_name, full_name, business_purpose, full_name, principal_address),
-        loop.run_in_executor(None, generate_ein_guidance,
-            business_name, full_name, "Virginia"),
-        loop.run_in_executor(None, generate_brand_kit,
-            business_name, business_idea, target_customer),
-        loop.run_in_executor(None, generate_marketing_plan,
-            business_name, business_idea, "Virginia", target_customer),
-        loop.run_in_executor(None, build_and_deploy_website,
-            business_name, business_idea, target_customer, email, phone, principal_address, template_style, order_id),
-    )
+def run_scc_and_ein_filing(order_id: str):
+    """Triggered by the admin's Approve button. Files the LLC with SCC,
+    then - per standing business decision - fires the EIN application
+    immediately once the LLC paperwork is filled, without waiting for SCC's
+    actual approval (which can take days).
 
-    pdf_path = await loop.run_in_executor(None, generate_llc_pdf,
-        business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
+    Re-entrant: if the order already shows filing_submitted or later (e.g.
+    the admin re-clicks Approve to retry a failed EIN attempt - the IRS
+    online assistant is only open 7am-10pm ET, so this will happen), the
+    SCC step is skipped entirely rather than re-filing with SCC a second
+    time. The SSN is only read (peeked) from the in-memory cache, and is
+    only discarded for good once EIN filing actually succeeds - a failed
+    attempt must leave it available for the next retry. It never touches
+    Firestore either way. If the server restarts before EIN succeeds, the
+    SSN is lost and the customer must be asked for it again; that's the
+    accepted tradeoff for never persisting it.
 
-    safe_name = business_name.replace(" ", "_").replace("/", "_")
-    pdf_filename = f"{safe_name}_LLC_Package.pdf"
+    Wrapped in a single try/except: if either filer crashes outright
+    (closed tab, site change, network blip) rather than returning False,
+    the order must not be left stuck with no visible explanation - that
+    would defeat the point of an admin-visible state machine."""
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
 
-    today = datetime.date.today()
-    ssn = pop_ssn(order_id)
-    llc_customer_data = {
-        "business_name": business_name,
-        "first_name": first_name,
-        "middle_name": middle_name,
-        "last_name": last_name,
-        "email": email,
-        "phone": phone,
-        "address": address,
-        "city": city,
-        "zipcode": zipcode,
-        "industry_code": industry_code,
-        "duration": duration,
-    }
-    ein_customer_data = {
-        "business_name": business_name,
-        "first_name": first_name,
-        "middle_name": middle_name,
-        "last_name": last_name,
-        "ssn": ssn,
-        "address": address,
-        "city": city,
-        "state": "VA",
-        "zipcode": zipcode,
-        "phone": phone,
-        "county": county,
-        "start_month": today.strftime("%B"),
-        "start_year": str(today.year),
-        "members": str(len(all_signatures)),
-        "business_description": business_purpose,
-    }
-    background_tasks.add_task(run_llc_and_ein_filing, llc_customer_data, ein_customer_data)
+    already_filed_with_scc = order.get("state") in SCC_FILED_STATES
 
-    connect_result = await loop.run_in_executor(None, setup_connect_and_payment_link, order_id, base_url)
+    try:
+        if not already_filed_with_scc:
+            llc_customer_data = {
+                "business_name": order["business_name"],
+                "first_name": order["first_name"],
+                "middle_name": order.get("middle_name", ""),
+                "last_name": order["last_name"],
+                "email": order["email"],
+                "phone": order["phone"],
+                "address": order["address"],
+                "city": order["city"],
+                "zipcode": order["zipcode"],
+                "industry_code": order.get("industry_code", "0"),
+                "duration": order.get("duration", "Perpetual"),
+            }
+            llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
+            if not llc_filed:
+                order_ref.set({"filing_error": "SCC filing did not complete - check server screenshots, then re-approve to retry."}, merge=True)
+                return
 
-    context = {
-        "full_name": full_name,
-        "email": email,
-        "phone": phone,
-        "dob": dob,
-        "business_name": business_name,
-        "principal_address": principal_address,
-        "industry_code": industry_code,
-        "duration": duration,
-        "all_signatures": all_signatures,
-        "name_result": name_result,
-        "llc_result": llc_result,
-        "ein_result": ein_result,
-        "brand_result": brand_result,
-        "marketing_result": marketing_result,
-        "pdf_filename": pdf_filename,
-        "website_url": website_url,
-        "onboarding_url": connect_result.get("onboarding_url"),
-    }
+            order_ref.set({"state": "filing_submitted", "filing_error": firestore.DELETE_FIELD}, merge=True)
+            already_filed_with_scc = True
 
-    order_ref.set({"status": "complete", "results": context}, merge=True)
+        ssn = peek_ssn(order_id)
+        if not ssn:
+            order_ref.set({
+                "ein_error": "SSN is no longer in memory (server likely restarted since payment, or EIN was already filed once). The customer must be contacted to resubmit it before EIN filing can proceed."
+            }, merge=True)
+            return
 
-    return context
+        today = datetime.date.today()
+        ein_customer_data = {
+            "business_name": order["business_name"],
+            "first_name": order["first_name"],
+            "middle_name": order.get("middle_name", ""),
+            "last_name": order["last_name"],
+            "ssn": ssn,
+            "address": order["address"],
+            "city": order["city"],
+            "state": "VA",
+            "zipcode": order["zipcode"],
+            "phone": order["phone"],
+            "county": order["county"],
+            "start_month": today.strftime("%B"),
+            "start_year": str(today.year),
+            "members": str(len(order.get("all_signatures", []))),
+            "business_description": order["business_purpose"],
+        }
+        ein_filed = file_ein_with_irs(ein_customer_data, interactive=False)
+        if ein_filed:
+            discard_ssn(order_id)
+            order_ref.set({"state": "ein_requested", "ein_error": firestore.DELETE_FIELD}, merge=True)
+        else:
+            order_ref.set({"ein_error": "EIN filing did not complete - the IRS online assistant is only available 7am-10pm ET, so this may just be timing. Re-approve to retry."}, merge=True)
+    except Exception as e:
+        print(f"⚠️ SCC/EIN filing crashed for order {order_id}: {e}")
+        error_field = "ein_error" if already_filed_with_scc else "filing_error"
+        order_ref.set({error_field: f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
+
+def run_asset_generation(order_id: str):
+    """Triggered once the admin records the real EIN. Generates the brand
+    kit, marketing plan, name ideas, and signed LLC PDF, sets up the
+    customer's Stripe Connect Standard account and a pay-what-you-want
+    Payment Link on it, then deploys the business website with that link
+    already embedded (falling back to a mailto link if Connect setup
+    fails, same as before)."""
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    try:
+        business_name = order["business_name"]
+        full_name = order["full_name"]
+        business_purpose = order["business_purpose"]
+        principal_address = order["principal_address"]
+        primary_sig = order["primary_sig"]
+        business_idea = order["business_idea"]
+        target_customer = order["target_customer"]
+        template_style = order.get("template_style", "auto")
+        email = order["email"]
+        phone = order["phone"]
+
+        name_result = screen_business_name(business_idea)
+        brand_result = generate_brand_kit(business_name, business_idea, target_customer)
+        marketing_result = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
+
+        pdf_path = generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
+        safe_name = business_name.replace(" ", "_").replace("/", "_")
+        pdf_filename = f"{safe_name}_LLC_Package.pdf"
+
+        connect_account_id = None
+        payment_link_url = None
+        try:
+            account = create_connect_account(
+                email=email,
+                first_name=order["first_name"],
+                last_name=order["last_name"],
+                business_name=business_name,
+                multi_member=len(order.get("all_signatures", [])) > 1,
+            )
+            connect_account_id = account.id
+            payment_link_url = create_pay_what_you_want_payment_link(account.id, business_name)
+        except Exception as e:
+            print(f"⚠️ Could not set up Stripe Connect for order {order_id}: {e}")
+
+        website_url = None
+        try:
+            content = generate_website_content(business_name, business_idea, target_customer)
+            template_override = None if template_style == "auto" else template_style
+            html, template_name = render_website_html(
+                content, business_name, email, phone, principal_address,
+                template_override=template_override, payment_link_url=payment_link_url,
+            )
+            deployed = deploy_website(business_name, html, order_id=order_id)
+            if deployed:
+                website_url = deployed["url"]
+                order_ref.set({"website_template": template_name, "website_content": content}, merge=True)
+        except Exception as e:
+            print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
+
+        order_ref.set({
+            "name_result": name_result,
+            "brand_result": brand_result,
+            "marketing_result": marketing_result,
+            "pdf_filename": pdf_filename,
+            "website_url": website_url,
+            "stripe_connect_account_id": connect_account_id,
+            "state": "assets_generated",
+        }, merge=True)
+
+        order_ref.set({"state": "complete"}, merge=True)
+    except Exception as e:
+        print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
+        order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
 
 @app.post("/launch", response_class=HTMLResponse)
 async def launch(request: Request):
@@ -335,7 +348,7 @@ async def launch(request: Request):
     order_ref.set({
         **form,
         **parsed,
-        "status": "pending_payment",
+        "state": "draft",
         "created_at": firestore.SERVER_TIMESTAMP,
     })
 
@@ -352,39 +365,62 @@ async def launch(request: Request):
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
 
-@app.get("/success", response_class=HTMLResponse)
+@app.get("/success")
 async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
     resolved_order_id = order_id
-    session = None
 
     if session_id:
         try:
             session = retrieve_checkout_session(session_id)
         except Exception as e:
             return HTMLResponse(f"<p>Could not verify payment: {e}</p>", status_code=400)
+
         resolved_order_id = session.client_reference_id
+        if not resolved_order_id:
+            return RedirectResponse(url="/")
+
+        order_ref = db.collection("orders").document(resolved_order_id)
+        order_snap = order_ref.get()
+        if not order_snap.exists:
+            return HTMLResponse("<p>Order not found.</p>", status_code=404)
+        order = order_snap.to_dict()
+
+        if order.get("state") == "draft" and session.payment_status == "paid":
+            order_ref.set({"state": "paid"}, merge=True)
+            background_tasks.add_task(run_name_check, resolved_order_id)
 
     if not resolved_order_id:
         return RedirectResponse(url="/")
 
-    order_ref = db.collection("orders").document(resolved_order_id)
-    order_snap = order_ref.get()
+    return RedirectResponse(url=f"/status/{resolved_order_id}")
+
+@app.get("/status/{order_id}", response_class=HTMLResponse)
+async def status_page(request: Request, order_id: str):
+    order_snap = db.collection("orders").document(order_id).get()
     if not order_snap.exists:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
     order = order_snap.to_dict()
+    state = order.get("state", "draft")
 
-    if order.get("status") == "complete":
-        return templates.TemplateResponse(request, "success.html", order.get("results", {}))
-
-    if not session or session.payment_status != "paid":
-        return HTMLResponse("<p>Payment not completed.</p>", status_code=402)
-
-    order_ref.set({"status": "paid"}, merge=True)
-
-    base_url = str(request.base_url)
-    context = await process_paid_order(resolved_order_id, base_url, background_tasks)
-
-    return templates.TemplateResponse(request, "success.html", context)
+    return templates.TemplateResponse(request, "status.html", {
+        "order_id": order_id,
+        "state": state,
+        "state_message": STATE_MESSAGES.get(state, ""),
+        "ORDER_STATES": ORDER_STATES,
+        "business_name": order.get("business_name"),
+        "full_name": order.get("full_name"),
+        "name_check": order.get("name_check"),
+        "filing_error": order.get("filing_error"),
+        "ein_error": order.get("ein_error"),
+        "asset_generation_error": order.get("asset_generation_error"),
+        "ein": order.get("ein"),
+        "website_url": order.get("website_url"),
+        "pdf_filename": order.get("pdf_filename"),
+        "name_result": order.get("name_result"),
+        "brand_result": order.get("brand_result"),
+        "marketing_result": order.get("marketing_result"),
+        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
+    })
 
 @app.get("/cancel")
 async def cancel():
@@ -400,9 +436,44 @@ async def connect_onboard(request: Request, order_id: str):
     url = create_account_link(
         order["stripe_connect_account_id"],
         refresh_url=f"{base_url}connect/onboard/{order_id}",
-        return_url=f"{base_url}success?order_id={order_id}",
+        return_url=f"{base_url}status/{order_id}",
     )
     return RedirectResponse(url=url)
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, authorized: bool = Depends(verify_admin)):
+    orders = []
+    query = db.collection("orders").order_by("created_at", direction=firestore.Query.DESCENDING)
+    for doc in query.stream():
+        order = doc.to_dict()
+        order["id"] = doc.id
+        orders.append(order)
+
+    return templates.TemplateResponse(request, "admin.html", {
+        "orders": orders,
+    })
+
+@app.post("/admin/{order_id}/approve")
+async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    db.collection("orders").document(order_id).set({"state": "review_approved"}, merge=True)
+    background_tasks.add_task(run_scc_and_ein_filing, order_id)
+    return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/admin/{order_id}/mark-filed")
+async def admin_mark_filed(order_id: str, authorized: bool = Depends(verify_admin)):
+    db.collection("orders").document(order_id).set({
+        "state": "filing_confirmed", "filing_error": firestore.DELETE_FIELD,
+    }, merge=True)
+    return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/admin/{order_id}/mark-ein")
+async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
+    db.collection("orders").document(order_id).set({
+        "ein": ein, "state": "ein_issued",
+        "ein_error": firestore.DELETE_FIELD, "asset_generation_error": firestore.DELETE_FIELD,
+    }, merge=True)
+    background_tasks.add_task(run_asset_generation, order_id)
+    return RedirectResponse(url="/admin", status_code=303)
 
 @app.get("/download-pdf/{filename}")
 async def download_pdf(filename: str):

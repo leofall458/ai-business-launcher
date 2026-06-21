@@ -17,3 +17,5 @@ FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "ai-biz-launcher")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")

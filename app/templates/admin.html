@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Launch Bridge LLC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen py-10">
+    <div class="max-w-4xl mx-auto p-6">
+
+        <div class="mb-8">
+            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-1">Launch Bridge LLC</p>
+            <h1 class="text-2xl font-bold">Admin Dashboard</h1>
+            <p class="text-gray-500 text-sm mt-1">{{ orders|length }} order{{ "s" if orders|length != 1 else "" }}</p>
+        </div>
+
+        <div class="space-y-5">
+        {% for order in orders %}
+            <div class="bg-gray-900 border border-gray-700 rounded-xl p-5">
+                <div class="flex items-start justify-between mb-3 gap-3">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">{{ order.business_name or "(no business name)" }}</h2>
+                        <p class="text-xs text-gray-500 font-mono">{{ order.id }}</p>
+                    </div>
+                    <span class="shrink-0 bg-blue-900 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
+                        {{ order.state|default("draft") }}
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-sm text-gray-300 mb-4">
+                    <p>Name: <span class="text-white">{{ order.full_name }}</span></p>
+                    <p>Email: <span class="text-white">{{ order.email }}</span></p>
+                    <p>Phone: <span class="text-white">{{ order.phone }}</span></p>
+                    <p>County: <span class="text-white">{{ order.county }}</span></p>
+                    {% if order.ein %}
+                    <p>EIN: <span class="text-white font-mono">{{ order.ein }}</span></p>
+                    {% endif %}
+                </div>
+
+                {% if order.name_check and not order.name_check.available %}
+                <div class="bg-yellow-950 border border-yellow-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-yellow-300">⚠️ Name check: {{ order.name_check.message }}</p>
+                </div>
+                {% endif %}
+
+                {% if order.filing_error %}
+                <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-red-300">⚠️ Filing error: {{ order.filing_error }}</p>
+                </div>
+                {% endif %}
+
+                {% if order.ein_error %}
+                <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-red-300">⚠️ EIN error: {{ order.ein_error }}</p>
+                </div>
+                {% endif %}
+
+                {% if order.asset_generation_error %}
+                <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-red-300">⚠️ Asset generation error: {{ order.asset_generation_error }}</p>
+                </div>
+                {% endif %}
+
+                <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800">
+                    <form method="post" action="/admin/{{ order.id }}/approve">
+                        <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                            Approve → File with SCC
+                        </button>
+                    </form>
+
+                    <form method="post" action="/admin/{{ order.id }}/mark-filed">
+                        <button type="submit"
+                            class="bg-green-700 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                            Mark as Filed
+                        </button>
+                    </form>
+
+                    <form method="post" action="/admin/{{ order.id }}/mark-ein" class="flex gap-2">
+                        <input name="ein" type="text" placeholder="XX-XXXXXXX" value="{{ order.ein or '' }}"
+                            class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-32"/>
+                        <button type="submit"
+                            class="bg-yellow-700 hover:bg-yellow-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
+                            Mark EIN Received
+                        </button>
+                    </form>
+
+                    <a href="/status/{{ order.id }}" target="_blank"
+                        class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition self-center">
+                        View Customer Status →
+                    </a>
+                </div>
+            </div>
+        {% else %}
+            <p class="text-gray-500 text-sm">No orders yet.</p>
+        {% endfor %}
+        </div>
+
+    </div>
+</body>
+</html>

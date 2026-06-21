@@ -30,21 +30,23 @@ def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id)
 
 def create_connect_account(email: str, first_name: str, last_name: str, business_name: str, multi_member: bool):
-    """Express account for the customer, pre-filled as an LLC. Stripe's
+    """Standard account for the customer, pre-filled as an LLC. Stripe's
     company.structure enum is what actually encodes "LLC" (there's no
     bare business_type value for it - business_type is the broader
     "company" vs "individual" split).
 
-    Uses the newer Accounts v2 controller shape instead of the legacy
-    type="express" field - platforms set up under Stripe's current
-    Connect onboarding are provisioned for the controller model, and
-    type="express" fails there with a misleading "you haven't signed up
-    for Connect" error."""
+    Standard accounts are full, independent Stripe accounts the customer
+    owns and manages themselves (their own dashboard, their own fees and
+    chargeback liability) - the platform just gets API access via
+    stripe_account, vs. Express where the platform manages billing/payouts
+    on the customer's behalf. Uses the Accounts v2 controller shape since
+    this platform's Connect setup is provisioned for that model - the
+    legacy type="standard" field fails the same way type="express" did."""
     return stripe.Account.create(
         controller={
-            "stripe_dashboard": {"type": "express"},
-            "fees": {"payer": "application"},
-            "losses": {"payments": "application"},
+            "stripe_dashboard": {"type": "full"},
+            "fees": {"payer": "account"},
+            "losses": {"payments": "stripe"},
         },
         country="US",
         email=email,
@@ -57,10 +59,6 @@ def create_connect_account(email: str, first_name: str, last_name: str, business
             "email": email,
             "first_name": first_name,
             "last_name": last_name,
-        },
-        capabilities={
-            "card_payments": {"requested": True},
-            "transfers": {"requested": True},
         },
     )
 

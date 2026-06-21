@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Status - Launch Bridge LLC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen py-12">
+    <div class="max-w-2xl mx-auto p-8 space-y-6">
+
+        <div class="text-center mb-2">
+            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Launch Bridge LLC</p>
+            <h1 class="text-3xl font-bold">{{ business_name }}</h1>
+            <p class="text-gray-500 text-sm mt-1">{{ full_name }} · Virginia</p>
+        </div>
+
+        <!-- Status banner -->
+        <div class="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-6 border border-blue-700">
+            <p class="text-xs font-semibold tracking-widest uppercase text-blue-300 mb-2">Current Status</p>
+            <h2 class="text-xl font-bold mb-2">{{ state.replace("_", " ").title() }}</h2>
+            <p class="text-blue-200 text-sm leading-relaxed">{{ state_message }}</p>
+        </div>
+
+        {% if filing_error %}
+        <div class="bg-red-950 border border-red-800 rounded-xl p-4">
+            <p class="text-sm text-red-300">⚠️ {{ filing_error }}</p>
+        </div>
+        {% endif %}
+
+        {% if ein_error %}
+        <div class="bg-red-950 border border-red-800 rounded-xl p-4">
+            <p class="text-sm text-red-300">⚠️ {{ ein_error }}</p>
+        </div>
+        {% endif %}
+
+        {% if asset_generation_error %}
+        <div class="bg-red-950 border border-red-800 rounded-xl p-4">
+            <p class="text-sm text-red-300">⚠️ {{ asset_generation_error }}</p>
+        </div>
+        {% endif %}
+
+        {% if name_check and not name_check.available %}
+        <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-4">
+            <p class="text-sm text-yellow-300">⚠️ {{ name_check.message }} Our team will reach out about choosing a different name.</p>
+        </div>
+        {% endif %}
+
+        {% if ein %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-yellow-700">
+            <h3 class="text-lg font-semibold text-yellow-400 mb-2">🔢 Your EIN</h3>
+            <p class="text-2xl font-mono text-white">{{ ein }}</p>
+        </div>
+        {% endif %}
+
+        {% if onboarding_url %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-indigo-700">
+            <h3 class="text-lg font-semibold text-indigo-400 mb-3">💳 Get Paid By Your Customers</h3>
+            <p class="text-sm text-gray-400 mb-4">Set up your own Stripe account so customers can pay you directly — including through the Pay Now button already on your new website.</p>
+            <a href="{{ onboarding_url }}"
+               class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition">
+                Set Up Your Payment Account →
+            </a>
+        </div>
+        {% endif %}
+
+        {% if website_url %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-green-700">
+            <h3 class="text-lg font-semibold text-green-400 mb-3">🌐 Your Business Website is Live!</h3>
+            <a href="{{ website_url }}" target="_blank"
+               class="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition mb-2 break-all">
+                {{ website_url }} →
+            </a>
+            <p class="text-xs text-gray-500 text-center">Custom-generated for {{ business_name }} based on your business details</p>
+        </div>
+        {% endif %}
+
+        {% if pdf_filename %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-purple-700">
+            <h3 class="text-lg font-semibold text-purple-400 mb-3">📄 Your LLC Documents</h3>
+            <a href="/download-pdf/{{ pdf_filename }}"
+               class="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition mb-2">
+                ⬇️ Download Signed LLC Package (PDF)
+            </a>
+            <p class="text-xs text-gray-500 text-center">Articles of Organization · Operating Agreement · Filing Instructions · Post-Filing Checklist</p>
+        </div>
+        {% endif %}
+
+        {% if name_result %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-blue-700">
+            <h3 class="text-lg font-semibold text-blue-400 mb-3">💡 Additional Name Ideas (for reference)</h3>
+            <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ name_result.result }}</div>
+        </div>
+        {% endif %}
+
+        {% if brand_result %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-pink-700">
+            <h3 class="text-lg font-semibold text-pink-400 mb-3">🎨 Your Brand Kit</h3>
+            <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ brand_result.result }}</div>
+        </div>
+        {% endif %}
+
+        {% if marketing_result %}
+        <div class="bg-gray-800 rounded-xl p-6 border border-orange-700">
+            <h3 class="text-lg font-semibold text-orange-400 mb-3">📣 Your 30-Day Marketing Plan</h3>
+            <div class="text-gray-300 whitespace-pre-wrap leading-relaxed text-sm">{{ marketing_result.result }}</div>
+        </div>
+        {% endif %}
+
+        <p class="text-xs text-gray-600 text-center pt-2">Bookmark this page — it always shows your latest status. Questions? Email support@launchbridge.com</p>
+
+        <div class="text-center mt-8 pt-6 border-t border-gray-800">
+            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
+                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
+                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
+                Not legal advice
+            </p>
+        </div>
+
+    </div>
+</body>
+</html>
