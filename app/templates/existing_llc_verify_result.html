@@ -1,0 +1,7 @@
+{% if result.exists == True %}
+<p class="text-sm text-green-400">✅ {{ business_name }} found in Virginia SCC records</p>
+{% elif result.exists == False %}
+<p class="text-sm text-red-400">⚠️ We could not find this LLC in the Virginia SCC database. Please double check the name or uncheck this box to form a new LLC.</p>
+{% else %}
+<p class="text-sm text-yellow-400">⚠️ {{ result.message }}</p>
+{% endif %}

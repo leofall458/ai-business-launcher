@@ -1,11 +1,8 @@
-import os
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
+from app.secrets import get_secret
 
-load_dotenv()
-
-SCC_USERNAME = os.getenv("SCC_USERNAME")
-SCC_PASSWORD = os.getenv("SCC_PASSWORD")
+SCC_USERNAME = get_secret("SCC_USERNAME")
+SCC_PASSWORD = get_secret("SCC_PASSWORD")
 
 def check_name_on_scc(business_name: str) -> dict:
     try:
@@ -83,4 +80,62 @@ def check_name_on_scc(business_name: str) -> dict:
             "message": f"Could not connect to Virginia SCC: {str(e)}",
             "conflicts": [],
             "raw": ""
+        }
+
+def check_llc_exists_on_scc(business_name: str) -> dict:
+    """Verifies an LLC a customer claims to already have is actually on the
+    Virginia SCC's public Business Entity Search - used when a customer
+    checks "I already have a Virginia LLC" on the intake form, so we don't
+    skip formation for a business that was never really filed. This is a
+    distinct question from check_name_on_scc's "is this name available to
+    register" - here we want an exact match to confirm existence, not a
+    distinguishability check against similar names."""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp("http://172.27.176.1:9222")
+            context = browser.contexts[0]
+            page = context.new_page()
+
+            page.goto("https://cis.scc.virginia.gov/Account/Login")
+            page.wait_for_load_state("networkidle")
+            if page.locator('#txtUsername').count() > 0:
+                page.fill('#txtUsername', SCC_USERNAME)
+                page.fill('#txtPassword', SCC_PASSWORD)
+                page.click('#Login')
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
+
+            page.goto("https://cis.scc.virginia.gov/EntitySearch/Index")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(1500)
+            page.select_option('#BEFilingSearch_ddlSearchLogic', value='3')  # Exact Match
+            page.fill('#BusinessSearch_Index_txtBusinessName', business_name)
+            page.wait_for_timeout(300)
+            page.click('#btnSearch')
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(2000)
+
+            body = page.inner_text("body")
+            page.close()
+
+            if "no records found" in body.lower():
+                return {
+                    "exists": False,
+                    "message": f'We could not find this LLC in the Virginia SCC database. Please double check the name or uncheck this box to form a new LLC.',
+                }
+
+            if business_name.lower() in body.lower():
+                return {
+                    "exists": True,
+                    "message": f'{business_name} found in Virginia SCC records',
+                }
+
+            return {
+                "exists": None,
+                "message": "Could not determine whether this LLC exists. Please check the Virginia SCC website directly.",
+            }
+    except Exception as e:
+        return {
+            "exists": None,
+            "message": f"Could not connect to Virginia SCC: {str(e)}",
         }

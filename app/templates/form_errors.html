@@ -1,0 +1,21 @@
+<!-- Delivered entirely via hx-swap-oob - the intake form itself is never
+     swapped, so whatever the customer already typed stays exactly as is.
+     Each field gets its own OOB span (cleared to empty if that field is now
+     valid), plus one OOB summary box pinned above the form. -->
+
+<div id="form-top-errors" hx-swap-oob="true">
+{% if errors %}
+    <div class="bg-red-950 border border-red-700 rounded-xl p-4 mb-6">
+        <p class="text-sm font-semibold text-red-300 mb-2">⚠️ Please fix the following before continuing:</p>
+        <ul class="text-xs text-red-300 list-disc list-inside space-y-1">
+        {% for field, message in errors.items() %}
+            <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+</div>
+
+{% for field in all_fields %}
+<span id="error-{{ field }}" hx-swap-oob="true" class="text-red-400 text-xs mt-1 block">{{ errors.get(field, "") }}</span>
+{% endfor %}

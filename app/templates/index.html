@@ -12,8 +12,8 @@
 
         <!-- Header -->
         <div class="text-center mb-10">
-            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Launch Bridge LLC</p>
-            <h1 class="text-4xl font-bold mb-2">AI Business Launcher</h1>
+            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Business Launcher</p>
+            <h1 class="text-4xl font-bold mb-2">Launch Bridge LLC</h1>
             <p class="text-gray-400 mb-3">From idea to operating Virginia LLC in 72 hours.</p>
             <div class="inline-block bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">🏛️ Virginia LLCs Only · $350 flat fee, all inclusive</div>
         </div>
@@ -72,7 +72,8 @@
         </div>
 
         <!-- Main Intake Form -->
-        <form hx-post="/launch" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner">
+        <div id="form-top-errors"></div>
+        <form hx-post="/launch" hx-target="#result" hx-swap="innerHTML" hx-indicator="#spinner" hx-encoding="multipart/form-data" enctype="multipart/form-data">
 
             <!-- SECTION A: Personal Info -->
             <div class="mb-8">
@@ -82,6 +83,7 @@
                         <label class="block text-xs text-gray-400 mb-1">First Name *</label>
                         <input name="first_name" type="text" placeholder="John" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-first_name" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">Middle Name</label>
@@ -92,6 +94,7 @@
                         <label class="block text-xs text-gray-400 mb-1">Last Name *</label>
                         <input name="last_name" type="text" placeholder="Smith" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-last_name" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3 mb-3">
@@ -99,11 +102,13 @@
                         <label class="block text-xs text-gray-400 mb-1">Email Address *</label>
                         <input name="email" type="email" placeholder="john@example.com" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-email" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">Phone Number *</label>
                         <input name="phone" type="tel" placeholder="(703) 555-0100" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-phone" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3 mb-3">
@@ -111,22 +116,26 @@
                         <label class="block text-xs text-gray-400 mb-1">Date of Birth *</label>
                         <input name="dob" type="date" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-dob" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">ZIP Code *</label>
                         <input name="zipcode" type="text" placeholder="22201" required
                             class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                        <span id="error-zipcode" class="text-red-400 text-xs mt-1 block"></span>
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">Virginia Street Address *</label>
                     <input name="address" type="text" placeholder="123 Main Street" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    <span id="error-address" class="text-red-400 text-xs mt-1 block"></span>
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">City/Town *</label>
                     <input name="city" type="text" placeholder="Arlington" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    <span id="error-city" class="text-red-400 text-xs mt-1 block"></span>
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">County *</label>
@@ -135,32 +144,70 @@
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
                 </div>
 
-                <!-- SSN Field -->
+                <!-- EIN Section -->
                 <div class="bg-gray-900 border border-gray-600 rounded-lg p-4">
-                    <label class="block text-xs text-yellow-400 font-semibold mb-1">🔒 Social Security Number *</label>
-                    <p class="text-xs text-gray-500 mb-2">Required for EIN application. Never stored in our database. See our <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.</p>
-                    <input name="ssn" type="password" placeholder="XXX-XX-XXXX" required
-                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest"/>
+                    <label class="flex items-start gap-3 mb-3 cursor-pointer">
+                        <input type="checkbox" id="skip_ein" name="skip_ein"
+                            onchange="toggleSkipEIN()"
+                            class="mt-1 w-4 h-4 accent-yellow-500"/>
+                        <span class="text-sm font-semibold text-white">I already have an EIN — skip EIN application</span>
+                    </label>
+
+                    <div id="ssn-field">
+                        <label class="block text-xs text-yellow-400 font-semibold mb-1">🔒 Social Security Number *</label>
+                        <p class="text-xs text-gray-500 mb-2">Required for EIN application. Never stored in our database. See our <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.</p>
+                        <input id="ssn_input" name="ssn" type="password" placeholder="XXX-XX-XXXX" required
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest"/>
+                        <span id="error-ssn" class="text-red-400 text-xs mt-1 block"></span>
+                    </div>
+
+                    <div id="existing-ein-field" class="hidden">
+                        <label class="block text-xs text-yellow-400 font-semibold mb-1">Your existing EIN *</label>
+                        <input id="existing_ein_input" name="existing_ein" type="text" placeholder="XX-XXXXXXX"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest"/>
+                        <span id="error-existing_ein" class="text-red-400 text-xs mt-1 block"></span>
+                    </div>
                 </div>
             </div>
 
             <!-- SECTION B: Business Info -->
             <div class="mb-8">
                 <h2 class="text-lg font-semibold text-green-400 mb-4 pb-2 border-b border-gray-700">B · Your Business</h2>
+
+                <label class="flex items-start gap-3 bg-gray-900 border border-green-700 rounded-lg p-4 mb-4 cursor-pointer">
+                    <input type="checkbox" id="skip_llc_formation" name="skip_llc_formation"
+                        onchange="toggleSkipLLC()"
+                        class="mt-1 w-4 h-4 accent-green-500"/>
+                    <span class="text-sm font-semibold text-white">I already have a Virginia LLC — skip formation</span>
+                </label>
+
                 <div class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">Business Idea / Description *</label>
                     <textarea name="business_idea" rows="3" required
                         placeholder="e.g. A mobile dog grooming service for busy professionals in Northern Virginia"
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"></textarea>
                 </div>
-                <div class="mb-3">
+
+                <div id="new-llc-name-field" class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">Chosen Business Name (include LLC) *</label>
-                    <input name="desired_name" type="text" placeholder="e.g. Executive Paws LLC" required
+                    <input id="desired_name_input" name="desired_name" type="text" placeholder="e.g. Executive Paws LLC" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                    <span id="error-desired_name" class="text-red-400 text-xs mt-1 block"></span>
                 </div>
-                <div class="mb-3">
+
+                <div id="existing-llc-name-field" class="hidden mb-3">
+                    <label class="block text-xs text-gray-400 mb-1">Your existing LLC name *</label>
+                    <input id="existing_llc_name_input" name="existing_llc_name" type="text" placeholder="e.g. Executive Paws LLC"
+                        hx-post="/verify-existing-llc" hx-trigger="blur changed delay:500ms" hx-target="#existing-llc-verify-result" hx-swap="innerHTML" hx-indicator="#existing-llc-verify-spinner"
+                        class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                    <span id="error-existing_llc_name" class="text-red-400 text-xs mt-1 block"></span>
+                    <div id="existing-llc-verify-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Checking Virginia SCC records...</div>
+                    <div id="existing-llc-verify-result" class="mt-2"></div>
+                </div>
+
+                <div id="business-purpose-field" class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">Business Purpose (one sentence) *</label>
-                    <input name="business_purpose" type="text" placeholder="e.g. Mobile pet grooming services for residential customers" required
+                    <input id="business_purpose_input" name="business_purpose" type="text" placeholder="e.g. Mobile pet grooming services for residential customers" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
                 </div>
                 <div class="mb-3">
@@ -168,7 +215,7 @@
                     <input name="target_customer" type="text" placeholder="e.g. Busy professionals in Northern Virginia with dogs" required
                         class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
                 </div>
-                <div class="mb-3">
+                <div id="industry-code-field" class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">Industry Code *</label>
                     <select name="industry_code"
                         class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-green-500 focus:outline-none text-sm">
@@ -178,7 +225,7 @@
                         <option value="65">65 - Churches and Religious Denominations</option>
                     </select>
                 </div>
-                <div class="mb-3">
+                <div id="duration-field" class="mb-3">
                     <label class="block text-xs text-gray-400 mb-1">LLC Duration *</label>
                     <select name="duration"
                         class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-green-500 focus:outline-none text-sm">
@@ -186,20 +233,39 @@
                         <option value="Fixed">Fixed Term (specify end date)</option>
                     </select>
                 </div>
-                <div class="mb-3">
-                    <label class="block text-xs text-gray-400 mb-1">Website Style</label>
-                    <select name="template_style"
-                        class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-green-500 focus:outline-none text-sm">
-                        <option value="auto">Let AI choose (recommended)</option>
-                        <option value="professional">Professional — clean, corporate (consultants, services, finance)</option>
-                        <option value="local">Local Business — warm, community feel (restaurants, retail, home services)</option>
-                        <option value="modern">Modern — bold, startup feel (tech, creative, online businesses)</option>
-                    </select>
+            </div>
+
+            <!-- SECTION B.5: Registered Agent -->
+            <div id="registered-agent-section" class="mb-8">
+                <h2 class="text-lg font-semibold text-purple-400 mb-4 pb-2 border-b border-gray-700">Registered Agent</h2>
+
+                <label class="flex items-start gap-3 bg-gray-900 border border-purple-700 rounded-lg p-4 mb-3 cursor-pointer">
+                    <input type="radio" name="registered_agent_choice" value="launchbridge" checked
+                        onchange="toggleSelfRANotice()"
+                        class="mt-1 w-4 h-4 accent-purple-500"/>
+                    <span>
+                        <span class="block text-sm font-semibold text-white">Use Launch Bridge as your Registered Agent (Recommended)</span>
+                        <span class="block text-xs text-gray-400 mt-1">Leo Fall will serve as your registered agent. We will handle all legal correspondence on your behalf. Included in your $350 fee.</span>
+                    </span>
+                </label>
+
+                <label class="flex items-start gap-3 bg-gray-900 border border-gray-700 rounded-lg p-4 mb-3 cursor-pointer">
+                    <input type="radio" name="registered_agent_choice" value="self"
+                        onchange="toggleSelfRANotice()"
+                        class="mt-1 w-4 h-4 accent-purple-500"/>
+                    <span>
+                        <span class="block text-sm font-semibold text-white">I will be my own Registered Agent</span>
+                        <span class="block text-xs text-gray-400 mt-1">You must be a Virginia resident and available during business hours to receive legal documents at your address.</span>
+                    </span>
+                </label>
+
+                <div id="self-ra-notice" class="hidden bg-yellow-950 border border-yellow-700 rounded-lg p-4">
+                    <p class="text-xs text-yellow-300">By choosing this option you confirm you are a Virginia resident and will be available at your provided address during business hours to receive legal and government documents.</p>
                 </div>
             </div>
 
             <!-- SECTION C: Signatures -->
-            <div class="mb-8">
+            <div id="signatures-section" class="mb-8">
                 <h2 class="text-lg font-semibold text-yellow-400 mb-4 pb-2 border-b border-gray-700">C · Member Signatures</h2>
                 <p class="text-xs text-gray-400 mb-4">By signing below all members authorize filing of this Virginia LLC. Electronic signatures are legally valid under the E-SIGN Act.</p>
 
@@ -208,7 +274,7 @@
                     <div class="grid grid-cols-3 gap-3">
                         <div>
                             <label class="block text-xs text-gray-400 mb-1">First Name *</label>
-                            <input name="sig_first" type="text" placeholder="John" required
+                            <input id="sig_first_input" name="sig_first" type="text" placeholder="John" required
                                 class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-yellow-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
                         </div>
                         <div>
@@ -218,7 +284,7 @@
                         </div>
                         <div>
                             <label class="block text-xs text-gray-400 mb-1">Last Name *</label>
-                            <input name="sig_last" type="text" placeholder="Smith" required
+                            <input id="sig_last_input" name="sig_last" type="text" placeholder="Smith" required
                                 class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-yellow-600 focus:border-yellow-400 focus:outline-none text-sm font-serif italic"/>
                         </div>
                     </div>
@@ -232,6 +298,124 @@
                 </button>
             </div>
 
+            <!-- SECTION D: Website Customization -->
+            <div id="website-section" class="mb-8">
+                <button type="button" onclick="toggleWebsiteSection()"
+                    class="w-full flex items-center justify-between text-lg font-semibold text-cyan-400 mb-4 pb-2 border-b border-gray-700">
+                    <span>🌐 Customize Your Website (Optional)</span>
+                    <span id="website-section-chevron" class="text-sm transition-transform">▾</span>
+                </button>
+
+                <div id="website-section-content" class="hidden">
+                    <p class="text-xs text-gray-400 mb-4">Everything here is optional — leave anything blank and our AI will fill it in for you based on your business idea.</p>
+
+                    <!-- Template Selection -->
+                    <div class="mb-5">
+                        <label class="block text-xs text-gray-400 mb-2">Website Template</label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <label class="template-card cursor-pointer rounded-lg border-2 border-cyan-500 bg-gray-900 p-3 text-center" data-value="professional">
+                                <input type="radio" name="website_template" value="professional" checked onchange="updateTemplateCardStyles()" class="hidden"/>
+                                <div class="h-10 w-full rounded mb-2 bg-gradient-to-r from-slate-700 to-slate-400"></div>
+                                <p class="text-sm font-semibold text-white">Professional</p>
+                                <p class="text-xs text-gray-500 mt-1">Clean corporate look — consultants, lawyers, finance, services</p>
+                            </label>
+                            <label class="template-card cursor-pointer rounded-lg border-2 border-gray-700 bg-gray-900 p-3 text-center" data-value="local">
+                                <input type="radio" name="website_template" value="local" onchange="updateTemplateCardStyles()" class="hidden"/>
+                                <div class="h-10 w-full rounded mb-2 bg-gradient-to-r from-orange-400 to-amber-200"></div>
+                                <p class="text-sm font-semibold text-white">Local Business</p>
+                                <p class="text-xs text-gray-500 mt-1">Warm friendly feel — restaurants, retail, home services, trades</p>
+                            </label>
+                            <label class="template-card cursor-pointer rounded-lg border-2 border-gray-700 bg-gray-900 p-3 text-center" data-value="modern">
+                                <input type="radio" name="website_template" value="modern" onchange="updateTemplateCardStyles()" class="hidden"/>
+                                <div class="h-10 w-full rounded mb-2 bg-gradient-to-r from-gray-900 to-fuchsia-500"></div>
+                                <p class="text-sm font-semibold text-white">Modern</p>
+                                <p class="text-xs text-gray-500 mt-1">Bold startup feel — tech, creative, online businesses</p>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Tagline -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Business Tagline</label>
+                        <input name="website_tagline" type="text" placeholder="e.g. Premium grooming for busy pet owners"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                        <p class="text-xs text-gray-500 mt-1">Leave blank and AI will generate one for you.</p>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Business Description</label>
+                        <textarea name="website_description" rows="3"
+                            placeholder="Describe your business in a few sentences. What do you do? Who do you serve? What makes you special?"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">Leave blank and AI will generate one for you.</p>
+                    </div>
+
+                    <!-- Services -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-2">Services / Products (up to 3, optional — AI fills any you leave blank)</label>
+                        {% for i in [1, 2, 3] %}
+                        <div class="grid grid-cols-2 gap-3 mb-2">
+                            <input name="service_{{ i }}_name" type="text" placeholder="Service {{ i }} name"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                            <input name="service_{{ i }}_desc" type="text" placeholder="Short description"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Business Hours -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Business Hours (optional)</label>
+                        <input name="business_hours" type="text" placeholder="e.g. Monday-Friday 9am-5pm, Saturday 10am-3pm"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                    </div>
+
+                    <!-- Photo Upload -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Upload photos of your business, products, or team (optional)</label>
+                        <p class="text-xs text-gray-500 mb-2">Up to 3 photos · JPG, PNG, or WEBP · Max 5MB each</p>
+                        <div class="grid grid-cols-3 gap-3">
+                            {% for i in [1, 2, 3] %}
+                            <div>
+                                <input name="photo_{{ i }}" type="file" accept="image/jpeg,image/png,image/webp"
+                                    class="w-full text-xs text-gray-300 bg-gray-800 rounded-lg p-2 border border-gray-700"/>
+                                <span id="error-photo_{{ i }}" class="text-red-400 text-xs mt-1 block"></span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Social Media -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-2">Social Media Links (optional)</label>
+                        <div class="space-y-2">
+                            <input name="instagram_url" type="url" placeholder="Instagram URL"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                            <input name="facebook_url" type="url" placeholder="Facebook URL"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                            <input name="tiktok_url" type="url" placeholder="TikTok URL"
+                                class="w-full bg-gray-800 rounded-lg p-2 text-white placeholder-gray-500 border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm"/>
+                        </div>
+                    </div>
+
+                    <!-- Color Preference -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Website Color Preference (optional)</label>
+                        <select name="color_preference" onchange="toggleColorPicker()"
+                            class="w-full bg-gray-800 rounded-lg p-3 text-white border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm">
+                            <option value="default">Use template default colors</option>
+                            <option value="brand_kit">Use my brand kit colors (AI generated)</option>
+                            <option value="custom">Custom primary color</option>
+                        </select>
+                        <div id="custom-color-field" class="hidden mt-2">
+                            <input name="custom_primary_color" type="color" value="#1A4D8F"
+                                class="h-10 w-20 bg-gray-800 rounded-lg border border-gray-700"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Terms Checkbox -->
             <div class="mb-6 bg-gray-900 border border-gray-700 rounded-lg p-4">
                 <label class="flex items-start gap-3 cursor-pointer">
@@ -239,6 +423,10 @@
                         class="mt-1 w-4 h-4 accent-blue-500"/>
                     <span class="text-xs text-gray-300">I have read and agree to the <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a> and <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>. I authorize Launch Bridge LLC to file my Virginia LLC and apply for my EIN on my behalf.</span>
                 </label>
+            </div>
+
+            <div id="pricing-note" class="hidden bg-blue-950 border border-blue-700 rounded-lg p-3 mb-4">
+                <p class="text-xs text-blue-300"></p>
             </div>
 
             <!-- Submit -->
@@ -249,6 +437,23 @@
             <p class="text-xs text-gray-500 text-center mt-2">$350 flat fee, all inclusive · Secure payment via Stripe · We file on your behalf within 24 hours of payment</p>
 
         </form>
+
+        <!-- Confirmation Modal -->
+        <div id="confirm-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div class="bg-gray-900 border border-yellow-700 rounded-xl p-6 max-w-md w-full">
+                <div id="confirm-modal-body" class="text-sm text-gray-200 space-y-3 mb-5 whitespace-pre-line"></div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="confirmModalNo()"
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-lg transition">
+                        No, go back
+                    </button>
+                    <button type="button" onclick="confirmModalYes()"
+                        class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 rounded-lg transition">
+                        Yes, continue
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <div id="spinner" class="htmx-indicator text-center mt-8 text-gray-400">
             <p class="text-lg">🔒 Redirecting you to secure payment...</p>
@@ -268,6 +473,112 @@
     </div>
 
     <script>
+        function toggleSelfRANotice() {
+            const isSelf = document.querySelector('input[name="registered_agent_choice"]:checked').value === 'self';
+            document.getElementById('self-ra-notice').classList.toggle('hidden', !isSelf);
+        }
+
+        function toggleSkipLLC() {
+            const skip = document.getElementById('skip_llc_formation').checked;
+            document.getElementById('new-llc-name-field').classList.toggle('hidden', skip);
+            document.getElementById('existing-llc-name-field').classList.toggle('hidden', !skip);
+            document.getElementById('business-purpose-field').classList.toggle('hidden', skip);
+            document.getElementById('industry-code-field').classList.toggle('hidden', skip);
+            document.getElementById('duration-field').classList.toggle('hidden', skip);
+            document.getElementById('registered-agent-section').classList.toggle('hidden', skip);
+            document.getElementById('signatures-section').classList.toggle('hidden', skip);
+
+            document.getElementById('desired_name_input').required = !skip;
+            document.getElementById('existing_llc_name_input').required = skip;
+            document.getElementById('business_purpose_input').required = !skip;
+            document.getElementById('sig_first_input').required = !skip;
+            document.getElementById('sig_last_input').required = !skip;
+
+            updatePricingNote();
+        }
+
+        function toggleSkipEIN() {
+            const skip = document.getElementById('skip_ein').checked;
+            document.getElementById('ssn-field').classList.toggle('hidden', skip);
+            document.getElementById('existing-ein-field').classList.toggle('hidden', !skip);
+
+            document.getElementById('ssn_input').required = !skip;
+            document.getElementById('existing_ein_input').required = skip;
+
+            updatePricingNote();
+        }
+
+        function updatePricingNote() {
+            const skipLLC = document.getElementById('skip_llc_formation').checked;
+            const skipEIN = document.getElementById('skip_ein').checked;
+            const note = document.getElementById('pricing-note');
+            const text = note.querySelector('p');
+            if (!skipLLC && !skipEIN) {
+                note.classList.add('hidden');
+                return;
+            }
+            const lines = [];
+            if (skipLLC) lines.push('LLC formation not included — your existing LLC will not be filed with the SCC.');
+            if (skipEIN) lines.push('EIN application not included — your existing EIN will be used instead.');
+            text.textContent = lines.join(' ') + ' Price remains $350 flat fee.';
+            note.classList.remove('hidden');
+        }
+
+        function buildConfirmMessage() {
+            const skipLLC = document.getElementById('skip_llc_formation').checked;
+            const skipEIN = document.getElementById('skip_ein').checked;
+            const parts = [];
+            if (skipLLC) {
+                parts.push(
+                    "⚠️ You indicated you already have a Virginia LLC.\n" +
+                    "- Your existing LLC will NOT be filed with the SCC\n" +
+                    "- You will still receive: brand kit, website, Stripe setup, and marketing plan\n" +
+                    "- The $350 fee still applies\n" +
+                    "Are you sure you want to skip LLC formation?"
+                );
+            }
+            if (skipEIN) {
+                const ein = document.getElementById('existing_ein_input').value.trim() || 'XX-XXXXXXX';
+                parts.push(
+                    "⚠️ You indicated you already have an EIN.\n" +
+                    "- Your EIN application will NOT be submitted to the IRS\n" +
+                    `- Make sure your EIN ${ein} is correct — it cannot be changed later\n` +
+                    "Are you sure you want to skip EIN application?"
+                );
+            }
+            return parts.join("\n\n");
+        }
+
+        let pendingIssueRequest = null;
+
+        function confirmModalYes() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+            if (pendingIssueRequest) pendingIssueRequest(true);
+            pendingIssueRequest = null;
+        }
+
+        function confirmModalNo() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+            pendingIssueRequest = null;
+        }
+
+        document.querySelector('form[hx-post="/launch"]').addEventListener('htmx:confirm', function (evt) {
+            // This listener sits on the main form, but htmx:confirm also
+            // fires (and bubbles through here) for nested elements with
+            // their own hx-post, like the existing-LLC-name field's live
+            // SCC verification - only intercept the form's own submission.
+            if (evt.detail.elt !== evt.currentTarget) return;
+
+            const skipLLC = document.getElementById('skip_llc_formation').checked;
+            const skipEIN = document.getElementById('skip_ein').checked;
+            if (!skipLLC && !skipEIN) return;
+
+            evt.preventDefault();
+            document.getElementById('confirm-modal-body').textContent = buildConfirmMessage();
+            document.getElementById('confirm-modal').classList.remove('hidden');
+            pendingIssueRequest = evt.detail.issueRequest;
+        });
+
         let memberCount = 1;
 
         function addMember() {
@@ -306,6 +617,26 @@
         function removeMember(id) {
             const el = document.getElementById(`member-${id}`);
             if (el) el.remove();
+        }
+
+        function toggleWebsiteSection() {
+            const content = document.getElementById('website-section-content');
+            const chevron = document.getElementById('website-section-chevron');
+            content.classList.toggle('hidden');
+            chevron.textContent = content.classList.contains('hidden') ? '▾' : '▴';
+        }
+
+        function updateTemplateCardStyles() {
+            document.querySelectorAll('.template-card').forEach(card => {
+                const selected = card.querySelector('input[type="radio"]').checked;
+                card.classList.toggle('border-cyan-500', selected);
+                card.classList.toggle('border-gray-700', !selected);
+            });
+        }
+
+        function toggleColorPicker() {
+            const isCustom = document.querySelector('select[name="color_preference"]').value === 'custom';
+            document.getElementById('custom-color-field').classList.toggle('hidden', !isCustom);
         }
     </script>
 </body>

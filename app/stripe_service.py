@@ -1,7 +1,15 @@
 import stripe
-from app.config import STRIPE_SECRET_KEY, LLC_FORMATION_PRICE_CENTS
+from app.config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS
 
 stripe.api_key = STRIPE_SECRET_KEY
+
+def construct_webhook_event(payload: bytes, sig_header: str):
+    """Verifies the Stripe-Signature header against the raw request body
+    and the webhook's signing secret - raises if the payload was tampered
+    with or didn't actually come from Stripe. Must be called with the raw
+    bytes (not re-serialized JSON), since the signature is computed over
+    the exact bytes Stripe sent."""
+    return stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
 
 def create_checkout_session(order_id: str, business_name: str, success_url: str, cancel_url: str):
     """Stripe Checkout Session for the flat-fee LLC formation package.
@@ -29,7 +37,7 @@ def create_checkout_session(order_id: str, business_name: str, success_url: str,
 def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id)
 
-def create_connect_account(email: str, first_name: str, last_name: str, business_name: str, multi_member: bool):
+def create_connect_account(email: str, business_name: str, multi_member: bool):
     """Standard account for the customer, pre-filled as an LLC. Stripe's
     company.structure enum is what actually encodes "LLC" (there's no
     bare business_type value for it - business_type is the broader
@@ -41,7 +49,12 @@ def create_connect_account(email: str, first_name: str, last_name: str, business
     stripe_account, vs. Express where the platform manages billing/payouts
     on the customer's behalf. Uses the Accounts v2 controller shape since
     this platform's Connect setup is provisioned for that model - the
-    legacy type="standard" field fails the same way type="express" did."""
+    legacy type="standard" field fails the same way type="express" did.
+
+    Stripe rejects a top-level `individual` block on business_type="company"
+    accounts - that field only exists for sole-proprietor (business_type=
+    "individual") accounts. The LLC's representative gets collected by
+    Stripe's own onboarding flow (see create_account_link) instead."""
     return stripe.Account.create(
         controller={
             "stripe_dashboard": {"type": "full"},
@@ -54,11 +67,6 @@ def create_connect_account(email: str, first_name: str, last_name: str, business
         company={
             "name": business_name,
             "structure": "multi_member_llc" if multi_member else "single_member_llc",
-        },
-        individual={
-            "email": email,
-            "first_name": first_name,
-            "last_name": last_name,
         },
     )
 
@@ -73,6 +81,16 @@ def create_account_link(account_id: str, refresh_url: str, return_url: str) -> s
         type="account_onboarding",
     )
     return link.url
+
+def is_account_active(account_id: str) -> bool:
+    """True once the customer has finished Stripe's onboarding and the
+    account can actually accept charges - used to tell "Complete Setup"
+    apart from "Active" on the status page."""
+    try:
+        account = stripe.Account.retrieve(account_id)
+        return bool(account.charges_enabled)
+    except Exception:
+        return False
 
 def create_pay_what_you_want_payment_link(connect_account_id: str, business_name: str) -> str:
     """A generic 'pay this business' link that settles directly to the

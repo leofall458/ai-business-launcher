@@ -1,0 +1,10 @@
+.venv
+.git
+__pycache__
+*.pyc
+.env
+scc_session.json
+*.png
+test_*.py
+check_*.py
+scc_filer_test.py

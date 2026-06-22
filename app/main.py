@@ -2,6 +2,7 @@ import os
 import secrets
 import asyncio
 import datetime
+from urllib.parse import quote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
@@ -11,23 +12,29 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
-from app.agents.scc_name_check import check_name_on_scc
+from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc
 from app.ein_filer import file_ein_with_irs
-from app.agents.website_agent import generate_website_content, render_website_html
+from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
+from app.secrets import preload as preload_secrets
+from app.agents.website_agent import generate_website
 from app.deployer import deploy_website
+from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
     create_checkout_session,
     retrieve_checkout_session,
     create_connect_account,
     create_account_link,
     create_pay_what_you_want_payment_link,
+    is_account_active,
+    construct_webhook_event,
 )
 from app.ssn_cache import stash as stash_ssn, peek as peek_ssn, discard as discard_ssn
+from app.validators import validate_intake_form, ALL_VALIDATED_FIELDS
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -35,6 +42,17 @@ templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
+
+@app.on_event("startup")
+async def on_startup():
+    preload_secrets()
+    # This scheduler drives the same local-Chrome Playwright automation as
+    # run_scc_filing/run_ein_filing - on a deployed server with no path to
+    # that browser (e.g. Cloud Run), it can only fail every 5 minutes and
+    # write a misleading "crashed unexpectedly" error onto real orders.
+    # Disable it there and rely on app/local_filing_poller.py instead.
+    if os.getenv("ENABLE_EIN_SCHEDULER", "true").lower() == "true":
+        asyncio.create_task(ein_queue_scheduler())
 
 # Canonical order of the order state machine. An order's "state" field is
 # always one of these. Progression is mostly linear, but filing_confirmed
@@ -46,19 +64,240 @@ ORDER_STATES = [
     "draft", "paid", "name_cleared", "review_approved", "filing_submitted",
     "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete",
 ]
+ORDER_STATE_INDEX = {s: i for i, s in enumerate(ORDER_STATES)}
+
+def reached(state: str, milestone: str) -> bool:
+    """True once an order's state has reached or passed the given
+    milestone - states only move forward, so an ordinal compare is enough."""
+    return ORDER_STATE_INDEX.get(state, 0) >= ORDER_STATE_INDEX[milestone]
 
 STATE_MESSAGES = {
     "draft": "We're waiting for your payment to go through.",
     "paid": "Payment received. We're checking your business name's availability with the Virginia State Corporation Commission.",
     "name_cleared": "Your business name is available. Your order is queued for review before we file.",
     "review_approved": "Your order has been approved and we're preparing your filing.",
-    "filing_submitted": "Your LLC paperwork has been submitted to the Virginia SCC and your EIN application is underway. SCC approval typically takes several business days - we don't control their timeline and can't promise an exact date.",
-    "filing_confirmed": "Your Virginia LLC has been officially approved by the SCC.",
-    "ein_requested": "Your EIN application has been submitted to the IRS.",
-    "ein_issued": "Your EIN has been issued. We're now generating your brand kit, marketing plan, and business website.",
+    "filing_submitted": "Your LLC paperwork has been submitted to the Virginia SCC. SCC approval typically takes several business days - we don't control their timeline and can't promise an exact date. Your EIN application will be filed with the IRS once that approval comes through.",
+    # filing_confirmed, ein_requested, and ein_issued have dynamic wording -
+    # see compute_state_message() below - since they depend on ein_status/
+    # next_available_window or the actual EIN value, not just the state name.
     "assets_generated": "Your brand kit, marketing plan, and business website are ready.",
     "complete": "Everything is ready - here's your full business package.",
 }
+
+def compute_state_message(order: dict, state: str) -> str:
+    """Most states have a fixed message (STATE_MESSAGES). filing_confirmed,
+    ein_requested, and ein_issued need live data - whether the EIN is
+    queued on IRS hours, or the actual EIN once issued - so they're built
+    here instead."""
+    if state == "filing_confirmed":
+        if order.get("ein_status") == "queued" and order.get("next_available_window"):
+            window = datetime.datetime.fromisoformat(order["next_available_window"])
+            return (
+                f"Your LLC has been approved! Your EIN application will be submitted on "
+                f"{window.strftime('%A, %B %d')} at {window.strftime('%I:%M %p').lstrip('0')} Eastern "
+                f"when the IRS system opens."
+            )
+        return "Your Virginia LLC has been officially approved by the SCC. We're now preparing your EIN application."
+    if state == "ein_requested":
+        return "Your EIN application has been submitted to the IRS. You will receive your EIN shortly."
+    if state == "ein_issued":
+        return f"Your EIN is: {order.get('ein', '')}. Your business is ready to operate!"
+    return STATE_MESSAGES.get(state, "")
+
+def fmt_date(ts) -> str:
+    """Firestore SERVER_TIMESTAMP fields come back as datetimes; the
+    IRS-queue window is stored as an isoformat string - normalize both."""
+    if not ts:
+        return ""
+    if isinstance(ts, str):
+        try:
+            ts = datetime.datetime.fromisoformat(ts)
+        except ValueError:
+            return ""
+    return ts.strftime("%B %-d, %Y")
+
+def on_date(ts) -> str:
+    formatted = fmt_date(ts)
+    return f" on {formatted}" if formatted else ""
+
+def compute_timeline(order: dict, state: str) -> list:
+    """Derives the 10-step customer-facing timeline from the order's raw
+    state machine fields. skip_llc_formation/skip_ein customers bypass
+    whole steps (filing, SCC approval) rather than just completing them
+    instantly, so those get their own "skipped" wording instead of acting
+    like the step still happened the normal way."""
+    skip_llc = bool(order.get("skip_llc_formation"))
+    skip_ein = bool(order.get("skip_ein"))
+    business_name = order.get("business_name", "your business")
+    email = order.get("email", "")
+    steps = []
+
+    # 1. Payment Received
+    if state != "draft":
+        steps.append({"key": "payment", "name": "Payment Received", "status": "complete",
+            "description": f"Payment of $350 confirmed{on_date(order.get('paid_at'))}"})
+    else:
+        steps.append({"key": "payment", "name": "Payment Received", "status": "pending",
+            "description": "We're waiting for your payment to go through."})
+
+    # 2. Name Verification
+    name_check = order.get("name_check")
+    if skip_llc:
+        steps.append({"key": "name", "name": "Name Verification", "status": "complete",
+            "description": "Using your existing LLC - already verified on Virginia SCC records"})
+    elif name_check and name_check.get("available"):
+        steps.append({"key": "name", "name": "Name Verification", "status": "complete",
+            "description": f"{business_name} verified as available on Virginia SCC{on_date(order.get('name_cleared_at'))}"})
+    elif name_check and not name_check.get("available"):
+        steps.append({"key": "name", "name": "Name Verification", "status": "on_hold",
+            "description": f"Your filing is on hold - we will contact you at {email} about choosing a different name."})
+    else:
+        steps.append({"key": "name", "name": "Name Verification",
+            "status": "current" if state == "paid" else "pending",
+            "description": "Verifying your business name with Virginia SCC..."})
+
+    # 3. Documents Generated
+    if order.get("documents_generated"):
+        steps.append({"key": "documents", "name": "Documents Generated", "status": "complete",
+            "description": f"Articles of Organization, Operating Agreement, and brand kit created{on_date(order.get('documents_generated_at'))}"})
+    elif order.get("documents_error"):
+        steps.append({"key": "documents", "name": "Documents Generated", "status": "on_hold",
+            "description": order["documents_error"]})
+    else:
+        steps.append({"key": "documents", "name": "Documents Generated",
+            "status": "current" if steps[1]["status"] == "complete" else "pending",
+            "description": "AI is generating your business documents..."})
+
+    # 4. Internal Review
+    if skip_llc:
+        steps.append({"key": "review", "name": "Internal Review", "status": "complete",
+            "description": "Skipped - no internal review needed for an existing LLC"})
+    elif reached(state, "review_approved"):
+        steps.append({"key": "review", "name": "Internal Review", "status": "complete",
+            "description": f"Your filing has been approved for submission{on_date(order.get('review_approved_at'))}"})
+    else:
+        steps.append({"key": "review", "name": "Internal Review",
+            "status": "current" if state == "name_cleared" else "pending",
+            "description": "Our team is reviewing your filing - usually within 2 hours during business hours."})
+
+    # 5. LLC Filed with Virginia SCC
+    if skip_llc:
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "complete",
+            "description": "Skipped - using your existing LLC"})
+    elif order.get("filing_error"):
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "on_hold",
+            "description": order["filing_error"]})
+    elif reached(state, "filing_submitted"):
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "complete",
+            "description": f"Filed with the Virginia SCC{on_date(order.get('filing_submitted_at'))}"})
+    elif state == "review_approved":
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
+            "description": "Your LLC is being submitted to the Virginia SCC..."})
+    else:
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "pending",
+            "description": "Waiting for internal approval before filing"})
+
+    # 6. LLC Approved by Virginia
+    if skip_llc:
+        steps.append({"key": "approved", "name": "LLC Approved by Virginia", "status": "complete",
+            "description": "Skipped - your existing LLC is already approved"})
+    elif reached(state, "filing_confirmed"):
+        steps.append({"key": "approved", "name": "LLC Approved by Virginia", "status": "complete",
+            "description": f"Virginia approved {business_name}{on_date(order.get('filing_confirmed_at'))}"})
+    else:
+        steps.append({"key": "approved", "name": "LLC Approved by Virginia",
+            "status": "current" if state == "filing_submitted" else "pending",
+            "description": "Waiting for Virginia SCC to process your filing (1-3 business days)"})
+
+    # 7. EIN Application
+    ein = order.get("ein")
+    ein_status = order.get("ein_status")
+    if ein and reached(state, "ein_issued"):
+        if ein_status == "provided_by_customer":
+            desc = f"EIN {ein} - provided by you"
+        else:
+            desc = f"EIN {ein} issued by IRS{on_date(order.get('ein_issued_at'))}"
+        steps.append({"key": "ein", "name": "EIN Application", "status": "complete", "description": desc})
+    elif order.get("ein_error"):
+        steps.append({"key": "ein", "name": "EIN Application", "status": "on_hold", "description": order["ein_error"]})
+    elif ein_status == "queued" and order.get("next_available_window"):
+        window = order["next_available_window"]
+        if isinstance(window, str):
+            window = datetime.datetime.fromisoformat(window)
+        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+            "description": f"EIN application queued - will be submitted {format_eta(window)}"})
+    elif state == "ein_requested":
+        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+            "description": "EIN application submitted to IRS"})
+    elif reached(state, "filing_confirmed"):
+        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+            "description": "Preparing your EIN application..."})
+    else:
+        steps.append({"key": "ein", "name": "EIN Application", "status": "pending",
+            "description": "Will be submitted after LLC approval"})
+
+    # 8. Business Website Live
+    website_url = order.get("website_url")
+    if website_url:
+        steps.append({"key": "website", "name": "Business Website Live", "status": "complete",
+            "description": f"Your website is live at {website_url}", "url": website_url})
+    elif order.get("asset_generation_error"):
+        steps.append({"key": "website", "name": "Business Website Live", "status": "on_hold",
+            "description": order["asset_generation_error"]})
+    elif reached(state, "ein_issued"):
+        steps.append({"key": "website", "name": "Business Website Live", "status": "current",
+            "description": "Generating your business website..."})
+    else:
+        steps.append({"key": "website", "name": "Business Website Live", "status": "pending",
+            "description": "Website will be generated after LLC approval"})
+
+    # 9. Stripe Payment Account
+    connect_id = order.get("stripe_connect_account_id")
+    if connect_id:
+        if is_account_active(connect_id):
+            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "complete",
+                "description": "✅ Your payment account is active - you can accept payments"})
+        else:
+            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
+                "description": "Your Stripe account is ready - finish setup to start accepting payments",
+                "onboarding": True})
+    elif reached(state, "ein_issued"):
+        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
+            "description": "Setting up your Stripe payment account..."})
+    else:
+        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "pending",
+            "description": "Stripe account will be created after LLC approval"})
+
+    # 10. Complete
+    if state == "complete":
+        steps.append({"key": "complete", "name": "Complete", "status": "complete",
+            "description": "🎉 Your business is fully operational!"})
+    else:
+        steps.append({"key": "complete", "name": "Complete", "status": "pending",
+            "description": "Almost there..."})
+
+    return steps
+
+def estimate_completion(order: dict, state: str) -> str:
+    """Rough estimate, not a promise - SCC and the IRS move at their own
+    pace and we say so elsewhere on the page. Just gives the customer a
+    ballpark instead of nothing."""
+    if state == "complete":
+        return None
+
+    today = datetime.date.today()
+    if order.get("skip_llc_formation"):
+        days_out = 0 if reached(state, "ein_issued") else 1
+    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["filing_submitted"]:
+        days_out = 4
+    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["filing_confirmed"]:
+        days_out = 3
+    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["ein_issued"]:
+        days_out = 1
+    else:
+        days_out = 0
+
+    return (today + datetime.timedelta(days=days_out)).strftime("%B %-d, %Y")
 
 security = HTTPBasic()
 
@@ -106,6 +345,24 @@ async def check_name(request: Request):
         "desired_name": desired_name
     })
 
+@app.post("/verify-existing-llc", response_class=HTMLResponse)
+async def verify_existing_llc(request: Request):
+    """Live-checked while the customer types their existing LLC's name on
+    the intake form (skip_llc_formation path) - confirms it's actually on
+    Virginia SCC's books before we let them skip formation for it."""
+    form = await request.form()
+    existing_llc_name = form.get("existing_llc_name", "").strip()
+    if not existing_llc_name:
+        return HTMLResponse("")
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
+
+    return templates.TemplateResponse(request, "existing_llc_verify_result.html", {
+        "result": result,
+        "business_name": existing_llc_name,
+    })
+
 def parse_intake_form(form: dict) -> dict:
     """Pulls every derived field the agents need out of the raw intake
     form dict. Used both right after submission (to size the Checkout
@@ -121,6 +378,8 @@ def parse_intake_form(form: dict) -> dict:
     city = form.get("city", "")
     zipcode = form.get("zipcode", "")
     desired_name = form.get("desired_name", "")
+    existing_llc_name = form.get("existing_llc_name", "")
+    skip_llc_formation = form.get("skip_llc_formation") == "on"
 
     full_name = f"{first_name} {middle_name} {last_name}".replace("  ", " ").strip()
     primary_sig = f"{sig_first} {sig_middle} {sig_last}".replace("  ", " ").strip()
@@ -138,7 +397,10 @@ def parse_intake_form(form: dict) -> dict:
         i += 1
 
     all_signatures = [primary_sig] + additional_members
-    business_name = desired_name.strip() if desired_name.strip() else f"{last_name} Ventures LLC"
+    if skip_llc_formation:
+        business_name = existing_llc_name.strip()
+    else:
+        business_name = desired_name.strip() if desired_name.strip() else f"{last_name} Ventures LLC"
 
     return {
         "full_name": full_name,
@@ -162,66 +424,174 @@ def run_name_check(order_id: str):
         result = check_name_on_scc(order["business_name"])
         order_ref.set({"name_check": result}, merge=True)
         if result.get("available"):
-            order_ref.set({"state": "name_cleared"}, merge=True)
+            order_ref.set({"state": "name_cleared", "name_cleared_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            run_document_generation(order_id)
         else:
             print(f"⚠️ Name check did not clear for order {order_id}: {result.get('message')}")
     except Exception as e:
         print(f"⚠️ Name check crashed for order {order_id}: {e}")
         order_ref.set({"name_check_error": str(e)}, merge=True)
 
+def run_document_generation(order_id: str):
+    """Generates the brand kit, marketing plan, reference name ideas, and
+    signed LLC PDF as soon as the business name is confirmed (or
+    immediately for skip_llc_formation orders) - none of these depend on
+    SCC filing or the EIN, so customers get them well before those slower,
+    externally-gated steps finish. Re-entrant: a second call is a no-op
+    once documents_generated is already set."""
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order or order.get("documents_generated"):
+        return
+
+    try:
+        business_name = order["business_name"]
+        full_name = order["full_name"]
+        business_purpose = order.get("business_purpose", "")
+        principal_address = order["principal_address"]
+        primary_sig = order["primary_sig"]
+        business_idea = order["business_idea"]
+        target_customer = order["target_customer"]
+
+        name_result = screen_business_name(business_idea)
+        brand_result = generate_brand_kit(business_name, business_idea, target_customer)
+        marketing_result = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
+
+        generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
+        safe_name = business_name.replace(" ", "_").replace("/", "_")
+        pdf_filename = f"{safe_name}_LLC_Package.pdf"
+
+        order_ref.set({
+            "name_result": name_result,
+            "brand_result": brand_result,
+            "marketing_result": marketing_result,
+            "pdf_filename": pdf_filename,
+            "documents_generated": True,
+            "documents_generated_at": firestore.SERVER_TIMESTAMP,
+            "documents_error": firestore.DELETE_FIELD,
+        }, merge=True)
+    except Exception as e:
+        print(f"⚠️ Document generation crashed for order {order_id}: {e}")
+        order_ref.set({"documents_error": f"Document generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
+
 SCC_FILED_STATES = {"filing_submitted", "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete"}
 
-def run_scc_and_ein_filing(order_id: str):
-    """Triggered by the admin's Approve button. Files the LLC with SCC,
-    then - per standing business decision - fires the EIN application
-    immediately once the LLC paperwork is filled, without waiting for SCC's
-    actual approval (which can take days).
+# An order is only eligible to have an EIN application filed once the SCC
+# has actually confirmed the LLC (filing_confirmed) - we no longer fire EIN
+# the moment paperwork is filed, since SCC approval can take days and the
+# IRS step should reflect a real, confirmed entity.
+EIN_ELIGIBLE_STATES = {"filing_confirmed"}
+
+def advance_past_filing_confirmed(order_ref, order) -> bool:
+    """Called whenever an order reaches filing_confirmed - whether by real
+    SCC approval or because the customer already had an LLC and skipped
+    formation. If the customer also already has an EIN (skip_ein), there's
+    nothing left to wait on - jump straight to ein_issued with their
+    provided EIN instead of queuing on IRS hours. Returns True if the
+    caller should trigger run_asset_generation as a background task."""
+    if order.get("skip_ein"):
+        order_ref.set({
+            "state": "ein_issued",
+            "ein": order.get("existing_ein", ""),
+            "ein_status": "provided_by_customer",
+            "filing_confirmed_at": firestore.SERVER_TIMESTAMP,
+            "ein_issued_at": firestore.SERVER_TIMESTAMP,
+            "filing_error": firestore.DELETE_FIELD,
+            "ein_error": firestore.DELETE_FIELD,
+            "asset_generation_error": firestore.DELETE_FIELD,
+        }, merge=True)
+        return True
+
+    update = {"state": "filing_confirmed", "filing_confirmed_at": firestore.SERVER_TIMESTAMP, "filing_error": firestore.DELETE_FIELD}
+    if is_irs_open():
+        update["ein_status"] = firestore.DELETE_FIELD
+        update["next_available_window"] = firestore.DELETE_FIELD
+    else:
+        window = next_irs_open()
+        update["ein_status"] = "queued"
+        update["next_available_window"] = window.isoformat()
+    order_ref.set(update, merge=True)
+    return False
+
+def run_scc_filing(order_id: str):
+    """Triggered by the admin's Approve button. Files the LLC with SCC.
+    EIN filing is a fully separate, later step (see run_ein_filing) that
+    only becomes available once the admin marks the order filing_confirmed
+    - SCC's real approval - and only during IRS business hours.
 
     Re-entrant: if the order already shows filing_submitted or later (e.g.
-    the admin re-clicks Approve to retry a failed EIN attempt - the IRS
-    online assistant is only open 7am-10pm ET, so this will happen), the
-    SCC step is skipped entirely rather than re-filing with SCC a second
-    time. The SSN is only read (peeked) from the in-memory cache, and is
-    only discarded for good once EIN filing actually succeeds - a failed
-    attempt must leave it available for the next retry. It never touches
-    Firestore either way. If the server restarts before EIN succeeds, the
-    SSN is lost and the customer must be asked for it again; that's the
-    accepted tradeoff for never persisting it.
+    the admin re-clicks Approve by mistake), the SCC step is skipped
+    entirely rather than re-filing with SCC a second time.
 
-    Wrapped in a single try/except: if either filer crashes outright
-    (closed tab, site change, network blip) rather than returning False,
-    the order must not be left stuck with no visible explanation - that
-    would defeat the point of an admin-visible state machine."""
+    Wrapped in try/except: if the filer crashes outright (closed tab, site
+    change, network blip) rather than returning False, the order must not
+    be left stuck with no visible explanation."""
     order_ref = db.collection("orders").document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
 
-    already_filed_with_scc = order.get("state") in SCC_FILED_STATES
+    if order.get("state") in SCC_FILED_STATES:
+        return
 
     try:
-        if not already_filed_with_scc:
-            llc_customer_data = {
-                "business_name": order["business_name"],
-                "first_name": order["first_name"],
-                "middle_name": order.get("middle_name", ""),
-                "last_name": order["last_name"],
-                "email": order["email"],
-                "phone": order["phone"],
-                "address": order["address"],
-                "city": order["city"],
-                "zipcode": order["zipcode"],
-                "industry_code": order.get("industry_code", "0"),
-                "duration": order.get("duration", "Perpetual"),
-            }
-            llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
-            if not llc_filed:
-                order_ref.set({"filing_error": "SCC filing did not complete - check server screenshots, then re-approve to retry."}, merge=True)
-                return
+        llc_customer_data = {
+            "business_name": order["business_name"],
+            "first_name": order["first_name"],
+            "middle_name": order.get("middle_name", ""),
+            "last_name": order["last_name"],
+            "email": order["email"],
+            "phone": order["phone"],
+            "address": order["address"],
+            "city": order["city"],
+            "zipcode": order["zipcode"],
+            "industry_code": order.get("industry_code", "0"),
+            "duration": order.get("duration", "Perpetual"),
+            "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
+        }
+        llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
+        if not llc_filed:
+            order_ref.set({"filing_error": "SCC filing did not complete - check server screenshots, then re-approve to retry."}, merge=True)
+            return
 
-            order_ref.set({"state": "filing_submitted", "filing_error": firestore.DELETE_FIELD}, merge=True)
-            already_filed_with_scc = True
+        order_ref.set({
+            "state": "filing_submitted", "filing_submitted_at": firestore.SERVER_TIMESTAMP,
+            "filing_error": firestore.DELETE_FIELD,
+        }, merge=True)
+    except Exception as e:
+        print(f"⚠️ SCC filing crashed for order {order_id}: {e}")
+        order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
 
+def run_ein_filing(order_id: str):
+    """Triggered by the admin's Apply for EIN button - only reachable once
+    the order is filing_confirmed (SCC's real approval). Re-checks IRS
+    business hours (Mon-Fri 7am-10pm ET) itself, in addition to the route's
+    own check, to cover the race where hours close between the click and
+    this background task actually running.
+
+    The SSN is only read (peeked) from the in-memory cache, and is only
+    discarded for good once EIN filing actually succeeds - a failed or
+    blocked attempt must leave it available for the next retry. If the
+    server restarts before EIN succeeds, the SSN is lost and the customer
+    must be asked for it again; that's the accepted tradeoff for never
+    persisting it to Firestore."""
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    if not is_irs_open():
+        # Not a failure, just timing - keep it out of ein_error so neither
+        # dashboard shows a red box for something that isn't actually wrong.
+        window = next_irs_open()
+        order_ref.set({
+            "ein_status": "queued",
+            "next_available_window": window.isoformat(),
+            "ein_error": firestore.DELETE_FIELD,
+        }, merge=True)
+        return
+
+    try:
         ssn = peek_ssn(order_id)
         if not ssn:
             order_ref.set({
@@ -250,21 +620,50 @@ def run_scc_and_ein_filing(order_id: str):
         ein_filed = file_ein_with_irs(ein_customer_data, interactive=False)
         if ein_filed:
             discard_ssn(order_id)
-            order_ref.set({"state": "ein_requested", "ein_error": firestore.DELETE_FIELD}, merge=True)
+            order_ref.set({
+                "state": "ein_requested", "ein_error": firestore.DELETE_FIELD,
+                "ein_status": firestore.DELETE_FIELD, "next_available_window": firestore.DELETE_FIELD,
+            }, merge=True)
         else:
-            order_ref.set({"ein_error": "EIN filing did not complete - the IRS online assistant is only available 7am-10pm ET, so this may just be timing. Re-approve to retry."}, merge=True)
+            order_ref.set({"ein_error": "EIN filing did not complete - check server screenshots, then apply again to retry."}, merge=True)
     except Exception as e:
-        print(f"⚠️ SCC/EIN filing crashed for order {order_id}: {e}")
-        error_field = "ein_error" if already_filed_with_scc else "filing_error"
-        order_ref.set({error_field: f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
+        print(f"⚠️ EIN filing crashed for order {order_id}: {e}")
+        order_ref.set({"ein_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
+
+async def ein_queue_scheduler():
+    """Runs for the lifetime of the process, woken every 5 minutes. Picks
+    up any order stuck at filing_confirmed with ein_status="queued" (set
+    either by mark-filed or a blocked Apply for EIN click) and fires the
+    EIN filing the moment IRS hours actually open - so a queued order
+    doesn't just sit there until an admin happens to click again."""
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            if is_irs_open():
+                query = (
+                    db.collection("orders")
+                    .where("state", "==", "filing_confirmed")
+                    .where("ein_status", "==", "queued")
+                )
+                for doc in query.stream():
+                    print(f"⏰ IRS hours open - auto-submitting queued EIN for order {doc.id}")
+                    future = loop.run_in_executor(None, run_ein_filing, doc.id)
+                    future.add_done_callback(
+                        lambda f, oid=doc.id: print(f"⚠️ Auto EIN submit crashed for {oid}: {f.exception()}")
+                        if f.exception() else None
+                    )
+        except Exception as e:
+            print(f"⚠️ EIN queue scheduler tick failed: {e}")
+        await asyncio.sleep(300)
 
 def run_asset_generation(order_id: str):
-    """Triggered once the admin records the real EIN. Generates the brand
-    kit, marketing plan, name ideas, and signed LLC PDF, sets up the
+    """Triggered once the admin records the real EIN (or immediately for
+    skip_ein orders). Documents (brand kit, marketing plan, signed LLC PDF)
+    are already done by now - see run_document_generation, which runs much
+    earlier, right after name verification. This step just sets up the
     customer's Stripe Connect Standard account and a pay-what-you-want
     Payment Link on it, then deploys the business website with that link
-    already embedded (falling back to a mailto link if Connect setup
-    fails, same as before)."""
+    already embedded."""
     order_ref = db.collection("orders").document(order_id)
     order = order_ref.get().to_dict()
     if not order:
@@ -272,31 +671,17 @@ def run_asset_generation(order_id: str):
 
     try:
         business_name = order["business_name"]
-        full_name = order["full_name"]
-        business_purpose = order["business_purpose"]
-        principal_address = order["principal_address"]
-        primary_sig = order["primary_sig"]
         business_idea = order["business_idea"]
         target_customer = order["target_customer"]
-        template_style = order.get("template_style", "auto")
+        principal_address = order["principal_address"]
         email = order["email"]
         phone = order["phone"]
-
-        name_result = screen_business_name(business_idea)
-        brand_result = generate_brand_kit(business_name, business_idea, target_customer)
-        marketing_result = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
-
-        pdf_path = generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
-        safe_name = business_name.replace(" ", "_").replace("/", "_")
-        pdf_filename = f"{safe_name}_LLC_Package.pdf"
 
         connect_account_id = None
         payment_link_url = None
         try:
             account = create_connect_account(
                 email=email,
-                first_name=order["first_name"],
-                last_name=order["last_name"],
                 business_name=business_name,
                 multi_member=len(order.get("all_signatures", [])) > 1,
             )
@@ -307,27 +692,38 @@ def run_asset_generation(order_id: str):
 
         website_url = None
         try:
-            content = generate_website_content(business_name, business_idea, target_customer)
-            template_override = None if template_style == "auto" else template_style
-            html, template_name = render_website_html(
-                content, business_name, email, phone, principal_address,
-                template_override=template_override, payment_link_url=payment_link_url,
+            services = [
+                {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+                for i in (1, 2, 3)
+            ]
+            photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+            result = generate_website(
+                business_name, business_idea, target_customer, email, phone, principal_address,
+                template_name=order.get("website_template", "professional"),
+                tagline=order.get("website_tagline", ""),
+                description=order.get("website_description", ""),
+                services=services,
+                hours=order.get("business_hours", ""),
+                photos=photos,
+                instagram_url=order.get("instagram_url", ""),
+                facebook_url=order.get("facebook_url", ""),
+                tiktok_url=order.get("tiktok_url", ""),
+                color_preference=order.get("color_preference", "default"),
+                custom_primary_color=order.get("custom_primary_color", ""),
+                payment_link_url=payment_link_url,
             )
-            deployed = deploy_website(business_name, html, order_id=order_id)
+            deployed = deploy_website(business_name, result["html"], order_id=order_id)
             if deployed:
                 website_url = deployed["url"]
-                order_ref.set({"website_template": template_name, "website_content": content}, merge=True)
+                order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
         except Exception as e:
             print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
 
         order_ref.set({
-            "name_result": name_result,
-            "brand_result": brand_result,
-            "marketing_result": marketing_result,
-            "pdf_filename": pdf_filename,
             "website_url": website_url,
             "stripe_connect_account_id": connect_account_id,
             "state": "assets_generated",
+            "assets_generated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
 
         order_ref.set({"state": "complete"}, merge=True)
@@ -338,8 +734,32 @@ def run_asset_generation(order_id: str):
 @app.post("/launch", response_class=HTMLResponse)
 async def launch(request: Request):
     form_raw = await request.form()
-    form = dict(form_raw)
+
+    photo_errors = {}
+    photo_data = {}
+    for i in (1, 2, 3):
+        upload = form_raw.get(f"photo_{i}")
+        if upload is not None and getattr(upload, "filename", ""):
+            raw = await upload.read()
+            if len(raw) > MAX_UPLOAD_BYTES:
+                photo_errors[f"photo_{i}"] = f"Photo {i} is over 5MB - please upload a smaller file."
+            else:
+                try:
+                    photo_data[f"photo_{i}_data"] = process_photo(raw)
+                except Exception as e:
+                    photo_errors[f"photo_{i}"] = f"Could not process photo {i} - try a different file."
+
+    form = {k: v for k, v in form_raw.items() if not (k.startswith("photo_") and hasattr(v, "filename"))}
     ssn = form.pop("ssn", "")
+    form.setdefault("registered_agent_choice", "launchbridge")
+
+    errors = validate_intake_form({**form, "ssn": ssn})
+    errors.update(photo_errors)
+    if errors:
+        return templates.TemplateResponse(request, "form_errors.html", {
+            "errors": errors,
+            "all_fields": ALL_VALIDATED_FIELDS,
+        })
 
     parsed = parse_intake_form(form)
 
@@ -348,6 +768,7 @@ async def launch(request: Request):
     order_ref.set({
         **form,
         **parsed,
+        **photo_data,
         "state": "draft",
         "created_at": firestore.SERVER_TIMESTAMP,
     })
@@ -365,6 +786,42 @@ async def launch(request: Request):
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
 
+def process_paid_order(order_id: str, payment_status: str, background_tasks: BackgroundTasks) -> bool:
+    """Advances an order past payment and kicks off the real pipeline -
+    shared by /success (the customer's browser redirect) and /webhook
+    (Stripe's own server-to-server notification), since either one might
+    be what actually notices the payment first.
+
+    Idempotent by construction: only acts if the order is still "draft".
+    Whichever of /success or /webhook reaches this first does the real
+    work; the other is a no-op. Returns True if it actually advanced the
+    order, False if there was nothing to do (already processed, order
+    missing, or payment not actually confirmed paid)."""
+    order_ref = db.collection("orders").document(order_id)
+    order_snap = order_ref.get()
+    if not order_snap.exists:
+        return False
+    order = order_snap.to_dict()
+
+    if order.get("state") != "draft" or payment_status != "paid":
+        return False
+
+    order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    if order.get("skip_llc_formation"):
+        # Already verified to exist on SCC at intake time (see
+        # /verify-existing-llc) - nothing left to file or check the
+        # name of, so jump straight past filing_confirmed.
+        order_ref.set({"state": "filing_confirmed"}, merge=True)
+        background_tasks.add_task(run_document_generation, order_id)
+        trigger_assets = advance_past_filing_confirmed(order_ref, order)
+        if trigger_assets:
+            background_tasks.add_task(run_asset_generation, order_id)
+    else:
+        order_ref.set({"state": "paid"}, merge=True)
+        background_tasks.add_task(run_name_check, order_id)
+
+    return True
+
 @app.get("/success")
 async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
     resolved_order_id = order_id
@@ -379,20 +836,64 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
         if not resolved_order_id:
             return RedirectResponse(url="/")
 
-        order_ref = db.collection("orders").document(resolved_order_id)
-        order_snap = order_ref.get()
-        if not order_snap.exists:
-            return HTMLResponse("<p>Order not found.</p>", status_code=404)
-        order = order_snap.to_dict()
-
-        if order.get("state") == "draft" and session.payment_status == "paid":
-            order_ref.set({"state": "paid"}, merge=True)
-            background_tasks.add_task(run_name_check, resolved_order_id)
+        process_paid_order(resolved_order_id, session.payment_status, background_tasks)
 
     if not resolved_order_id:
         return RedirectResponse(url="/")
 
     return RedirectResponse(url=f"/status/{resolved_order_id}")
+
+@app.post("/webhook")
+async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Server-to-server backstop for /success - if a customer closes their
+    tab right after paying, before Checkout's success_url redirect fires,
+    /success never runs and the order would otherwise sit at "draft"
+    forever despite Stripe having actually been paid. This is the
+    reliable path; /success is just the fast path when it works.
+
+    Every received event is logged to Firestore (webhook_events) for
+    evidence, whether or not it was a checkout.session.completed event and
+    whether or not signature verification passed."""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = construct_webhook_event(payload, sig_header)
+    except Exception as e:
+        db.collection("webhook_events").add({
+            "verified": False, "error": str(e), "received_at": firestore.SERVER_TIMESTAMP,
+        })
+        return Response(status_code=400)
+
+    log_entry = {
+        "verified": True, "event_id": event.id, "event_type": event.type,
+        "received_at": firestore.SERVER_TIMESTAMP,
+    }
+
+    if event.type == "checkout.session.completed":
+        session = event.data.object
+        order_id = session.client_reference_id
+        log_entry["order_id"] = order_id
+        if order_id:
+            advanced = process_paid_order(order_id, session.payment_status, background_tasks)
+            log_entry["advanced_order"] = advanced
+
+    db.collection("webhook_events").add(log_entry)
+    return Response(status_code=200)
+
+def status_context(order_id: str, order: dict) -> dict:
+    """Shared between the full status page and the auto-refreshed timeline
+    partial, so the two never drift out of sync with each other."""
+    state = order.get("state", "draft")
+    return {
+        "order_id": order_id,
+        "state": state,
+        "state_message": compute_state_message(order, state),
+        "timeline": compute_timeline(order, state),
+        "estimated_completion": estimate_completion(order, state),
+        "estimate_breakdown": "LLC approval: 1-3 business days · EIN: same day after approval · Website: automatic",
+        "last_updated": datetime.datetime.now().strftime("%I:%M:%S %p").lstrip("0"),
+    }
 
 @app.get("/status/{order_id}", response_class=HTMLResponse)
 async def status_page(request: Request, order_id: str):
@@ -403,22 +904,33 @@ async def status_page(request: Request, order_id: str):
     state = order.get("state", "draft")
 
     return templates.TemplateResponse(request, "status.html", {
-        "order_id": order_id,
-        "state": state,
-        "state_message": STATE_MESSAGES.get(state, ""),
-        "ORDER_STATES": ORDER_STATES,
+        **status_context(order_id, order),
         "business_name": order.get("business_name"),
         "full_name": order.get("full_name"),
-        "name_check": order.get("name_check"),
-        "filing_error": order.get("filing_error"),
-        "ein_error": order.get("ein_error"),
-        "asset_generation_error": order.get("asset_generation_error"),
+        "email": order.get("email"),
+        "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
         "ein": order.get("ein"),
         "website_url": order.get("website_url"),
+        "website_template": order.get("website_template"),
+        "documents_generated": order.get("documents_generated", False),
         "pdf_filename": order.get("pdf_filename"),
-        "name_result": order.get("name_result"),
-        "brand_result": order.get("brand_result"),
-        "marketing_result": order.get("marketing_result"),
+        "has_brand_kit": bool(order.get("brand_result")),
+        "filing_confirmed": reached(state, "filing_confirmed") or bool(order.get("skip_llc_formation")),
+        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
+    })
+
+@app.get("/status/{order_id}/timeline", response_class=HTMLResponse)
+async def status_timeline_partial(request: Request, order_id: str):
+    """Polled every 30s by the status page (see status.html) to refresh
+    just the timeline + estimate, without reloading documents/contact/share
+    sections that don't change nearly as often."""
+    order_snap = db.collection("orders").document(order_id).get()
+    if not order_snap.exists:
+        return HTMLResponse("")
+    order = order_snap.to_dict()
+
+    return templates.TemplateResponse(request, "status_timeline.html", {
+        **status_context(order_id, order),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
     })
 
@@ -449,31 +961,98 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         order["id"] = doc.id
         orders.append(order)
 
+    irs_open = is_irs_open()
+    irs_next_window_eta = None if irs_open else format_eta(next_irs_open())
+
+    for order in orders:
+        if order.get("next_available_window"):
+            order["next_available_window_eta"] = format_eta(datetime.datetime.fromisoformat(order["next_available_window"]))
+
     return templates.TemplateResponse(request, "admin.html", {
         "orders": orders,
+        "irs_open": irs_open,
+        "irs_next_window_eta": irs_next_window_eta,
+        "warning": request.query_params.get("warning"),
     })
 
 @app.post("/admin/{order_id}/approve")
 async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    db.collection("orders").document(order_id).set({"state": "review_approved"}, merge=True)
-    background_tasks.add_task(run_scc_and_ein_filing, order_id)
+    db.collection("orders").document(order_id).set({
+        "state": "review_approved", "review_approved_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+    background_tasks.add_task(run_scc_filing, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-filed")
-async def admin_mark_filed(order_id: str, authorized: bool = Depends(verify_admin)):
-    db.collection("orders").document(order_id).set({
-        "state": "filing_confirmed", "filing_error": firestore.DELETE_FIELD,
-    }, merge=True)
+async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return RedirectResponse(url="/admin", status_code=303)
+    trigger_assets = advance_past_filing_confirmed(order_ref, order)
+    if trigger_assets:
+        background_tasks.add_task(run_asset_generation, order_id)
+    return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/admin/{order_id}/apply-ein")
+async def admin_apply_ein(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    order_ref = db.collection("orders").document(order_id)
+    order = order_ref.get().to_dict()
+    if not order or order.get("state") not in EIN_ELIGIBLE_STATES:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    if not is_irs_open():
+        window = next_irs_open()
+        order_ref.set({"ein_status": "queued", "next_available_window": window.isoformat()}, merge=True)
+        warning = f"Apply for EIN was attempted outside IRS hours (Mon-Fri 7am-10pm ET) - queued instead. Opens {format_eta(window)}."
+        return RedirectResponse(url=f"/admin?warning={quote(warning)}", status_code=303)
+
+    background_tasks.add_task(run_ein_filing, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-ein")
 async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
     db.collection("orders").document(order_id).set({
-        "ein": ein, "state": "ein_issued",
+        "ein": ein, "state": "ein_issued", "ein_issued_at": firestore.SERVER_TIMESTAMP,
         "ein_error": firestore.DELETE_FIELD, "asset_generation_error": firestore.DELETE_FIELD,
     }, merge=True)
     background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/contact", response_class=HTMLResponse)
+async def contact(request: Request):
+    form = await request.form()
+    order_id = (form.get("order_id") or "").strip()
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    message = (form.get("message") or "").strip()
+
+    if not (name and email and message):
+        return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please fill in your name, email, and message.</p>', status_code=400)
+
+    db.collection("contact_messages").add({
+        "order_id": order_id, "name": name, "email": email, "message": message,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    })
+    # No email/SMS service is wired up yet - this is the admin notification
+    # for now. Once one exists, replace this with a real page/alert.
+    print(f"📬 New contact message from {name} <{email}> (order {order_id}): {message}")
+
+    return templates.TemplateResponse(request, "contact_result.html", {})
+
+@app.get("/download-brand-kit/{order_id}")
+async def download_brand_kit(order_id: str):
+    order = db.collection("orders").document(order_id).get().to_dict()
+    if not order or not order.get("brand_result"):
+        return HTMLResponse("Not found", status_code=404)
+
+    business_name = order.get("business_name", "business")
+    safe_name = business_name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=order["brand_result"].get("result", ""),
+        media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={safe_name}_Brand_Kit.txt"},
+    )
 
 @app.get("/download-pdf/{filename}")
 async def download_pdf(filename: str):

@@ -15,6 +15,12 @@
             <p class="text-gray-500 text-sm mt-1">{{ orders|length }} order{{ "s" if orders|length != 1 else "" }}</p>
         </div>
 
+        {% if warning %}
+        <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-4 mb-6">
+            <p class="text-sm text-yellow-300">⚠️ {{ warning }}</p>
+        </div>
+        {% endif %}
+
         <div class="space-y-5">
         {% for order in orders %}
             <div class="bg-gray-900 border border-gray-700 rounded-xl p-5">
@@ -33,9 +39,19 @@
                     <p>Email: <span class="text-white">{{ order.email }}</span></p>
                     <p>Phone: <span class="text-white">{{ order.phone }}</span></p>
                     <p>County: <span class="text-white">{{ order.county }}</span></p>
+                    <p>RA: <span class="text-white">{{ "Leo Fall" if order.registered_agent_choice|default("launchbridge") == "launchbridge" else "Self" }}</span></p>
                     {% if order.ein %}
                     <p>EIN: <span class="text-white font-mono">{{ order.ein }}</span></p>
                     {% endif %}
+                </div>
+
+                <div class="flex gap-2 mb-4">
+                    <span class="bg-gray-800 text-gray-300 text-xs font-semibold px-3 py-1 rounded-full">
+                        LLC: {{ "Existing" if order.skip_llc_formation else "New" }}
+                    </span>
+                    <span class="bg-gray-800 text-gray-300 text-xs font-semibold px-3 py-1 rounded-full">
+                        EIN: {{ "Provided" if order.skip_ein else "Pending" }}
+                    </span>
                 </div>
 
                 {% if order.name_check and not order.name_check.available %}
@@ -62,7 +78,14 @@
                 </div>
                 {% endif %}
 
+                {% if order.state == "filing_confirmed" and order.ein_status == "queued" %}
+                <div class="bg-indigo-950 border border-indigo-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-indigo-300">⏳ EIN queued - IRS opens {{ order.next_available_window_eta }}. Will auto-submit then.</p>
+                </div>
+                {% endif %}
+
                 <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800">
+                    {% if not order.skip_llc_formation %}
                     <form method="post" action="/admin/{{ order.id }}/approve">
                         <button type="submit"
                             class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
@@ -76,6 +99,23 @@
                             Mark as Filed
                         </button>
                     </form>
+                    {% endif %}
+
+                    {% if order.state == "filing_confirmed" and not order.skip_ein %}
+                        {% if irs_open %}
+                        <form method="post" action="/admin/{{ order.id }}/apply-ein">
+                            <button type="submit"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                                Apply for EIN
+                            </button>
+                        </form>
+                        {% else %}
+                        <button type="button" disabled title="IRS EIN assistant is closed right now"
+                            class="bg-gray-800 text-gray-500 text-sm font-semibold px-4 py-2 rounded-lg cursor-not-allowed whitespace-nowrap">
+                            IRS opens {{ irs_next_window_eta }}
+                        </button>
+                        {% endif %}
+                    {% endif %}
 
                     <form method="post" action="/admin/{{ order.id }}/mark-ein" class="flex gap-2">
                         <input name="ein" type="text" placeholder="XX-XXXXXXX" value="{{ order.ein or '' }}"
