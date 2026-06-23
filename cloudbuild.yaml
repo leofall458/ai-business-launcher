@@ -1,20 +1,27 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME', '.']
+    args: ['build', '-t', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME:$SHORT_SHA', '.']
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME']
+    args: ['push', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME:$SHORT_SHA']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - '$_SERVICE_NAME'
-      - '--image=us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME'
+      - '--image=us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME:$SHORT_SHA'
       - '--region=us-east4'
       - '--platform=managed'
 
+# Tagged with the build's own commit SHA, not :latest - two builds for
+# different services (main-deploy vs staging-deploy) can run concurrently,
+# and a shared mutable :latest tag let a slower build's deploy step
+# silently pick up a different build's image if their pushes interleaved
+# (confirmed in production: a same-second race deployed the older commit).
+# A SHA-specific tag makes that race impossible - each build only ever
+# deploys the exact image it just built.
 images:
-  - 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME'
+  - 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME:$SHORT_SHA'
 
 substitutions:
   _SERVICE_NAME: launch-bridge
