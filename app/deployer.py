@@ -4,7 +4,7 @@ import base64
 import secrets
 import requests
 from google.cloud import firestore
-from app.config import GITHUB_TOKEN, GITHUB_USERNAME, FIREBASE_PROJECT_ID
+from app.config import GITHUB_TOKEN, GITHUB_USERNAME, FIREBASE_PROJECT_ID, ORDERS_COLLECTION
 
 GITHUB_API = "https://api.github.com"
 
@@ -67,6 +67,42 @@ def enable_pages(repo_name: str) -> bool:
         return False
     return True
 
+def wait_for_pages_build(repo_name: str, timeout_seconds: int = 90, poll_interval: int = 5) -> bool:
+    """A successful enable_pages() call only means GitHub accepted the
+    request - the actual build is asynchronous and takes 30-90s the first
+    time a repo's Pages site goes live (confirmed by polling a real test
+    deploy: 404 at 10s, 200 only after ~40s), so handing back the URL
+    right after that call means handing out a link that still 404s. Polls
+    GitHub's own Pages-status endpoint until it reports "built" instead.
+
+    GitHub's legacy Pages pipeline can also flake on a repo's very first
+    build - confirmed on a real deploy where the first build errored with
+    a generic "Page build failed." but a second, separate build GitHub
+    queued on its own then succeeded seconds later, no code-side retry
+    involved. Request one explicit rebuild via the dedicated builds
+    endpoint before giving up, rather than hoping that happens again."""
+    status_url = f"{GITHUB_API}/repos/{GITHUB_USERNAME}/{repo_name}/pages"
+    builds_url = f"{GITHUB_API}/repos/{GITHUB_USERNAME}/{repo_name}/pages/builds"
+    deadline = time.time() + timeout_seconds
+    retried = False
+    while time.time() < deadline:
+        resp = requests.get(status_url, headers=_headers(), timeout=30)
+        if resp.status_code == 200:
+            status = resp.json().get("status")
+            if status == "built":
+                return True
+            if status in ("errored", "deployment_failed"):
+                if not retried:
+                    print(f"⚠️ GitHub Pages build errored for {repo_name} - requesting a rebuild...")
+                    requests.post(builds_url, headers=_headers(), timeout=30)
+                    retried = True
+                else:
+                    print(f"⚠️ GitHub Pages build failed again for {repo_name} after retry: {status}")
+                    return False
+        time.sleep(poll_interval)
+    print(f"⚠️ GitHub Pages build for {repo_name} did not finish within {timeout_seconds}s")
+    return False
+
 def get_index_html_sha(repo_name: str) -> str:
     resp = requests.get(
         f"{GITHUB_API}/repos/{GITHUB_USERNAME}/{repo_name}/contents/index.html",
@@ -102,7 +138,7 @@ def update_index_html(repo_name: str, html: str) -> bool:
 def save_website_to_order(order_id: str, url: str, repo_name: str):
     try:
         db = firestore.Client(project=FIREBASE_PROJECT_ID)
-        db.collection("orders").document(order_id).set(
+        db.collection(ORDERS_COLLECTION).document(order_id).set(
             {"website_url": url, "website_repo": repo_name}, merge=True
         )
     except Exception as e:
@@ -120,6 +156,8 @@ def deploy_website(business_name: str, html_content: str, order_id: str = None) 
     if not push_index_html(repo_name, html_content):
         return None
     if not enable_pages(repo_name):
+        return None
+    if not wait_for_pages_build(repo_name):
         return None
 
     url = f"https://{GITHUB_USERNAME}.github.io/{repo_name}"

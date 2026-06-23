@@ -20,6 +20,14 @@
         </div>
         {% endif %}
     </div>
+    {% elif scc.status == "UNAVAILABLE" %}
+    <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
+        <p class="font-semibold text-yellow-300">⚠️ SCC name check temporarily unavailable</p>
+        <p class="text-xs text-yellow-400 mt-1">
+            Please verify your name yourself at
+            <a href="{{ scc.link }}" target="_blank" rel="noopener" class="underline text-yellow-300">Virginia SCC Name Check</a>.
+        </p>
+    </div>
     {% elif scc.status == "ERROR" %}
     <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
         <p class="font-semibold text-yellow-300">⚠️ Virginia SCC — Could not check</p>

@@ -13,16 +13,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Secrets actually migrated to Secret Manager. Anything not in this list
-# (e.g. ADMIN_PASSWORD, GEMINI_API_KEY) still just reads from .env - not in
-# scope for this migration.
+# (e.g. GEMINI_API_KEY) still just reads from .env - not in scope for this
+# migration.
 MANAGED_SECRETS = [
     "SCC_USERNAME",
     "SCC_PASSWORD",
     "STRIPE_SECRET_KEY",
     "STRIPE_PUBLISHABLE_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_SECRET_KEY_STAGING",
+    "STRIPE_PUBLISHABLE_KEY_STAGING",
+    "STRIPE_WEBHOOK_SECRET_STAGING",
     "GITHUB_TOKEN",
     "SCC_FILING_CARD",
+    "ADMIN_PASSWORD",
 ]
 
 _PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ai-biz-launcher")

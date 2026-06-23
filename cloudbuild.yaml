@@ -1,0 +1,23 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image=us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME'
+      - '--region=us-east4'
+      - '--platform=managed'
+
+images:
+  - 'us-east4-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE_NAME'
+
+substitutions:
+  _SERVICE_NAME: launch-bridge
+
+options:
+  logging: CLOUD_LOGGING_ONLY

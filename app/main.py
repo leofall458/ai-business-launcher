@@ -9,10 +9,10 @@ from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
-from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc
+from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
@@ -42,6 +42,7 @@ templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
+ORDERS = db.collection(ORDERS_COLLECTION)
 
 @app.on_event("startup")
 async def on_startup():
@@ -70,6 +71,21 @@ def reached(state: str, milestone: str) -> bool:
     """True once an order's state has reached or passed the given
     milestone - states only move forward, so an ordinal compare is enough."""
     return ORDER_STATE_INDEX.get(state, 0) >= ORDER_STATE_INDEX[milestone]
+
+def record_state(order_ref, new_state: str, **extra_fields):
+    """Every state transition goes through here: updates order.state (the
+    live source of truth the rest of the app reads) and appends a
+    timestamped entry to the order's events subcollection in the same
+    call - a permanent, append-only audit trail that survives even if the
+    main document is later overwritten or misread. extra_fields are merged
+    onto the order doc (e.g. paid_at, filing_error clears) but not
+    duplicated into the event - the event is just "what state, when"."""
+    # extra_fields last so it can never accidentally clobber the intended
+    # state - e.g. /launch spreads the raw intake form in here, and a
+    # future address field literally named "state" (a US state dropdown)
+    # would otherwise silently overwrite it via dict-literal precedence.
+    order_ref.set({**extra_fields, "state": new_state}, merge=True)
+    order_ref.collection("events").add({"state": new_state, "at": firestore.SERVER_TIMESTAMP})
 
 STATE_MESSAGES = {
     "draft": "We're waiting for your payment to go through.",
@@ -337,7 +353,18 @@ async def check_name(request: Request):
     scc_result, gemini_result = await asyncio.gather(
         loop.run_in_executor(None, check_name_on_scc, desired_name),
         loop.run_in_executor(None, check_business_name, desired_name, "Virginia"),
+        return_exceptions=True,
     )
+    # Each check must stand on its own - a Gemini hiccup shouldn't blank out
+    # a working SCC result, and vice versa.
+    if isinstance(scc_result, Exception):
+        scc_result = {"available": None, "status": "ERROR", "message": str(scc_result), "conflicts": [], "raw": ""}
+    if isinstance(gemini_result, Exception):
+        gemini_result = {
+            "status": "error", "domain": "", "domain_available": None,
+            "gemini_analysis": "Trademark analysis is temporarily unavailable - please try again.",
+            "scc_url": SCC_NAME_CHECK_URL,
+        }
 
     return templates.TemplateResponse(request, "name_check_result.html", {
         "result": gemini_result,
@@ -414,8 +441,17 @@ def run_name_check(order_id: str):
     """Runs automatically right after payment. Advances paid -> name_cleared
     if the business name is available on Virginia SCC; otherwise leaves the
     order at "paid" with the check result stored for the admin to see and
-    act on (the automated pipeline doesn't know how to fix a taken name)."""
-    order_ref = db.collection("orders").document(order_id)
+    act on (the automated pipeline doesn't know how to fix a taken name).
+
+    A status of "UNAVAILABLE" means there was no local Chrome to drive the
+    real check (e.g. this ran on Cloud Run, not the machine with CDP
+    access) - not a real answer either way, so it advances anyway rather
+    than stranding the order at "paid" forever. The real, authoritative
+    check still happens for real inside file_llc_on_scc's own Step 3 right
+    before filing, wherever that does have CDP access - if the name
+    actually turns out to be taken, that step fails cleanly with a
+    filing_error instead of silently completing."""
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
@@ -423,8 +459,8 @@ def run_name_check(order_id: str):
     try:
         result = check_name_on_scc(order["business_name"])
         order_ref.set({"name_check": result}, merge=True)
-        if result.get("available"):
-            order_ref.set({"state": "name_cleared", "name_cleared_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        if result.get("available") or result.get("status") == "UNAVAILABLE":
+            record_state(order_ref, "name_cleared", name_cleared_at=firestore.SERVER_TIMESTAMP)
             run_document_generation(order_id)
         else:
             print(f"⚠️ Name check did not clear for order {order_id}: {result.get('message')}")
@@ -437,42 +473,75 @@ def run_document_generation(order_id: str):
     signed LLC PDF as soon as the business name is confirmed (or
     immediately for skip_llc_formation orders) - none of these depend on
     SCC filing or the EIN, so customers get them well before those slower,
-    externally-gated steps finish. Re-entrant: a second call is a no-op
-    once documents_generated is already set."""
-    order_ref = db.collection("orders").document(order_id)
+    externally-gated steps finish.
+
+    Each agent call is isolated in its own try/except and skipped
+    entirely if it already has a result on file - one Gemini/GitHub
+    failure no longer blocks the others, and a retry (see
+    /admin/{order_id}/retry-agents) only redoes whatever didn't already
+    succeed instead of re-running everything from scratch."""
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
-    if not order or order.get("documents_generated"):
+    if not order:
         return
 
-    try:
-        business_name = order["business_name"]
-        full_name = order["full_name"]
-        business_purpose = order.get("business_purpose", "")
-        principal_address = order["principal_address"]
-        primary_sig = order["primary_sig"]
-        business_idea = order["business_idea"]
-        target_customer = order["target_customer"]
+    business_name = order.get("business_name", "")
+    full_name = order.get("full_name", "")
+    business_purpose = order.get("business_purpose", "")
+    principal_address = order.get("principal_address", "")
+    primary_sig = order.get("primary_sig", "")
+    business_idea = order.get("business_idea", "")
+    target_customer = order.get("target_customer", "")
 
-        name_result = screen_business_name(business_idea)
-        brand_result = generate_brand_kit(business_name, business_idea, target_customer)
-        marketing_result = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
+    update = {}
+    errors = {}
 
-        generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
-        safe_name = business_name.replace(" ", "_").replace("/", "_")
-        pdf_filename = f"{safe_name}_LLC_Package.pdf"
+    if not order.get("name_result"):
+        try:
+            update["name_result"] = screen_business_name(business_idea)
+        except Exception as e:
+            print(f"⚠️ Name screening agent failed for order {order_id}: {e}")
+            errors["name_result"] = f"Name screening: {e}"
 
-        order_ref.set({
-            "name_result": name_result,
-            "brand_result": brand_result,
-            "marketing_result": marketing_result,
-            "pdf_filename": pdf_filename,
-            "documents_generated": True,
-            "documents_generated_at": firestore.SERVER_TIMESTAMP,
-            "documents_error": firestore.DELETE_FIELD,
-        }, merge=True)
-    except Exception as e:
-        print(f"⚠️ Document generation crashed for order {order_id}: {e}")
-        order_ref.set({"documents_error": f"Document generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
+    if not order.get("brand_result"):
+        try:
+            update["brand_result"] = generate_brand_kit(business_name, business_idea, target_customer)
+        except Exception as e:
+            print(f"⚠️ Brand kit agent failed for order {order_id}: {e}")
+            errors["brand_result"] = f"Brand kit: {e}"
+
+    if not order.get("marketing_result"):
+        try:
+            update["marketing_result"] = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
+        except Exception as e:
+            print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
+            errors["marketing_result"] = f"Marketing plan: {e}"
+
+    if not order.get("pdf_filename"):
+        try:
+            generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
+            safe_name = business_name.replace(" ", "_").replace("/", "_")
+            update["pdf_filename"] = f"{safe_name}_LLC_Package.pdf"
+        except Exception as e:
+            print(f"⚠️ LLC PDF generation failed for order {order_id}: {e}")
+            errors["pdf_filename"] = f"LLC PDF: {e}"
+
+    # "documents_generated" means every agent has succeeded - this run's
+    # results plus whatever already existed from an earlier run - not
+    # just that this function executed, so both the status page and the
+    # next retry have an honest signal instead of a permanent green
+    # checkmark on a step that partially failed.
+    have_all = all([
+        update.get("name_result") or order.get("name_result"),
+        update.get("brand_result") or order.get("brand_result"),
+        update.get("marketing_result") or order.get("marketing_result"),
+        update.get("pdf_filename") or order.get("pdf_filename"),
+    ])
+    update["documents_generated"] = have_all
+    if have_all:
+        update["documents_generated_at"] = firestore.SERVER_TIMESTAMP
+    update["documents_error"] = "; ".join(errors.values()) if errors else firestore.DELETE_FIELD
+    order_ref.set(update, merge=True)
 
 SCC_FILED_STATES = {"filing_submitted", "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete"}
 
@@ -490,27 +559,26 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
     provided EIN instead of queuing on IRS hours. Returns True if the
     caller should trigger run_asset_generation as a background task."""
     if order.get("skip_ein"):
-        order_ref.set({
-            "state": "ein_issued",
-            "ein": order.get("existing_ein", ""),
-            "ein_status": "provided_by_customer",
-            "filing_confirmed_at": firestore.SERVER_TIMESTAMP,
-            "ein_issued_at": firestore.SERVER_TIMESTAMP,
-            "filing_error": firestore.DELETE_FIELD,
-            "ein_error": firestore.DELETE_FIELD,
-            "asset_generation_error": firestore.DELETE_FIELD,
-        }, merge=True)
+        record_state(order_ref, "ein_issued",
+            ein=order.get("existing_ein", ""),
+            ein_status="provided_by_customer",
+            filing_confirmed_at=firestore.SERVER_TIMESTAMP,
+            ein_issued_at=firestore.SERVER_TIMESTAMP,
+            filing_error=firestore.DELETE_FIELD,
+            ein_error=firestore.DELETE_FIELD,
+            asset_generation_error=firestore.DELETE_FIELD,
+        )
         return True
 
-    update = {"state": "filing_confirmed", "filing_confirmed_at": firestore.SERVER_TIMESTAMP, "filing_error": firestore.DELETE_FIELD}
+    extra = {"filing_confirmed_at": firestore.SERVER_TIMESTAMP, "filing_error": firestore.DELETE_FIELD}
     if is_irs_open():
-        update["ein_status"] = firestore.DELETE_FIELD
-        update["next_available_window"] = firestore.DELETE_FIELD
+        extra["ein_status"] = firestore.DELETE_FIELD
+        extra["next_available_window"] = firestore.DELETE_FIELD
     else:
         window = next_irs_open()
-        update["ein_status"] = "queued"
-        update["next_available_window"] = window.isoformat()
-    order_ref.set(update, merge=True)
+        extra["ein_status"] = "queued"
+        extra["next_available_window"] = window.isoformat()
+    record_state(order_ref, "filing_confirmed", **extra)
     return False
 
 def run_scc_filing(order_id: str):
@@ -526,7 +594,7 @@ def run_scc_filing(order_id: str):
     Wrapped in try/except: if the filer crashes outright (closed tab, site
     change, network blip) rather than returning False, the order must not
     be left stuck with no visible explanation."""
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
@@ -554,10 +622,10 @@ def run_scc_filing(order_id: str):
             order_ref.set({"filing_error": "SCC filing did not complete - check server screenshots, then re-approve to retry."}, merge=True)
             return
 
-        order_ref.set({
-            "state": "filing_submitted", "filing_submitted_at": firestore.SERVER_TIMESTAMP,
-            "filing_error": firestore.DELETE_FIELD,
-        }, merge=True)
+        record_state(order_ref, "filing_submitted",
+            filing_submitted_at=firestore.SERVER_TIMESTAMP,
+            filing_error=firestore.DELETE_FIELD,
+        )
     except Exception as e:
         print(f"⚠️ SCC filing crashed for order {order_id}: {e}")
         order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
@@ -575,7 +643,7 @@ def run_ein_filing(order_id: str):
     server restarts before EIN succeeds, the SSN is lost and the customer
     must be asked for it again; that's the accepted tradeoff for never
     persisting it to Firestore."""
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
@@ -620,10 +688,12 @@ def run_ein_filing(order_id: str):
         ein_filed = file_ein_with_irs(ein_customer_data, interactive=False)
         if ein_filed:
             discard_ssn(order_id)
-            order_ref.set({
-                "state": "ein_requested", "ein_error": firestore.DELETE_FIELD,
-                "ein_status": firestore.DELETE_FIELD, "next_available_window": firestore.DELETE_FIELD,
-            }, merge=True)
+            record_state(order_ref, "ein_requested",
+                ein_requested_at=firestore.SERVER_TIMESTAMP,
+                ein_error=firestore.DELETE_FIELD,
+                ein_status=firestore.DELETE_FIELD,
+                next_available_window=firestore.DELETE_FIELD,
+            )
         else:
             order_ref.set({"ein_error": "EIN filing did not complete - check server screenshots, then apply again to retry."}, merge=True)
     except Exception as e:
@@ -641,7 +711,7 @@ async def ein_queue_scheduler():
         try:
             if is_irs_open():
                 query = (
-                    db.collection("orders")
+                    ORDERS
                     .where("state", "==", "filing_confirmed")
                     .where("ein_status", "==", "queued")
                 )
@@ -664,7 +734,7 @@ def run_asset_generation(order_id: str):
     customer's Stripe Connect Standard account and a pay-what-you-want
     Payment Link on it, then deploys the business website with that link
     already embedded."""
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
@@ -677,56 +747,78 @@ def run_asset_generation(order_id: str):
         email = order["email"]
         phone = order["phone"]
 
-        connect_account_id = None
-        payment_link_url = None
-        try:
-            account = create_connect_account(
-                email=email,
-                business_name=business_name,
-                multi_member=len(order.get("all_signatures", [])) > 1,
-            )
-            connect_account_id = account.id
-            payment_link_url = create_pay_what_you_want_payment_link(account.id, business_name)
-        except Exception as e:
-            print(f"⚠️ Could not set up Stripe Connect for order {order_id}: {e}")
+        # Re-entrant by field, not by a single all-or-nothing flag - a
+        # retry (see /admin/{order_id}/retry-agents) only redoes whichever
+        # of Stripe/website didn't already succeed, instead of recreating
+        # a second Stripe Connect account or re-deploying a working site.
+        connect_account_id = order.get("stripe_connect_account_id")
+        payment_link_url = order.get("stripe_payment_link_url")
+        asset_error = None
+        if not connect_account_id:
+            try:
+                account = create_connect_account(
+                    email=email,
+                    business_name=business_name,
+                    multi_member=len(order.get("all_signatures", [])) > 1,
+                )
+                connect_account_id = account.id
+                payment_link_url = create_pay_what_you_want_payment_link(account.id, business_name)
+            except Exception as e:
+                print(f"⚠️ Could not set up Stripe Connect for order {order_id}: {e}")
+                asset_error = f"Could not set up your Stripe payment account: {e}"
 
-        website_url = None
-        try:
-            services = [
-                {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
-                for i in (1, 2, 3)
-            ]
-            photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
-            result = generate_website(
-                business_name, business_idea, target_customer, email, phone, principal_address,
-                template_name=order.get("website_template", "professional"),
-                tagline=order.get("website_tagline", ""),
-                description=order.get("website_description", ""),
-                services=services,
-                hours=order.get("business_hours", ""),
-                photos=photos,
-                instagram_url=order.get("instagram_url", ""),
-                facebook_url=order.get("facebook_url", ""),
-                tiktok_url=order.get("tiktok_url", ""),
-                color_preference=order.get("color_preference", "default"),
-                custom_primary_color=order.get("custom_primary_color", ""),
-                payment_link_url=payment_link_url,
-            )
-            deployed = deploy_website(business_name, result["html"], order_id=order_id)
-            if deployed:
-                website_url = deployed["url"]
-                order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
-        except Exception as e:
-            print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
+        website_url = order.get("website_url")
+        if not website_url:
+            try:
+                services = [
+                    {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+                    for i in (1, 2, 3)
+                ]
+                photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+                result = generate_website(
+                    business_name, business_idea, target_customer, email, phone, principal_address,
+                    template_name=order.get("website_template", "professional"),
+                    tagline=order.get("website_tagline", ""),
+                    description=order.get("website_description", ""),
+                    services=services,
+                    hours=order.get("business_hours", ""),
+                    photos=photos,
+                    instagram_url=order.get("instagram_url", ""),
+                    facebook_url=order.get("facebook_url", ""),
+                    tiktok_url=order.get("tiktok_url", ""),
+                    color_preference=order.get("color_preference", "default"),
+                    custom_primary_color=order.get("custom_primary_color", ""),
+                    payment_link_url=payment_link_url,
+                )
+                deployed = deploy_website(business_name, result["html"], order_id=order_id)
+                if deployed:
+                    website_url = deployed["url"]
+                    order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
+                else:
+                    # deploy_website returns None (not a raise) on a failed
+                    # GitHub push/Pages call - this was previously silent, with
+                    # nothing recorded anywhere and the order advancing to
+                    # "complete" regardless. See the website-deploy log output
+                    # for the actual GitHub API error.
+                    print(f"⚠️ Website deploy returned no URL for order {order_id} - check logs above for the GitHub API error.")
+                    asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
+            except Exception as e:
+                print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
+                asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed unexpectedly: {e}"
 
-        order_ref.set({
-            "website_url": website_url,
-            "stripe_connect_account_id": connect_account_id,
-            "state": "assets_generated",
-            "assets_generated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
+        record_state(order_ref, "assets_generated",
+            website_url=website_url,
+            stripe_connect_account_id=connect_account_id,
+            stripe_payment_link_url=payment_link_url,
+            assets_generated_at=firestore.SERVER_TIMESTAMP,
+            asset_generation_error=asset_error if asset_error else firestore.DELETE_FIELD,
+        )
 
-        order_ref.set({"state": "complete"}, merge=True)
+        # Only the live website actually proves this order is done - a
+        # Stripe or website failure must never be masked by a state that
+        # tells the customer everything is ready.
+        if website_url:
+            record_state(order_ref, "complete")
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
@@ -763,26 +855,36 @@ async def launch(request: Request):
 
     parsed = parse_intake_form(form)
 
-    order_ref = db.collection("orders").document()
+    order_ref = ORDERS.document()
     order_id = order_ref.id
-    order_ref.set({
-        **form,
-        **parsed,
-        **photo_data,
-        "state": "draft",
-        "created_at": firestore.SERVER_TIMESTAMP,
-    })
+    # Written immediately, before the Stripe call below - so the customer's
+    # data is never lost even if checkout-session creation fails or their
+    # browser closes before the redirect, only the (re-creatable) Stripe
+    # session would be missing, not their submitted information.
+    record_state(order_ref, "draft", **form, **parsed, **photo_data, created_at=firestore.SERVER_TIMESTAMP)
 
     if ssn:
         stash_ssn(order_id, ssn)
 
     base_url = str(request.base_url)
-    session = create_checkout_session(
-        order_id=order_id,
-        business_name=parsed["business_name"],
-        success_url=f"{base_url}success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{base_url}cancel",
-    )
+    try:
+        session = create_checkout_session(
+            order_id=order_id,
+            business_name=parsed["business_name"],
+            success_url=f"{base_url}success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base_url}cancel",
+        )
+        order_ref.set({"stripe_checkout_session_id": session.id}, merge=True)
+    except Exception as e:
+        # Previously uncaught here - any Stripe failure (bad key, outage,
+        # rate limit) crashed with a raw 500 that htmx silently drops
+        # without swapping anything in, so the customer just saw the
+        # button spin and stop with no explanation at all.
+        print(f"⚠️ Could not create Stripe checkout session for order {order_id}: {e}")
+        return templates.TemplateResponse(request, "form_errors.html", {
+            "errors": {"_checkout": "Something went wrong starting checkout - please try again in a moment, or contact support@launchbridge.com if this keeps happening."},
+            "all_fields": ALL_VALIDATED_FIELDS,
+        })
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
 
@@ -797,7 +899,7 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     work; the other is a no-op. Returns True if it actually advanced the
     order, False if there was nothing to do (already processed, order
     missing, or payment not actually confirmed paid)."""
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order_snap = order_ref.get()
     if not order_snap.exists:
         return False
@@ -811,13 +913,16 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         # Already verified to exist on SCC at intake time (see
         # /verify-existing-llc) - nothing left to file or check the
         # name of, so jump straight past filing_confirmed.
-        order_ref.set({"state": "filing_confirmed"}, merge=True)
+        # advance_past_filing_confirmed (below) does the actual state
+        # transition (to filing_confirmed, or straight to ein_issued for
+        # skip_ein too) - run_document_generation doesn't read order.state
+        # so it's safe to fire before that lands.
         background_tasks.add_task(run_document_generation, order_id)
         trigger_assets = advance_past_filing_confirmed(order_ref, order)
         if trigger_assets:
             background_tasks.add_task(run_asset_generation, order_id)
     else:
-        order_ref.set({"state": "paid"}, merge=True)
+        record_state(order_ref, "paid")
         background_tasks.add_task(run_name_check, order_id)
 
     return True
@@ -897,7 +1002,7 @@ def status_context(order_id: str, order: dict) -> dict:
 
 @app.get("/status/{order_id}", response_class=HTMLResponse)
 async def status_page(request: Request, order_id: str):
-    order_snap = db.collection("orders").document(order_id).get()
+    order_snap = ORDERS.document(order_id).get()
     if not order_snap.exists:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
     order = order_snap.to_dict()
@@ -924,7 +1029,7 @@ async def status_timeline_partial(request: Request, order_id: str):
     """Polled every 30s by the status page (see status.html) to refresh
     just the timeline + estimate, without reloading documents/contact/share
     sections that don't change nearly as often."""
-    order_snap = db.collection("orders").document(order_id).get()
+    order_snap = ORDERS.document(order_id).get()
     if not order_snap.exists:
         return HTMLResponse("")
     order = order_snap.to_dict()
@@ -940,7 +1045,7 @@ async def cancel():
 
 @app.get("/connect/onboard/{order_id}")
 async def connect_onboard(request: Request, order_id: str):
-    order = db.collection("orders").document(order_id).get().to_dict()
+    order = ORDERS.document(order_id).get().to_dict()
     if not order or not order.get("stripe_connect_account_id"):
         return RedirectResponse(url="/")
 
@@ -955,7 +1060,7 @@ async def connect_onboard(request: Request, order_id: str):
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, authorized: bool = Depends(verify_admin)):
     orders = []
-    query = db.collection("orders").order_by("created_at", direction=firestore.Query.DESCENDING)
+    query = ORDERS.order_by("created_at", direction=firestore.Query.DESCENDING)
     for doc in query.stream():
         order = doc.to_dict()
         order["id"] = doc.id
@@ -977,15 +1082,13 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
 
 @app.post("/admin/{order_id}/approve")
 async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    db.collection("orders").document(order_id).set({
-        "state": "review_approved", "review_approved_at": firestore.SERVER_TIMESTAMP,
-    }, merge=True)
+    record_state(ORDERS.document(order_id), "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
     background_tasks.add_task(run_scc_filing, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-filed")
 async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return RedirectResponse(url="/admin", status_code=303)
@@ -996,7 +1099,7 @@ async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, aut
 
 @app.post("/admin/{order_id}/apply-ein")
 async def admin_apply_ein(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    order_ref = db.collection("orders").document(order_id)
+    order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order or order.get("state") not in EIN_ELIGIBLE_STATES:
         return RedirectResponse(url="/admin", status_code=303)
@@ -1012,10 +1115,27 @@ async def admin_apply_ein(order_id: str, background_tasks: BackgroundTasks, auth
 
 @app.post("/admin/{order_id}/mark-ein")
 async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
-    db.collection("orders").document(order_id).set({
-        "ein": ein, "state": "ein_issued", "ein_issued_at": firestore.SERVER_TIMESTAMP,
-        "ein_error": firestore.DELETE_FIELD, "asset_generation_error": firestore.DELETE_FIELD,
-    }, merge=True)
+    record_state(ORDERS.document(order_id), "ein_issued",
+        ein=ein, ein_issued_at=firestore.SERVER_TIMESTAMP,
+        ein_error=firestore.DELETE_FIELD, asset_generation_error=firestore.DELETE_FIELD,
+    )
+    background_tasks.add_task(run_asset_generation, order_id)
+    return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/admin/{order_id}/retry-agents")
+async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """Re-runs whichever agent steps haven't actually succeeded yet for an
+    existing, already-paid order - never touches Stripe/payment, so the
+    customer is never charged again. Safe to call regardless of how far
+    the order has gotten: run_document_generation and run_asset_generation
+    both skip any piece (name/brand/marketing/PDF, Stripe Connect,
+    website) that already has a result on file and only retry what's
+    missing or previously errored."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    background_tasks.add_task(run_document_generation, order_id)
     background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -1042,7 +1162,7 @@ async def contact(request: Request):
 
 @app.get("/download-brand-kit/{order_id}")
 async def download_brand_kit(order_id: str):
-    order = db.collection("orders").document(order_id).get().to_dict()
+    order = ORDERS.document(order_id).get().to_dict()
     if not order or not order.get("brand_result"):
         return HTMLResponse("Not found", status_code=404)
 

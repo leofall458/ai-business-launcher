@@ -4,10 +4,31 @@ from app.secrets import get_secret
 SCC_USERNAME = get_secret("SCC_USERNAME")
 SCC_PASSWORD = get_secret("SCC_PASSWORD")
 
+SCC_NAME_CHECK_URL = "https://cis.scc.virginia.gov/Account/NameCheckAvailability"
+SCC_ENTITY_SEARCH_URL = "https://cis.scc.virginia.gov/EntitySearch/Index"
+
+def _connect_to_local_chrome(p):
+    """The real SCC checks drive a real, already-logged-in Chrome browser
+    over CDP on whatever machine has one open - never reachable from a
+    deployed server like Cloud Run. Isolated into its own helper so that
+    specific failure (no local browser to drive) can be told apart from a
+    genuine SCC-side error once we're actually talking to the site."""
+    return p.chromium.connect_over_cdp("http://172.27.176.1:9222")
+
 def check_name_on_scc(business_name: str) -> dict:
     try:
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://172.27.176.1:9222")
+            try:
+                browser = _connect_to_local_chrome(p)
+            except Exception:
+                return {
+                    "available": None,
+                    "status": "UNAVAILABLE",
+                    "message": "SCC name check is temporarily unavailable.",
+                    "link": SCC_NAME_CHECK_URL,
+                    "conflicts": [],
+                    "raw": "",
+                }
             context = browser.contexts[0]
             page = context.new_page()
 
@@ -92,7 +113,15 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
     distinguishability check against similar names."""
     try:
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://172.27.176.1:9222")
+            try:
+                browser = _connect_to_local_chrome(p)
+            except Exception:
+                return {
+                    "exists": None,
+                    "status": "UNAVAILABLE",
+                    "message": "We can't verify existing LLCs against Virginia SCC right now.",
+                    "link": SCC_ENTITY_SEARCH_URL,
+                }
             context = browser.contexts[0]
             page = context.new_page()
 

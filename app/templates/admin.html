@@ -60,6 +60,12 @@
                 </div>
                 {% endif %}
 
+                {% if order.documents_error %}
+                <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-red-300">⚠️ Document generation error: {{ order.documents_error }}</p>
+                </div>
+                {% endif %}
+
                 {% if order.filing_error %}
                 <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
                     <p class="text-xs text-red-300">⚠️ Filing error: {{ order.filing_error }}</p>
@@ -125,6 +131,15 @@
                             Mark EIN Received
                         </button>
                     </form>
+
+                    {% if order.documents_error or order.asset_generation_error %}
+                    <form method="post" action="/admin/{{ order.id }}/retry-agents">
+                        <button type="submit"
+                            class="bg-orange-700 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                            🔁 Retry Failed Agents
+                        </button>
+                    </form>
+                    {% endif %}
 
                     <a href="/status/{{ order.id }}" target="_blank"
                         class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition self-center">
