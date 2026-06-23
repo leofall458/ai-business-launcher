@@ -8,3 +8,5 @@ firebase-adminsdk*.json
 *.key
 .playwright/
 scc_session.json
+gmail_credentials.json
+gmail_token.json

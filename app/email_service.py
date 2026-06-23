@@ -16,7 +16,8 @@ from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
 
 FROM_NAME = "Launch Bridge LLC"
 
-def _send(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_filename: str = None) -> bool:
+def _send(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_filename: str = None,
+          attachment_bytes: bytes = None) -> bool:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         print(f"⚠️ Gmail credentials not configured - skipping email '{subject}' to {to_email}")
         return False
@@ -29,7 +30,12 @@ def _send(to_email: str, subject: str, body: str, attachment_path: str = None, a
     msg["To"] = to_email
     msg.set_content(body)
 
-    if attachment_path:
+    if attachment_bytes is not None:
+        ctype, _ = mimetypes.guess_type(attachment_filename or "")
+        maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
+        msg.add_attachment(attachment_bytes, maintype=maintype, subtype=subtype,
+            filename=attachment_filename or "attachment")
+    elif attachment_path:
         try:
             ctype, _ = mimetypes.guess_type(attachment_path)
             maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
@@ -98,6 +104,26 @@ def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str
     _send(email, "Your LLC is approved!", body,
         attachment_path=certificate_path,
         attachment_filename=f"{business_name.replace(' ', '_')}_Certificate.pdf" if certificate_path else None)
+
+def forward_scc_approval_email(order: dict, certificate_bytes: bytes = None) -> bool:
+    """Sent by app/gmail_poller.py the moment it matches a real SCC
+    approval email to an order - distinct from send_llc_approved_email
+    (used by the admin's manual fallback and the hourly name-search
+    poller, see app/check_scc_status.py), which has its own already-
+    shipped wording. This one uses the exact text requested for the
+    email-forwarding flow specifically."""
+    email = order.get("email", "")
+    business_name = order.get("business_name", "your business")
+    customer_name = order.get("full_name", "") or "there"
+    body = (
+        f"Dear {customer_name}, Great news! Your LLC has been approved by the Virginia State "
+        "Corporation Commission. Please find your Certificate of Organization attached. "
+        "Our team will now proceed with your EIN application. - Launch Bridge LLC"
+    )
+    safe_name = business_name.replace(" ", "_").replace("/", "_")
+    return _send(email, "Your LLC is approved!", body,
+        attachment_bytes=certificate_bytes,
+        attachment_filename=f"{safe_name}_Certificate.pdf" if certificate_bytes else None)
 
 def send_ein_issued_email(order: dict, order_id: str, ein: str):
     email = order.get("email", "")

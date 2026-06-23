@@ -74,7 +74,12 @@
                 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
                     <p class="text-sm font-semibold text-white mb-1">🏛️ Certificate of Organization</p>
                     {% if filing_confirmed %}
+                    {% if has_certificate %}
+                    <p class="text-xs text-green-400 mb-3">Available</p>
+                    <a href="/download-certificate/{{ order_id }}" class="block text-center text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition">⬇️ Download PDF</a>
+                    {% else %}
                     <p class="text-xs text-gray-500">Issued by Virginia SCC - we'll post it here once we receive it</p>
+                    {% endif %}
                     {% if scc_confirmation_number %}
                     <p class="text-xs text-green-400 font-mono mt-1">SCC Confirmation #: {{ scc_confirmation_number }}</p>
                     {% endif %}

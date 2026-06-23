@@ -42,6 +42,7 @@ from app.email_service import (
     send_ein_issued_email,
     send_website_live_email,
 )
+from app.storage_service import fetch_certificate
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -564,7 +565,18 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
     formation. If the customer also already has an EIN (skip_ein), there's
     nothing left to wait on - jump straight to ein_issued with their
     provided EIN instead of queuing on IRS hours. Returns True if the
-    caller should trigger run_asset_generation as a background task."""
+    caller should trigger run_asset_generation as a background task.
+
+    Idempotent: a no-op if the order has already passed filing_confirmed.
+    Two independent detectors can both notice the same real-world SCC
+    approval - the hourly name-search poller (app/check_scc_status.py)
+    and the 5-minute Gmail poller (app/gmail_poller.py) - and either one
+    might win the race to call this first. Without this guard the loser
+    would re-send the approved/EIN-issued email and re-run asset
+    generation a second time."""
+    if reached(order.get("state", "draft"), "filing_confirmed"):
+        return False
+
     if order.get("skip_ein"):
         existing_ein = order.get("existing_ein", "")
         record_state(order_ref, "ein_issued",
@@ -1117,6 +1129,7 @@ async def status_page(request: Request, order_id: str):
         "has_brand_kit": bool(order.get("brand_result")),
         "filing_confirmed": reached(state, "filing_confirmed") or bool(order.get("skip_llc_formation")),
         "scc_confirmation_number": order.get("scc_confirmation_number"),
+        "has_certificate": bool(order.get("certificate_uploaded_at")),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
     })
 
@@ -1169,11 +1182,27 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         if order.get("next_available_window"):
             order["next_available_window_eta"] = format_eta(datetime.datetime.fromisoformat(order["next_available_window"]))
 
+    def fmt_datetime(ts) -> str:
+        return ts.strftime("%B %-d, %Y %I:%M %p").replace(" 0", " ") if ts else None
+
+    gmail_poller_status = db.collection("system").document("gmail_poller").get().to_dict() or {}
+    gmail_poller_status["last_checked_display"] = fmt_datetime(gmail_poller_status.get("last_checked_at"))
+
+    processed_scc_emails = []
+    email_log_query = db.collection("processed_scc_emails").order_by("processed_at", direction=firestore.Query.DESCENDING).limit(15)
+    for doc in email_log_query.stream():
+        entry = doc.to_dict()
+        entry["id"] = doc.id
+        entry["processed_display"] = fmt_datetime(entry.get("processed_at"))
+        processed_scc_emails.append(entry)
+
     return templates.TemplateResponse(request, "admin.html", {
         "orders": orders,
         "irs_open": irs_open,
         "irs_next_window_eta": irs_next_window_eta,
         "warning": request.query_params.get("warning"),
+        "gmail_poller_status": gmail_poller_status,
+        "processed_scc_emails": processed_scc_emails,
     })
 
 @app.post("/admin/{order_id}/approve")
@@ -1280,6 +1309,26 @@ async def download_brand_kit(order_id: str):
         content=order["brand_result"].get("result", ""),
         media_type="text/plain",
         headers={"Content-Disposition": f"attachment; filename={safe_name}_Brand_Kit.txt"},
+    )
+
+@app.get("/download-certificate/{order_id}")
+async def download_certificate(order_id: str):
+    order = ORDERS.document(order_id).get().to_dict()
+    if not order or not order.get("certificate_uploaded_at"):
+        return HTMLResponse("Not found", status_code=404)
+
+    try:
+        pdf_bytes = fetch_certificate(order_id)
+    except Exception as e:
+        print(f"⚠️ Could not fetch certificate for order {order_id}: {e}")
+        return HTMLResponse("Not found", status_code=404)
+
+    business_name = order.get("business_name", "business")
+    safe_name = business_name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={safe_name}_Certificate.pdf"},
     )
 
 @app.get("/download-pdf/{filename}")

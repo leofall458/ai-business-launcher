@@ -43,3 +43,9 @@ SCC_FILING_CARD = json.loads(_scc_filing_card_raw) if _scc_filing_card_raw else 
 GMAIL_USER = get_secret("GMAIL_USER")
 GMAIL_APP_PASSWORD = get_secret("GMAIL_APP_PASSWORD")
 SUPPORT_EMAIL = "support@launchbridge.ai"
+
+# Private GCS bucket holding LLC certificates and similar order documents -
+# never served as a public URL; always streamed back through our own app
+# (see /download-certificate) the same way /download-pdf already serves
+# locally-generated PDFs.
+STORAGE_BUCKET = os.getenv("STORAGE_BUCKET", "ai-biz-launcher-llc-certificates")

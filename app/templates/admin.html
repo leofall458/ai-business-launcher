@@ -21,6 +21,35 @@
         </div>
         {% endif %}
 
+        <!-- Gmail Poller Status -->
+        <div class="bg-gray-900 border border-gray-700 rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 text-sm">
+                {% if gmail_poller_status.last_checked_display %}
+                    {% if gmail_poller_status.status == "error" %}
+                    <span class="text-red-400">🔴 Gmail poller last checked {{ gmail_poller_status.last_checked_display }} - error: {{ gmail_poller_status.last_error }}</span>
+                    {% else %}
+                    <span class="text-green-400">🟢 Gmail poller last checked {{ gmail_poller_status.last_checked_display }}</span>
+                    {% endif %}
+                {% else %}
+                <span class="text-gray-500">⚪ Gmail poller has not run yet - start it with <code class="text-gray-400">python3 -m app.gmail_poller</code></span>
+                {% endif %}
+            </div>
+            {% if processed_scc_emails %}
+            <details class="text-xs">
+                <summary class="text-blue-400 cursor-pointer">View {{ processed_scc_emails|length }} processed SCC email{{ "s" if processed_scc_emails|length != 1 else "" }}</summary>
+                <div class="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                    {% for entry in processed_scc_emails %}
+                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-2">
+                        <p class="text-gray-300">{{ entry.processed_display }} · <span class="{{ 'text-green-400' if entry.matched else 'text-amber-400' }}">{{ "Matched" if entry.matched else "No match" }}</span>{% if entry.forwarded %} · <span class="text-green-400">Forwarded</span>{% endif %}</p>
+                        <p class="text-gray-500 truncate">"{{ entry.subject }}"{% if entry.business_name %} → {{ entry.business_name }}{% endif %}</p>
+                        {% if entry.error %}<p class="text-red-400">{{ entry.error }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+        </div>
+
         <div class="space-y-5">
         {% for order in orders %}
             <div class="bg-gray-900 border border-gray-700 rounded-xl p-5">
@@ -93,6 +122,18 @@
                 </div>
                 {% endif %}
 
+                {% if order.state == "filing_confirmed" and not order.skip_ein and not order.ein and order.ein_status != "queued" and irs_open %}
+                <div class="bg-green-950 border border-green-700 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-xs text-green-300">🔔 EIN ready to file for {{ order.business_name }}</p>
+                    <form method="post" action="/admin/{{ order.id }}/apply-ein">
+                        <button type="submit"
+                            class="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                            Apply for EIN →
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+
                 <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800">
                     {% if not order.skip_llc_formation %}
                     <form method="post" action="/admin/{{ order.id }}/approve">
@@ -102,15 +143,20 @@
                         </button>
                     </form>
 
-                    <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2">
-                        <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
-                            value="{{ order.scc_confirmation_number or '' }}" required
-                            class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-48"/>
-                        <button type="submit"
-                            class="bg-green-700 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
-                            Mark Approved by SCC
-                        </button>
-                    </form>
+                    {% if order.state == "filing_submitted" %}
+                    <div class="w-full bg-gray-800/50 border border-dashed border-gray-700 rounded-lg p-2 flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-gray-500 whitespace-nowrap">Manual fallback (normally automatic via Gmail poller):</span>
+                        <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2">
+                            <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
+                                value="{{ order.scc_confirmation_number or '' }}" required
+                                class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-48"/>
+                            <button type="submit"
+                                class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
+                                Mark Approved by SCC
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
                     {% endif %}
 
                     {% if order.state == "filing_confirmed" and not order.skip_ein %}
