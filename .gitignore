@@ -7,3 +7,4 @@ node_modules/
 firebase-adminsdk*.json
 *.key
 .playwright/
+scc_session.json
