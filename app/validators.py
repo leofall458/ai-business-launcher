@@ -30,7 +30,7 @@ EIN_INVALID_PREFIXES = {
 
 ALL_VALIDATED_FIELDS = [
     "first_name", "last_name", "email", "phone", "dob",
-    "address", "city", "zipcode", "ssn", "desired_name",
+    "address", "city", "zipcode", "desired_name",
     "existing_llc_name", "existing_ein",
     "photo_1", "photo_2", "photo_3",
 ]

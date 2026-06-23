@@ -23,7 +23,7 @@ def create_checkout_session(order_id: str, business_name: str, success_url: str,
                 "unit_amount": LLC_FORMATION_PRICE_CENTS,
                 "product_data": {
                     "name": f"Virginia LLC Formation - {business_name}",
-                    "description": "Virginia LLC Formation - includes state filing fee, EIN application, brand kit, marketing plan, and business website",
+                    "description": "$250 Launch Bridge service fee + $100 Virginia state filing fee (we pay this to Virginia for you) = $350 total. Includes EIN application, brand kit, marketing plan, and business website.",
                 },
             },
             "quantity": 1,

@@ -26,6 +26,7 @@ import traceback
 from app.main import db, ORDERS, advance_past_filing_confirmed, run_asset_generation
 from app.agents.scc_name_check import check_llc_exists_on_scc
 from app.notify import notify_windows
+from app.email_service import send_llc_approved_email
 
 CHECK_INTERVAL_SECONDS = 3600
 
@@ -48,6 +49,7 @@ def check_once():
         if result.get("exists") is True:
             print(f"✅ {business_name} is now approved on Virginia SCC!")
             trigger_assets = advance_past_filing_confirmed(doc.reference, order)
+            send_llc_approved_email(order, order_id)
             if trigger_assets:
                 run_asset_generation(order_id)
             notify_windows("Launch Bridge LLC", f"{business_name} approved by Virginia SCC!")

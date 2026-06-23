@@ -43,6 +43,9 @@
                     {% if order.ein %}
                     <p>EIN: <span class="text-white font-mono">{{ order.ein }}</span></p>
                     {% endif %}
+                    {% if order.scc_confirmation_number %}
+                    <p>SCC Confirmation #: <span class="text-white font-mono">{{ order.scc_confirmation_number }}</span></p>
+                    {% endif %}
                 </div>
 
                 <div class="flex gap-2 mb-4">
@@ -99,10 +102,13 @@
                         </button>
                     </form>
 
-                    <form method="post" action="/admin/{{ order.id }}/mark-filed">
+                    <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2">
+                        <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
+                            value="{{ order.scc_confirmation_number or '' }}" required
+                            class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-48"/>
                         <button type="submit"
-                            class="bg-green-700 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                            Mark as Filed
+                            class="bg-green-700 hover:bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
+                            Mark Approved by SCC
                         </button>
                     </form>
                     {% endif %}
@@ -150,6 +156,15 @@
         {% else %}
             <p class="text-gray-500 text-sm">No orders yet.</p>
         {% endfor %}
+        </div>
+
+        <div class="text-center mt-12 pt-6 border-t border-gray-800">
+            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
+                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
+                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
+                <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+            </p>
+            <p class="text-xs text-gray-700 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
         </div>
 
     </div>

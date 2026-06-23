@@ -75,6 +75,9 @@
                     <p class="text-sm font-semibold text-white mb-1">🏛️ Certificate of Organization</p>
                     {% if filing_confirmed %}
                     <p class="text-xs text-gray-500">Issued by Virginia SCC - we'll post it here once we receive it</p>
+                    {% if scc_confirmation_number %}
+                    <p class="text-xs text-green-400 font-mono mt-1">SCC Confirmation #: {{ scc_confirmation_number }}</p>
+                    {% endif %}
                     {% else %}
                     <p class="text-xs text-gray-500">Pending</p>
                     {% endif %}
@@ -103,7 +106,7 @@
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 sm:p-6">
             <h2 class="text-lg font-semibold text-white mb-1">Questions about your order?</h2>
             <p class="text-sm text-gray-400 mb-4">
-                Email <a href="mailto:support@launchbridge.com" class="text-blue-400 underline">support@launchbridge.com</a>
+                Email <a href="mailto:support@launchbridge.ai" class="text-blue-400 underline">support@launchbridge.ai</a>
                 or send us a message below.
             </p>
 
@@ -150,8 +153,9 @@
             <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
                 <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
                 <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-                Not legal advice
+                <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
             </p>
+            <p class="text-xs text-gray-700 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
         </div>
 
     </div>

@@ -39,3 +39,7 @@ ADMIN_PASSWORD = get_secret("ADMIN_PASSWORD")
 # it's a set of related fields, not one token - see app/secrets.py.
 _scc_filing_card_raw = get_secret("SCC_FILING_CARD")
 SCC_FILING_CARD = json.loads(_scc_filing_card_raw) if _scc_filing_card_raw else {}
+
+GMAIL_USER = get_secret("GMAIL_USER")
+GMAIL_APP_PASSWORD = get_secret("GMAIL_APP_PASSWORD")
+SUPPORT_EMAIL = "support@launchbridge.ai"
