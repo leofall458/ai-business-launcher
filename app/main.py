@@ -34,7 +34,14 @@ from app.stripe_service import (
     construct_webhook_event,
 )
 from app.ssn_cache import stash as stash_ssn, peek as peek_ssn, discard as discard_ssn
-from app.validators import validate_intake_form, ALL_VALIDATED_FIELDS
+from app.validators import validate_intake_form, validate_ssn, ALL_VALIDATED_FIELDS
+from app.email_service import (
+    send_order_received_email,
+    send_llc_filed_email,
+    send_llc_approved_email,
+    send_ein_issued_email,
+    send_website_live_email,
+)
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -559,8 +566,9 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
     provided EIN instead of queuing on IRS hours. Returns True if the
     caller should trigger run_asset_generation as a background task."""
     if order.get("skip_ein"):
+        existing_ein = order.get("existing_ein", "")
         record_state(order_ref, "ein_issued",
-            ein=order.get("existing_ein", ""),
+            ein=existing_ein,
             ein_status="provided_by_customer",
             filing_confirmed_at=firestore.SERVER_TIMESTAMP,
             ein_issued_at=firestore.SERVER_TIMESTAMP,
@@ -568,6 +576,7 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
             ein_error=firestore.DELETE_FIELD,
             asset_generation_error=firestore.DELETE_FIELD,
         )
+        send_ein_issued_email(order, order_ref.id, existing_ein)
         return True
 
     extra = {"filing_confirmed_at": firestore.SERVER_TIMESTAMP, "filing_error": firestore.DELETE_FIELD}
@@ -626,6 +635,7 @@ def run_scc_filing(order_id: str):
             filing_submitted_at=firestore.SERVER_TIMESTAMP,
             filing_error=firestore.DELETE_FIELD,
         )
+        send_llc_filed_email(order, order_id)
     except Exception as e:
         print(f"⚠️ SCC filing crashed for order {order_id}: {e}")
         order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
@@ -819,6 +829,8 @@ def run_asset_generation(order_id: str):
         # tells the customer everything is ready.
         if website_url:
             record_state(order_ref, "complete")
+            order["website_url"] = website_url
+            send_website_live_email(order, order_id)
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
@@ -842,10 +854,9 @@ async def launch(request: Request):
                     photo_errors[f"photo_{i}"] = f"Could not process photo {i} - try a different file."
 
     form = {k: v for k, v in form_raw.items() if not (k.startswith("photo_") and hasattr(v, "filename"))}
-    ssn = form.pop("ssn", "")
     form.setdefault("registered_agent_choice", "launchbridge")
 
-    errors = validate_intake_form({**form, "ssn": ssn})
+    errors = validate_intake_form(form)
     errors.update(photo_errors)
     if errors:
         return templates.TemplateResponse(request, "form_errors.html", {
@@ -863,9 +874,6 @@ async def launch(request: Request):
     # session would be missing, not their submitted information.
     record_state(order_ref, "draft", **form, **parsed, **photo_data, created_at=firestore.SERVER_TIMESTAMP)
 
-    if ssn:
-        stash_ssn(order_id, ssn)
-
     base_url = str(request.base_url)
     try:
         session = create_checkout_session(
@@ -882,11 +890,17 @@ async def launch(request: Request):
         # button spin and stop with no explanation at all.
         print(f"⚠️ Could not create Stripe checkout session for order {order_id}: {e}")
         return templates.TemplateResponse(request, "form_errors.html", {
-            "errors": {"_checkout": "Something went wrong starting checkout - please try again in a moment, or contact support@launchbridge.com if this keeps happening."},
+            "errors": {"_checkout": "Something went wrong starting checkout - please try again in a moment, or contact support@launchbridge.ai if this keeps happening."},
             "all_fields": ALL_VALIDATED_FIELDS,
         })
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
+
+def needs_ssn(order: dict) -> bool:
+    """True if this order still needs an EIN application filed with the
+    IRS - the only step that actually requires an SSN. skip_ein customers
+    already have their own EIN and are never asked for one."""
+    return not order.get("skip_ein")
 
 def process_paid_order(order_id: str, payment_status: str, background_tasks: BackgroundTasks) -> bool:
     """Advances an order past payment and kicks off the real pipeline -
@@ -898,7 +912,16 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     Whichever of /success or /webhook reaches this first does the real
     work; the other is a no-op. Returns True if it actually advanced the
     order, False if there was nothing to do (already processed, order
-    missing, or payment not actually confirmed paid)."""
+    missing, or payment not actually confirmed paid).
+
+    If the order will eventually need an EIN, the SSN hasn't been
+    collected yet at all - intake no longer asks for it (see
+    /collect-ssn) - so the agent pipeline itself is deferred until the
+    customer submits it; this just marks the order "paid" and sets
+    awaiting_ssn so /success and /status know to send them there first.
+    Both /success and /webhook can reach here for the same order (the
+    usual race), so the "we received your order" email is sent exactly
+    once, right here, regardless of which path wins."""
     order_ref = ORDERS.document(order_id)
     order_snap = order_ref.get()
     if not order_snap.exists:
@@ -909,6 +932,12 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         return False
 
     order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    send_order_received_email(order, order_id)
+
+    if needs_ssn(order):
+        record_state(order_ref, "paid", awaiting_ssn=True)
+        return True
+
     if order.get("skip_llc_formation"):
         # Already verified to exist on SCC at intake time (see
         # /verify-existing-llc) - nothing left to file or check the
@@ -926,6 +955,26 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         background_tasks.add_task(run_name_check, order_id)
 
     return True
+
+def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
+    """Picks up exactly where process_paid_order left off for an order
+    that was waiting on an SSN - clears awaiting_ssn and kicks off the
+    same pipeline process_paid_order would have started immediately had
+    the SSN not been needed."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    order_ref.set({"awaiting_ssn": False, "ssn_collected_at": firestore.SERVER_TIMESTAMP}, merge=True)
+
+    if order.get("skip_llc_formation"):
+        background_tasks.add_task(run_document_generation, order_id)
+        trigger_assets = advance_past_filing_confirmed(order_ref, order)
+        if trigger_assets:
+            background_tasks.add_task(run_asset_generation, order_id)
+    else:
+        background_tasks.add_task(run_name_check, order_id)
 
 @app.get("/success")
 async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
@@ -946,7 +995,50 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
     if not resolved_order_id:
         return RedirectResponse(url="/")
 
+    order = ORDERS.document(resolved_order_id).get().to_dict()
+    if order and order.get("awaiting_ssn"):
+        return RedirectResponse(url=f"/collect-ssn/{resolved_order_id}")
+
     return RedirectResponse(url=f"/status/{resolved_order_id}")
+
+@app.get("/collect-ssn/{order_id}", response_class=HTMLResponse)
+async def collect_ssn_page(request: Request, order_id: str):
+    order = ORDERS.document(order_id).get().to_dict()
+    if not order:
+        return HTMLResponse("<p>Order not found.</p>", status_code=404)
+    if not order.get("awaiting_ssn"):
+        return RedirectResponse(url=f"/status/{order_id}")
+
+    return templates.TemplateResponse(request, "collect_ssn.html", {
+        "order_id": order_id,
+        "business_name": order.get("business_name", ""),
+        "error": None,
+    })
+
+@app.post("/collect-ssn/{order_id}", response_class=HTMLResponse)
+async def collect_ssn_submit(request: Request, order_id: str, background_tasks: BackgroundTasks):
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return HTMLResponse("<p>Order not found.</p>", status_code=404)
+    if not order.get("awaiting_ssn"):
+        return RedirectResponse(url=f"/status/{order_id}")
+
+    form = await request.form()
+    ssn = (form.get("ssn") or "").strip()
+    error = validate_ssn(ssn)
+    if error:
+        return templates.TemplateResponse(request, "collect_ssn.html", {
+            "order_id": order_id,
+            "business_name": order.get("business_name", ""),
+            "error": error,
+        }, status_code=400)
+
+    # In-memory only, same as the old intake-time flow - never written to
+    # Firestore. See app/ssn_cache.py.
+    stash_ssn(order_id, ssn)
+    start_pipeline_after_ssn(order_id, background_tasks)
+    return RedirectResponse(url=f"/status/{order_id}", status_code=303)
 
 @app.post("/webhook")
 async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -1008,6 +1100,9 @@ async def status_page(request: Request, order_id: str):
     order = order_snap.to_dict()
     state = order.get("state", "draft")
 
+    if order.get("awaiting_ssn"):
+        return RedirectResponse(url=f"/collect-ssn/{order_id}")
+
     return templates.TemplateResponse(request, "status.html", {
         **status_context(order_id, order),
         "business_name": order.get("business_name"),
@@ -1021,6 +1116,7 @@ async def status_page(request: Request, order_id: str):
         "pdf_filename": order.get("pdf_filename"),
         "has_brand_kit": bool(order.get("brand_result")),
         "filing_confirmed": reached(state, "filing_confirmed") or bool(order.get("skip_llc_formation")),
+        "scc_confirmation_number": order.get("scc_confirmation_number"),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
     })
 
@@ -1087,11 +1183,19 @@ async def admin_approve(order_id: str, background_tasks: BackgroundTasks, author
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-filed")
-async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, scc_confirmation_number: str = Form(...), authorized: bool = Depends(verify_admin)):
+    scc_confirmation_number = scc_confirmation_number.strip()
+    if not scc_confirmation_number:
+        return RedirectResponse(url=f"/admin?warning={quote('SCC confirmation number is required to mark an order as approved.')}", status_code=303)
+
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return RedirectResponse(url="/admin", status_code=303)
+
+    order_ref.set({"scc_confirmation_number": scc_confirmation_number}, merge=True)
+    send_llc_approved_email(order, order_id, scc_confirmation_number)
+
     trigger_assets = advance_past_filing_confirmed(order_ref, order)
     if trigger_assets:
         background_tasks.add_task(run_asset_generation, order_id)
@@ -1115,10 +1219,14 @@ async def admin_apply_ein(order_id: str, background_tasks: BackgroundTasks, auth
 
 @app.post("/admin/{order_id}/mark-ein")
 async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
-    record_state(ORDERS.document(order_id), "ein_issued",
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    record_state(order_ref, "ein_issued",
         ein=ein, ein_issued_at=firestore.SERVER_TIMESTAMP,
         ein_error=firestore.DELETE_FIELD, asset_generation_error=firestore.DELETE_FIELD,
     )
+    if order:
+        send_ein_issued_email(order, order_id, ein)
     background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 

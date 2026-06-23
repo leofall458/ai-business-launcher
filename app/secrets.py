@@ -27,6 +27,8 @@ MANAGED_SECRETS = [
     "GITHUB_TOKEN",
     "SCC_FILING_CARD",
     "ADMIN_PASSWORD",
+    "GMAIL_USER",
+    "GMAIL_APP_PASSWORD",
 ]
 
 _PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ai-biz-launcher")
