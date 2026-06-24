@@ -70,6 +70,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
 ORDERS = db.collection(ORDERS_COLLECTION)
+DOCUMENT_ACCESS_LOG = db.collection("document_access_log")
 
 @app.on_event("startup")
 async def on_startup():
@@ -1719,6 +1720,11 @@ async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_ord
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
         "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
         "csrf_token": make_csrf_token(session_id),
+        "document_labels": DOCUMENT_LABELS,
+        "available_documents": {
+            doc_id: _document_object_name(order, order_id, doc_id) is not None
+            for doc_id in DOCUMENT_LABELS
+        },
     })
 
 @app.get("/dashboard/orders/{order_id}/timeline", response_class=HTMLResponse)
@@ -1730,6 +1736,73 @@ async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_
         **status_context(order_id, order),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
     })
+
+DOCUMENT_LABELS = {
+    "certificate": "Certificate of Organization",
+    "ein_letter": "EIN Confirmation Letter (CP575)",
+    "articles": "Articles of Organization",
+    "operating_agreement": "Operating Agreement",
+    "brand_kit": "Brand Kit",
+}
+
+# Orders uploaded before document_store.py existed have no "documents"
+# map at all - these are the deterministic legacy paths storage_service.py
+# always used, kept readable here (signed URLs work on any object
+# regardless of who uploaded it) rather than re-uploading old files.
+LEGACY_DOCUMENT_FALLBACK = {
+    "certificate": ("certificate_uploaded_at", lambda order_id: f"orders/{order_id}/certificate.pdf"),
+    "ein_letter": ("ein_letter_uploaded_at", lambda order_id: f"orders/{order_id}/ein_confirmation.pdf"),
+}
+
+def _document_object_name(order: dict, order_id: str, doc_id: str) -> str | None:
+    """None means "not ready yet", not an error - callers turn that into
+    a clean 404 rather than a 500."""
+    documents = order.get("documents") or {}
+    doc_info = documents.get(doc_id)
+    if doc_info and doc_info.get("object_name"):
+        return doc_info["object_name"]
+    if doc_id in LEGACY_DOCUMENT_FALLBACK:
+        flag_field, legacy_path_fn = LEGACY_DOCUMENT_FALLBACK[doc_id]
+        if order.get(flag_field):
+            return legacy_path_fn(order_id)
+    return None
+
+def _check_document_access_anomaly(session_id: str, customer_id: str):
+    """A single session_id should only ever be associated with one
+    customer_id - sessions are created for exactly one customer and never
+    reassigned. If the access log shows otherwise (forged cookie,
+    tampered Firestore record), that's worth an immediate page rather
+    than staying silent until someone notices missing documents."""
+    distinct_customers = {customer_id}
+    for doc in DOCUMENT_ACCESS_LOG.where(filter=firestore.FieldFilter("session_id", "==", session_id)).limit(20).stream():
+        distinct_customers.add(doc.to_dict().get("customer_id"))
+    if len(distinct_customers) > 1:
+        send_admin_sms(f"⚠️ SECURITY: session {session_id[:8]}... accessed documents as multiple customers: {distinct_customers}")
+
+@app.get("/orders/{order_id}/documents/{doc_id}")
+async def get_order_document(request: Request, doc_id: str, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+
+    if doc_id not in DOCUMENT_LABELS:
+        raise HTTPException(status_code=404)
+
+    object_name = _document_object_name(order, order_id, doc_id)
+    if not object_name:
+        raise HTTPException(status_code=404)
+
+    url = generate_signed_url(object_name)
+
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+    DOCUMENT_ACCESS_LOG.add({
+        "customer_id": customer_id, "doc_id": doc_id, "order_id": order_id,
+        "session_id": session_id, "at": firestore.SERVER_TIMESTAMP,
+    })
+    _check_document_access_anomaly(session_id, customer_id)
+
+    # Never logged - this redirect is the only place the signed URL
+    # itself ever exists outside of document_store.generate_signed_url.
+    return RedirectResponse(url=url, status_code=302)
 
 @app.get("/cancel")
 async def cancel():
@@ -1898,6 +1971,16 @@ async def contact(request: Request):
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     message = (form.get("message") or "").strip()
+
+    # Only an authenticated dashboard session needs CSRF protection - the
+    # legacy, unauthenticated status page has no session to protect and
+    # has no csrf_token field at all, so it's left alone. This is the one
+    # route in the rework where a real 403 is correct, since a CSRF
+    # mismatch is "stale form," not an ownership question.
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+    if session_id and verify_and_touch_session(session_id):
+        if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+            raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
 
     if not (name and email and message):
         return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please fill in your name, email, and message.</p>', status_code=400)

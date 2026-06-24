@@ -44,13 +44,43 @@
         </div>
         {% endif %}
 
-        <!-- EIN -->
+        <!-- EIN (masked by default - click to reveal) -->
         {% if ein %}
         <div class="bg-green-950 border border-green-700 rounded-xl p-5 sm:p-6">
-            <h2 class="text-base font-semibold text-green-400 mb-3">✅ Your EIN: {{ ein }}</h2>
+            <h2 class="text-base font-semibold text-green-400 mb-3">✅ Your EIN</h2>
+            <div class="flex gap-2 mb-3">
+                <input id="ein-value" type="text" readonly data-ein="{{ ein }}"
+                    class="flex-1 bg-gray-900 border border-green-800 rounded-lg p-2 text-sm text-green-200 font-mono"/>
+                <button type="button" onclick="toggleEinMask()"
+                    class="bg-green-700 hover:bg-green-800 text-white text-xs font-semibold px-3 rounded-lg transition whitespace-nowrap">
+                    <span id="ein-toggle-label">Show</span>
+                </button>
+                <button type="button" onclick="copyEin()"
+                    class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 rounded-lg transition whitespace-nowrap">
+                    <span id="copy-ein-label">Copy</span>
+                </button>
+            </div>
             <p class="text-xs text-green-200/80 mb-3">
                 Save this number - you need it to open a business bank account and file taxes.
             </p>
+        </div>
+        {% endif %}
+
+        <!-- Documents -->
+        {% if available_documents.values() | select | list %}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 sm:p-6">
+            <h2 class="text-lg font-semibold text-white mb-3">Your Documents</h2>
+            <div class="space-y-2">
+                {% for doc_id, label in document_labels.items() %}
+                {% if available_documents.get(doc_id) %}
+                <a href="/orders/{{ order_id }}/documents/{{ doc_id }}"
+                    class="flex items-center justify-between bg-gray-800 hover:bg-gray-700 rounded-lg p-3 text-sm transition">
+                    <span>{{ label }}</span>
+                    <span class="text-blue-400 text-xs">Download →</span>
+                </a>
+                {% endif %}
+                {% endfor %}
+            </div>
         </div>
         {% endif %}
 
@@ -90,6 +120,7 @@
 
             <form hx-post="/contact" hx-target="#contact-result" hx-swap="innerHTML" class="space-y-3">
                 <input type="hidden" name="order_id" value="{{ order_id }}"/>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">Name</label>
@@ -136,6 +167,30 @@
     </div>
 
     <script>
+        let einMasked = true;
+        function maskEin(value) {
+            const digits = value.replace(/[^0-9]/g, '');
+            return digits.length >= 4 ? '••-•••' + digits.slice(-4) : '••••••••';
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('ein-value');
+            if (input) input.value = maskEin(input.dataset.ein);
+        });
+        function toggleEinMask() {
+            const input = document.getElementById('ein-value');
+            const label = document.getElementById('ein-toggle-label');
+            einMasked = !einMasked;
+            input.value = einMasked ? maskEin(input.dataset.ein) : input.dataset.ein;
+            label.textContent = einMasked ? 'Show' : 'Hide';
+        }
+        function copyEin() {
+            const input = document.getElementById('ein-value');
+            navigator.clipboard.writeText(input.dataset.ein).then(() => {
+                const label = document.getElementById('copy-ein-label');
+                label.textContent = 'Copied!';
+                setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+            });
+        }
         function copyShareLink() {
             const input = document.getElementById('share-url');
             navigator.clipboard.writeText(input.value).then(() => {
