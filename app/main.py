@@ -52,7 +52,8 @@ from app.email_service import (
     send_order_id_email,
     send_ssn_expired_email,
 )
-from app.storage_service import fetch_certificate, upload_ein_letter, fetch_ein_letter
+from app.storage_service import fetch_certificate, fetch_ein_letter
+from app.document_store import upload_document
 from app.sms import send_admin_sms
 
 app = FastAPI(title="Launch Bridge LLC")
@@ -529,9 +530,14 @@ def run_document_generation(order_id: str):
             print(f"⚠️ Name screening agent failed for order {order_id}: {e}")
             errors["name_result"] = f"Name screening: {e}"
 
+    existing_documents = order.get("documents") or {}
+
     if not order.get("brand_result"):
         try:
-            update["brand_result"] = generate_brand_kit(business_name, business_idea, target_customer)
+            brand_result = generate_brand_kit(business_name, business_idea, target_customer)
+            update["brand_result"] = brand_result
+            object_name = upload_document(order_id, brand_result.get("result", "").encode("utf-8"), "text/plain", "txt")
+            update["documents.brand_kit"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
         except Exception as e:
             print(f"⚠️ Brand kit agent failed for order {order_id}: {e}")
             errors["brand_result"] = f"Brand kit: {e}"
@@ -543,11 +549,13 @@ def run_document_generation(order_id: str):
             print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
             errors["marketing_result"] = f"Marketing plan: {e}"
 
-    if not order.get("pdf_filename"):
+    if not existing_documents.get("articles"):
         try:
-            generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
-            safe_name = business_name.replace(" ", "_").replace("/", "_")
-            update["pdf_filename"] = f"{safe_name}_LLC_Package.pdf"
+            pdf_bytes = generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
+            object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
+            doc_info = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+            update["documents.articles"] = doc_info
+            update["documents.operating_agreement"] = doc_info
         except Exception as e:
             print(f"⚠️ LLC PDF generation failed for order {order_id}: {e}")
             errors["pdf_filename"] = f"LLC PDF: {e}"
@@ -561,7 +569,7 @@ def run_document_generation(order_id: str):
         update.get("name_result") or order.get("name_result"),
         update.get("brand_result") or order.get("brand_result"),
         update.get("marketing_result") or order.get("marketing_result"),
-        update.get("pdf_filename") or order.get("pdf_filename"),
+        update.get("documents.articles") or existing_documents.get("articles"),
     ])
     newly_generated = have_all and not order.get("documents_generated")
     update["documents_generated"] = have_all
@@ -794,8 +802,8 @@ def run_ein_filing(order_id: str):
         cp575_bytes = result.get("cp575_bytes")
         if cp575_bytes:
             try:
-                upload_ein_letter(order_id, cp575_bytes)
-                order_ref.set({"ein_letter_uploaded_at": firestore.SERVER_TIMESTAMP}, merge=True)
+                object_name = upload_document(order_id, cp575_bytes, "application/pdf", "pdf")
+                order_ref.set({"documents.ein_letter": {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}}, merge=True)
             except Exception as e:
                 print(f"⚠️ Could not upload CP575 letter for order {order_id}: {e}")
 
@@ -1533,13 +1541,6 @@ async def status_page(request: Request, order_id: str):
         "ein": order.get("ein"),
         "has_ein_letter": bool(order.get("ein_letter_uploaded_at")),
         "website_url": order.get("website_url"),
-        "website_template": order.get("website_template"),
-        "documents_generated": order.get("documents_generated", False),
-        "pdf_filename": order.get("pdf_filename"),
-        "has_brand_kit": bool(order.get("brand_result")),
-        "filing_confirmed": reached(state, "filing_confirmed") or bool(order.get("skip_llc_formation")),
-        "scc_confirmation_number": order.get("scc_confirmation_number"),
-        "has_certificate": bool(order.get("certificate_uploaded_at")),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
         "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
     })

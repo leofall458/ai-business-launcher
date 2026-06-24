@@ -31,7 +31,7 @@ from google.cloud import firestore
 from app.main import ORDERS, db, advance_past_filing_confirmed, run_asset_generation
 from app.notify import notify_windows
 from app.email_service import forward_scc_approval_email
-from app.storage_service import upload_certificate
+from app.document_store import upload_document
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 CREDENTIALS_FILE = "gmail_credentials.json"
@@ -181,8 +181,8 @@ def process_message(service, message_id: str):
         firestore_update["scc_confirmation_number"] = confirmation_number
     if certificate_bytes:
         try:
-            upload_certificate(order_id, certificate_bytes)
-            firestore_update["certificate_uploaded_at"] = firestore.SERVER_TIMESTAMP
+            object_name = upload_document(order_id, certificate_bytes, "application/pdf", "pdf")
+            firestore_update["documents.certificate"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
         except Exception as e:
             print(f"⚠️ Could not upload certificate for order {order_id}: {e}")
             log_entry["error"] = f"Certificate upload failed: {e}"
