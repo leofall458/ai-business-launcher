@@ -197,7 +197,10 @@ def check_once():
                     except Exception as e:
                         print(f"⚠️ Could not upload certificate for order {order_id}: {e}")
                 if firestore_update:
-                    order_ref.set(firestore_update, merge=True)
+                    # .update(), not .set(merge=True) - only .update() treats
+                    # the dotted "documents.certificate" key above as a
+                    # nested field path rather than a literal dotted name.
+                    order_ref.update(firestore_update)
 
                 trigger_assets = advance_past_filing_confirmed(order_ref, order)
                 send_llc_approved_email(order, order_id, confirmation_number, certificate_bytes=certificate_bytes)

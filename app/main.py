@@ -576,7 +576,10 @@ def run_document_generation(order_id: str):
     if have_all:
         update["documents_generated_at"] = firestore.SERVER_TIMESTAMP
     update["documents_error"] = "; ".join(errors.values()) if errors else firestore.DELETE_FIELD
-    order_ref.set(update, merge=True)
+    # .update(), not .set(merge=True) - the dotted "documents.articles"-style
+    # keys above are only treated as nested field paths (rather than literal
+    # field names containing dots) by .update().
+    order_ref.update(update)
 
     if newly_generated:
         send_documents_ready_email(order, order_id)
@@ -803,7 +806,7 @@ def run_ein_filing(order_id: str):
         if cp575_bytes:
             try:
                 object_name = upload_document(order_id, cp575_bytes, "application/pdf", "pdf")
-                order_ref.set({"documents.ein_letter": {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}}, merge=True)
+                order_ref.update({"documents.ein_letter": {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}})
             except Exception as e:
                 print(f"⚠️ Could not upload CP575 letter for order {order_id}: {e}")
 

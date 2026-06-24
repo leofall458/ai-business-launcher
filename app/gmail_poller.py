@@ -187,7 +187,10 @@ def process_message(service, message_id: str):
             print(f"⚠️ Could not upload certificate for order {order_id}: {e}")
             log_entry["error"] = f"Certificate upload failed: {e}"
     if firestore_update:
-        order_ref.set(firestore_update, merge=True)
+        # .update(), not .set(merge=True) - only .update() treats the
+        # dotted "documents.certificate" key above as a nested field path
+        # rather than a literal field name containing a dot.
+        order_ref.update(firestore_update)
 
     try:
         log_entry["forwarded"] = forward_scc_approval_email(order, certificate_bytes)
