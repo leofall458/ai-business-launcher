@@ -44,6 +44,11 @@ GMAIL_USER = get_secret("GMAIL_USER")
 GMAIL_APP_PASSWORD = get_secret("GMAIL_APP_PASSWORD")
 SUPPORT_EMAIL = "support@launchbridge.ai"
 
+# Signs the /status/{order_id} email-verification cookie (see app/main.py) -
+# a pure server-side HMAC key with no external meaning, generated and
+# stored directly in Secret Manager rather than something the user provides.
+STATUS_SESSION_SECRET = get_secret("STATUS_SESSION_SECRET")
+
 # Private GCS bucket holding LLC certificates and similar order documents -
 # never served as a public URL; always streamed back through our own app
 # (see /download-certificate) the same way /download-pdf already serves

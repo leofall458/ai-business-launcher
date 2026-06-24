@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Status - Launch Bridge LLC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen py-12">
+    <div class="max-w-md mx-auto px-4 sm:px-8">
+
+        <div class="text-center mb-8">
+            <p class="text-blue-400 text-xs sm:text-sm font-semibold tracking-widest uppercase mb-3">Launch Bridge LLC</p>
+            <h1 class="text-xl sm:text-2xl font-bold mb-2">{{ business_name }}</h1>
+            <p class="text-gray-400 text-sm">Current status: <span class="text-white font-semibold">{{ state_label }}</span></p>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+            <h2 class="text-base font-semibold text-white mb-2">🔒 Verify Your Email</h2>
+            <p class="text-xs text-gray-400 mb-4">Enter the email address used for this order to view your full status.</p>
+
+            {% if error %}
+            <div class="bg-red-950 border border-red-700 rounded-lg p-3 mb-4">
+                <p class="text-xs text-red-300">⚠️ {{ error }}</p>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/status/{{ order_id }}/verify">
+                <label class="block text-xs text-gray-400 mb-1">Email Address</label>
+                <input name="email" type="email" required autofocus placeholder="you@example.com"
+                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm mb-4"/>
+                <button type="submit"
+                    class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 rounded-lg transition text-sm">
+                    View Status →
+                </button>
+            </form>
+        </div>
+
+        <p class="text-xs text-gray-600 text-center mt-6">
+            Don't remember the email on this order? Contact
+            <a href="mailto:support@launchbridge.ai" class="text-blue-400 underline">support@launchbridge.ai</a>.
+        </p>
+
+        <div class="text-center mt-8 pt-6 border-t border-gray-800">
+            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
+                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
+                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
+                <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+            </p>
+            <p class="text-xs text-gray-700 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
+        </div>
+
+    </div>
+</body>
+</html>

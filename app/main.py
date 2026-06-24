@@ -1,5 +1,7 @@
 import os
 import secrets
+import hmac
+import hashlib
 import asyncio
 import datetime
 from urllib.parse import quote
@@ -9,7 +11,7 @@ from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
@@ -1207,6 +1209,70 @@ def status_context(order_id: str, order: dict) -> dict:
         "last_updated": datetime.datetime.now().strftime("%I:%M:%S %p").lstrip("0"),
     }
 
+def _rate_limited(collection_name: str, key_field: str, key_value: str, window: datetime.timedelta, limit: int) -> bool:
+    """Shared by every per-key rate limit in this file (lost-order-ID
+    requests, status-page IP throttling, failed status-email attempts).
+    True means the caller is over the limit and should be rejected -
+    in that case nothing is logged, so a flood past the limit doesn't
+    keep inflating the log. Otherwise this attempt itself is logged (it
+    counts toward the next check) and False is returned.
+
+    Filters by timestamp in Python rather than adding a second Firestore
+    inequality clause on top of the equality filter - that would need a
+    composite index, and volume per key is small enough that
+    fetch-then-filter is simpler to ship and just as correct."""
+    log = db.collection(collection_name)
+    window_start = datetime.datetime.now(datetime.timezone.utc) - window
+    existing = log.where(key_field, "==", key_value).stream()
+    recent = [r for r in existing if (r.to_dict().get("at") or window_start) > window_start]
+    if len(recent) >= limit:
+        return True
+    log.add({key_field: key_value, "at": firestore.SERVER_TIMESTAMP})
+    return False
+
+def get_client_ip(request: Request) -> str:
+    """Cloud Run sits behind Google's own proxy, so request.client.host is
+    that proxy, not the real visitor - the actual client IP is the first
+    hop in X-Forwarded-For instead."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+STATUS_TOKEN_TTL_SECONDS = 86400  # 24 hours
+
+def _status_cookie_name(order_id: str) -> str:
+    return f"sv_{order_id}"
+
+def _make_status_token(order_id: str) -> str:
+    """A stateless, signed "this browser verified the email for this
+    order" claim - no server-side session storage needed. Scoped to one
+    order_id (baked into the signed payload, not just the cookie name) so
+    a token can't be replayed against a different order even if the
+    cookie name were somehow reused."""
+    expiry = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + STATUS_TOKEN_TTL_SECONDS
+    payload = f"{order_id}:{expiry}"
+    sig = hmac.new(STATUS_SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{expiry}:{sig}"
+
+def _verify_status_token(order_id: str, token: str) -> bool:
+    if not token or ":" not in token:
+        return False
+    expiry_str, _, sig = token.partition(":")
+    try:
+        expiry = int(expiry_str)
+    except ValueError:
+        return False
+    if expiry < datetime.datetime.now(datetime.timezone.utc).timestamp():
+        return False
+    expected = hmac.new(STATUS_SESSION_SECRET.encode(), f"{order_id}:{expiry}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
+
+STATUS_IP_RATE_LIMIT = 10
+STATUS_IP_RATE_WINDOW = datetime.timedelta(minutes=1)
+STATUS_EMAIL_FAIL_LIMIT = 3
+STATUS_EMAIL_FAIL_WINDOW = datetime.timedelta(hours=1)
+
 ORDER_ID_REQUEST_LIMIT = 3
 ORDER_ID_REQUEST_WINDOW = datetime.timedelta(hours=1)
 
@@ -1221,21 +1287,12 @@ async def request_order_id(request: Request):
     if not email:
         return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please enter your email address.</p>', status_code=400)
 
-    # Filtered by timestamp in Python rather than a second Firestore
-    # inequality clause - that would need a composite index, and request
-    # volume per email is small enough that fetching-then-filtering is
-    # simpler to ship and just as correct.
-    request_log = db.collection("order_id_requests")
-    window_start = datetime.datetime.now(datetime.timezone.utc) - ORDER_ID_REQUEST_WINDOW
-    same_email_requests = request_log.where("email", "==", email).stream()
-    recent = [r for r in same_email_requests if (r.to_dict().get("requested_at") or window_start) > window_start]
-    if len(recent) >= ORDER_ID_REQUEST_LIMIT:
+    if _rate_limited("order_id_requests", "email", email, ORDER_ID_REQUEST_WINDOW, ORDER_ID_REQUEST_LIMIT):
         return HTMLResponse(
             '<p class="text-yellow-400 text-sm mt-2">Too many requests for this email — please try again in an '
             'hour, or contact <a href="mailto:support@launchbridge.ai" class="underline">support@launchbridge.ai</a>.</p>',
             status_code=429,
         )
-    request_log.add({"email": email, "requested_at": firestore.SERVER_TIMESTAMP})
 
     matches = list(ORDERS.where("email", "==", email).stream())
     if not matches:
@@ -1252,6 +1309,14 @@ async def request_order_id(request: Request):
 
     return HTMLResponse(f'<p class="text-green-400 text-sm mt-2">Check your email! We sent your order ID to {email}.</p>')
 
+def _status_gate_context(order_id: str, order: dict, error: str = None) -> dict:
+    return {
+        "order_id": order_id,
+        "business_name": order.get("business_name"),
+        "state_label": order.get("state", "draft").replace("_", " ").title(),
+        "error": error,
+    }
+
 @app.get("/status/{order_id}", response_class=HTMLResponse)
 async def status_page(request: Request, order_id: str):
     order_snap = ORDERS.document(order_id).get()
@@ -1262,6 +1327,16 @@ async def status_page(request: Request, order_id: str):
 
     if order.get("awaiting_ssn"):
         return RedirectResponse(url=f"/collect-ssn/{order_id}")
+
+    if _rate_limited("status_ip_log", "ip", get_client_ip(request), STATUS_IP_RATE_WINDOW, STATUS_IP_RATE_LIMIT):
+        return HTMLResponse("<p>Too many requests - please wait a minute and try again.</p>", status_code=429)
+
+    if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
+        # Unverified visitors get only the business name and current
+        # state - everything else (EIN, timeline detail, documents,
+        # contact form prefilled with their email, etc) waits behind the
+        # email check below.
+        return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(order_id, order))
 
     return templates.TemplateResponse(request, "status.html", {
         **status_context(order_id, order),
@@ -1282,15 +1357,56 @@ async def status_page(request: Request, order_id: str):
         "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
     })
 
+@app.post("/status/{order_id}/verify", response_class=HTMLResponse)
+async def status_verify(request: Request, order_id: str):
+    """The email gate's submit target. On a match, sets a signed,
+    httponly/secure/samesite=strict cookie (see _make_status_token) good
+    for 24 hours and scoped to this order's own status routes, then
+    redirects back to GET /status/{order_id} to render the full page."""
+    order_snap = ORDERS.document(order_id).get()
+    if not order_snap.exists:
+        return templates.TemplateResponse(request, "order_not_found.html", {}, status_code=404)
+    order = order_snap.to_dict()
+
+    if _rate_limited("status_ip_log", "ip", get_client_ip(request), STATUS_IP_RATE_WINDOW, STATUS_IP_RATE_LIMIT):
+        return HTMLResponse("<p>Too many requests - please wait a minute and try again.</p>", status_code=429)
+
+    form = await request.form()
+    submitted_email = (form.get("email") or "").strip().lower()
+    order_email = (order.get("email") or "").strip().lower()
+
+    if not submitted_email or submitted_email != order_email:
+        if _rate_limited("status_verify_failures", "order_id", order_id, STATUS_EMAIL_FAIL_WINDOW, STATUS_EMAIL_FAIL_LIMIT):
+            return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(
+                order_id, order, "Too many failed attempts - please try again in an hour, or contact support@launchbridge.ai."
+            ), status_code=429)
+        return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(
+            order_id, order, "Email not found for this order."
+        ), status_code=403)
+
+    response = RedirectResponse(url=f"/status/{order_id}", status_code=303)
+    response.set_cookie(
+        key=_status_cookie_name(order_id), value=_make_status_token(order_id),
+        max_age=STATUS_TOKEN_TTL_SECONDS, httponly=True, secure=True, samesite="strict",
+        path=f"/status/{order_id}",
+    )
+    return response
+
 @app.get("/status/{order_id}/timeline", response_class=HTMLResponse)
 async def status_timeline_partial(request: Request, order_id: str):
     """Polled every 30s by the status page (see status.html) to refresh
     just the timeline + estimate, without reloading documents/contact/share
-    sections that don't change nearly as often."""
+    sections that don't change nearly as often. Gated by the same
+    verification cookie as the full page - without this check it would be
+    an unauthenticated backdoor to the same EIN/timeline detail the gate
+    is supposed to be hiding."""
     order_snap = ORDERS.document(order_id).get()
     if not order_snap.exists:
         return HTMLResponse("")
     order = order_snap.to_dict()
+
+    if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
+        return HTMLResponse("")
 
     return templates.TemplateResponse(request, "status_timeline.html", {
         **status_context(order_id, order),
