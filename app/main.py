@@ -46,12 +46,13 @@ from app.email_service import (
     send_llc_filed_email,
     send_llc_approved_email,
     send_ein_issued_email,
+    send_ein_filing_ready_email,
     send_website_live_email,
     send_everything_complete_email,
     send_order_id_email,
     send_ssn_expired_email,
 )
-from app.storage_service import fetch_certificate
+from app.storage_service import fetch_certificate, upload_ein_letter, fetch_ein_letter
 from app.sms import send_admin_sms
 
 app = FastAPI(title="Launch Bridge LLC")
@@ -84,7 +85,8 @@ async def on_startup():
 # of where the automated steps currently are.
 ORDER_STATES = [
     "draft", "paid", "name_cleared", "review_approved", "filing_submitted",
-    "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete",
+    "filing_confirmed", "awaiting_ein_filing", "ein_requested", "ein_issued",
+    "assets_generated", "complete",
 ]
 ORDER_STATE_INDEX = {s: i for i, s in enumerate(ORDER_STATES)}
 
@@ -126,7 +128,7 @@ def compute_state_message(order: dict, state: str) -> str:
     ein_requested, and ein_issued need live data - whether the EIN is
     queued on IRS hours, or the actual EIN once issued - so they're built
     here instead."""
-    if state == "filing_confirmed":
+    if state in ("filing_confirmed", "awaiting_ein_filing"):
         if order.get("ein_status") == "queued" and order.get("next_available_window"):
             window = datetime.datetime.fromisoformat(order["next_available_window"])
             return (
@@ -266,6 +268,9 @@ def compute_timeline(order: dict, state: str) -> list:
     elif state == "ein_requested":
         steps.append({"key": "ein", "name": "EIN Application", "status": "current",
             "description": "EIN application submitted to IRS"})
+    elif state == "awaiting_ein_filing":
+        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+            "description": "Your SSN is on file - filing your EIN with the IRS shortly"})
     elif reached(state, "filing_confirmed"):
         steps.append({"key": "ein", "name": "EIN Application", "status": "current",
             "description": "Preparing your EIN application..."})
@@ -568,13 +573,20 @@ def run_document_generation(order_id: str):
     if newly_generated:
         send_documents_ready_email(order, order_id)
 
-SCC_FILED_STATES = {"filing_submitted", "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete"}
+SCC_FILED_STATES = {
+    "filing_submitted", "filing_confirmed", "awaiting_ein_filing",
+    "ein_requested", "ein_issued", "assets_generated", "complete",
+}
 
 # An order is only eligible to have an EIN application filed once the SCC
 # has actually confirmed the LLC (filing_confirmed) - we no longer fire EIN
 # the moment paperwork is filed, since SCC approval can take days and the
-# IRS step should reflect a real, confirmed entity.
-EIN_ELIGIBLE_STATES = {"filing_confirmed"}
+# IRS step should reflect a real, confirmed entity. awaiting_ein_filing is
+# the same eligibility window, just with the SSN already confirmed present
+# too (see advance_past_filing_confirmed and notify_ein_ready) - kept as a
+# separate state so the admin dashboard and status page can say "ready to
+# file" instead of the more generic "approved, preparing your EIN".
+EIN_ELIGIBLE_STATES = {"filing_confirmed", "awaiting_ein_filing"}
 
 def advance_past_filing_confirmed(order_ref, order) -> bool:
     """Called whenever an order reaches filing_confirmed - whether by real
@@ -617,7 +629,19 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
         window = next_irs_open()
         extra["ein_status"] = "queued"
         extra["next_available_window"] = window.isoformat()
-    record_state(order_ref, "filing_confirmed", **extra)
+
+    # The SSN is normally collected right after payment (see /collect-ssn),
+    # long before SCC approval comes back - so by the time we get here it's
+    # usually already sitting in the vault. When it is, this order has both
+    # prerequisites for EIN filing and gets the more specific
+    # awaiting_ein_filing state plus the admin SMS/email - rather than the
+    # generic filing_confirmed, which still means "something is missing."
+    order_id = order_ref.id
+    ssn_ready = is_ssn_stored(order_id)
+    new_state = "awaiting_ein_filing" if ssn_ready else "filing_confirmed"
+    record_state(order_ref, new_state, **extra)
+    if ssn_ready:
+        notify_ein_ready(order, order_id)
     return False
 
 def run_scc_filing(order_id: str):
@@ -671,22 +695,56 @@ def run_scc_filing(order_id: str):
         order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
         send_admin_sms(f"⚠️ SCC crashed for {order.get('business_name', '')} - check admin")
 
-def run_ein_filing(order_id: str):
-    """Triggered by the admin's Apply for EIN button - only reachable once
-    the order is filing_confirmed (SCC's real approval). Re-checks IRS
-    business hours (Mon-Fri 7am-10pm ET) itself, in addition to the route's
-    own check, to cover the race where hours close between the click and
-    this background task actually running.
+def mark_ein_issued(order_ref, order: dict, order_id: str, ein: str, background_tasks: BackgroundTasks = None):
+    """The standard finish line for every order the moment a real EIN is
+    known - whether read back automatically (run_ein_filing) or typed in
+    by the admin as a manual fallback (the /admin/{id}/mark-ein route).
+    Records ein_issued, emails the customer their EIN, alerts the admin,
+    and immediately kicks off website generation + Stripe Connect (see
+    run_asset_generation) - there is no separate "Bryan" path, this is
+    what every order does once it has an EIN."""
+    record_state(order_ref, "ein_issued",
+        ein=ein, ein_issued_at=firestore.SERVER_TIMESTAMP,
+        ein_error=firestore.DELETE_FIELD, asset_generation_error=firestore.DELETE_FIELD,
+    )
+    order = {**order, "ein": ein}
+    send_ein_issued_email(order, order_id, ein)
+    send_admin_sms(f"✅ EIN done! {order.get('business_name', '')} {ein} - website generating now")
+    if background_tasks is not None:
+        background_tasks.add_task(run_asset_generation, order_id)
+    else:
+        run_asset_generation(order_id)
 
-    The SSN is read (decrypted) from the KMS-encrypted vault (see
-    app/ssn_vault.py) and is only deleted from Firestore for good once EIN
-    filing actually succeeds - a failed or blocked attempt must leave it
-    in place for the next retry. If 72 hours pass without success, the
-    hourly ssn_expiry_scheduler deletes it anyway and the customer is
-    emailed to re-enter it at the same /collect-ssn page."""
+def run_ein_filing(order_id: str):
+    """Triggered by the admin's Apply for EIN button (dashboard, or the
+    one-click email link from notify_ein_ready) - only reachable once the
+    order is filing_confirmed/awaiting_ein_filing (SCC's real approval).
+    Re-checks IRS business hours (Mon-Fri 7am-10pm ET) itself, in addition
+    to the route's own check, to cover the race where hours close between
+    the click and this background task actually running.
+
+    Fully automatic, per explicit instruction: file_ein_with_irs runs with
+    interactive=False, so it clicks Submit itself the moment the form is
+    filled - there is no human "are you sure" checkpoint before a real,
+    permanent EIN is issued. on_submitted fires the instant that happens
+    (durably flips ein_submitted_to_irs and deletes the now-used SSN)
+    independent of whatever succeeds or crashes afterward while reading
+    the confirmation page back - so a crash mid-scrape can never look like
+    "never filed" to the guard below, which would otherwise risk filing a
+    second, duplicate EIN for the same business."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
+        return
+
+    if order.get("ein_submitted_to_irs"):
+        order_ref.set({
+            "ein_error": "An EIN was already submitted to the IRS for this order, but the number was not "
+                          "recorded automatically. Check /tmp/ein_confirmation.png on the server (or the admin "
+                          "notification email) for the EIN, then enter it via Mark EIN Issued. Do NOT click "
+                          "Apply for EIN again - that would file a second, duplicate EIN."
+        }, merge=True)
+        send_admin_sms(f"⚠️ EIN already submitted for {order.get('business_name', '')} - enter manually, do not re-file")
         return
 
     if not is_irs_open():
@@ -699,6 +757,10 @@ def run_ein_filing(order_id: str):
             "ein_error": firestore.DELETE_FIELD,
         }, merge=True)
         return
+
+    def on_submitted():
+        order_ref.set({"ein_submitted_to_irs": True, "ein_submitted_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        delete_ssn(order_id)
 
     try:
         ssn = decrypt_ssn(order_id)
@@ -727,18 +789,40 @@ def run_ein_filing(order_id: str):
             "members": str(len(order.get("all_signatures", []))),
             "business_description": order["business_purpose"],
         }
-        ein_filed = file_ein_with_irs(ein_customer_data, interactive=False)
-        if ein_filed:
-            delete_ssn(order_id)
-            record_state(order_ref, "ein_requested",
-                ein_requested_at=firestore.SERVER_TIMESTAMP,
-                ein_error=firestore.DELETE_FIELD,
-                ein_status=firestore.DELETE_FIELD,
-                next_available_window=firestore.DELETE_FIELD,
-            )
-        else:
-            order_ref.set({"ein_error": "EIN filing did not complete - check server screenshots, then apply again to retry."}, merge=True)
-            send_admin_sms(f"⚠️ EIN setup failed for {order.get('business_name', '')} - check admin")
+        result = file_ein_with_irs(ein_customer_data, interactive=False, on_submitted=on_submitted)
+
+        cp575_bytes = result.get("cp575_bytes")
+        if cp575_bytes:
+            try:
+                upload_ein_letter(order_id, cp575_bytes)
+                order_ref.set({"ein_letter_uploaded_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            except Exception as e:
+                print(f"⚠️ Could not upload CP575 letter for order {order_id}: {e}")
+
+        if result["success"]:
+            mark_ein_issued(order_ref, order, order_id, result["ein"])
+            return
+
+        if result.get("rejected"):
+            order_ref.set({"ein_error": "The IRS could not verify the responsible party's SSN. Please contact support@launchbridge.ai."}, merge=True)
+            send_admin_sms(f"⚠️ EIN rejected by IRS for {order.get('business_name', '')} - SSN mismatch, check admin")
+            return
+
+        if result.get("submitted"):
+            # ein_submitted_to_irs (set by on_submitted, above) already
+            # guards this order against ever being re-filed - this just
+            # surfaces the number however an admin can recover it.
+            order_ref.set({
+                "ein_error": f"EIN was submitted to the IRS but could not be read from the confirmation page. "
+                              f"Check {result.get('screenshot')} on the server, then enter it via Mark EIN Issued."
+            }, merge=True)
+            send_admin_sms(f"⚠️ EIN filed for {order.get('business_name', '')} but number unreadable - check screenshot, enter manually")
+            return
+
+        # Not submitted at all (e.g. couldn't find the Submit button) -
+        # on_submitted never fired, so this is safe to retry.
+        order_ref.set({"ein_error": result.get("error", "EIN filing did not complete - check server screenshots, then apply again to retry.")}, merge=True)
+        send_admin_sms(f"⚠️ EIN setup failed for {order.get('business_name', '')} - check admin")
     except Exception as e:
         # Scrubbed defensively, in case a Playwright/IRS error message
         # ever happens to echo back the SSN it was just given.
@@ -749,26 +833,30 @@ def run_ein_filing(order_id: str):
 
 async def ein_queue_scheduler():
     """Runs for the lifetime of the process, woken every 5 minutes. Picks
-    up any order stuck at filing_confirmed with ein_status="queued" (set
-    either by mark-filed or a blocked Apply for EIN click) and fires the
-    EIN filing the moment IRS hours actually open - so a queued order
-    doesn't just sit there until an admin happens to click again."""
+    up any order stuck at filing_confirmed/awaiting_ein_filing with
+    ein_status="queued" (set either by mark-filed or a blocked Apply for
+    EIN click) and fires the EIN filing the moment IRS hours actually open
+    - so a queued order doesn't just sit there until an admin happens to
+    click again. run_ein_filing's own ein_submitted_to_irs guard makes
+    this safe even if a queued order somehow got submitted by another
+    path in the meantime."""
     loop = asyncio.get_event_loop()
     while True:
         try:
             if is_irs_open():
-                query = (
-                    ORDERS
-                    .where("state", "==", "filing_confirmed")
-                    .where("ein_status", "==", "queued")
-                )
-                for doc in query.stream():
-                    print(f"⏰ IRS hours open - auto-submitting queued EIN for order {doc.id}")
-                    future = loop.run_in_executor(None, run_ein_filing, doc.id)
-                    future.add_done_callback(
-                        lambda f, oid=doc.id: print(f"⚠️ Auto EIN submit crashed for {oid}: {f.exception()}")
-                        if f.exception() else None
+                for eligible_state in EIN_ELIGIBLE_STATES:
+                    query = (
+                        ORDERS
+                        .where("state", "==", eligible_state)
+                        .where("ein_status", "==", "queued")
                     )
+                    for doc in query.stream():
+                        print(f"⏰ IRS hours open - auto-submitting queued EIN for order {doc.id}")
+                        future = loop.run_in_executor(None, run_ein_filing, doc.id)
+                        future.add_done_callback(
+                            lambda f, oid=doc.id: print(f"⚠️ Auto EIN submit crashed for {oid}: {f.exception()}")
+                            if f.exception() else None
+                        )
         except Exception as e:
             print(f"⚠️ EIN queue scheduler tick failed: {e}")
         await asyncio.sleep(300)
@@ -838,10 +926,24 @@ def run_asset_generation(order_id: str):
                     multi_member=len(order.get("all_signatures", [])) > 1,
                 )
                 connect_account_id = account.id
-                payment_link_url = create_pay_what_you_want_payment_link(account.id, business_name)
             except Exception as e:
                 print(f"⚠️ Could not set up Stripe Connect for order {order_id}: {e}")
                 asset_error = f"Could not set up your Stripe payment account: {e}"
+
+        # A payment link needs at least one payment method enabled on the
+        # connected account, and Stripe doesn't enable any until the
+        # customer finishes onboarding (TOS acceptance, bank details,
+        # etc. - see create_account_link). A freshly created account
+        # never has this yet, so this is expected to no-op right here;
+        # status_page's ensure_payment_link fills it in lazily the next
+        # time the status page is viewed, once is_account_active flips
+        # true. Not an error - it's pending the customer's own action.
+        if connect_account_id and not payment_link_url and is_account_active(connect_account_id):
+            try:
+                payment_link_url = create_pay_what_you_want_payment_link(connect_account_id, business_name)
+            except Exception as e:
+                print(f"⚠️ Could not create payment link for order {order_id}: {e}")
+                asset_error = ((asset_error + " ") if asset_error else "") + f"Could not create your payment link: {e}"
 
         website_url = order.get("website_url")
         if not website_url:
@@ -1068,13 +1170,16 @@ def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
     else:
         background_tasks.add_task(run_name_check, order_id)
 
-def resume_ein_after_ssn_reentry(order_id: str, background_tasks: BackgroundTasks):
+def resume_ein_after_ssn_reentry(order_id: str):
     """Picks up after a customer re-enters an SSN that had expired
     (ssn_expired) - unlike start_pipeline_after_ssn, the order has
     already progressed past name/document/filing steps, so re-running
     those would be wrong. The only thing actually waiting on the SSN is
-    the EIN filing itself, and only if the order is still eligible for
-    it (filing_confirmed and not already requested/issued)."""
+    the EIN filing itself - and that still waits for an explicit "Apply
+    for EIN" click (dashboard, or the one-click email link), same as the
+    normal flow. This just clears ssn_expired, advances the generic
+    filing_confirmed to the more specific awaiting_ein_filing, and
+    re-notifies the admin that filing can now proceed."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
@@ -1082,8 +1187,12 @@ def resume_ein_after_ssn_reentry(order_id: str, background_tasks: BackgroundTask
 
     order_ref.set({"ssn_expired": False}, merge=True)
 
+    if order.get("state") == "filing_confirmed":
+        record_state(order_ref, "awaiting_ein_filing")
+        order["state"] = "awaiting_ein_filing"
+
     if order.get("state") in EIN_ELIGIBLE_STATES:
-        background_tasks.add_task(run_ein_filing, order_id)
+        notify_ein_ready(order, order_id)
 
 @app.get("/success")
 async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
@@ -1160,12 +1269,18 @@ async def collect_ssn_submit(request: Request, order_id: str, background_tasks: 
             "error": "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening.",
         }, status_code=500, headers={"Content-Security-Policy": SSN_PAGE_CSP})
 
-    irs_note = "IRS open til 10pm ET" if is_irs_open() else "IRS closed - will auto-file when open"
-    send_admin_sms(f"🔐 SSN ready! {order.get('business_name', '')} - file EIN now. {irs_note}")
-
     if expired:
-        resume_ein_after_ssn_reentry(order_id, background_tasks)
+        # The LLC is already SCC-approved by the time an SSN expires and
+        # gets re-entered - this is the only path where the EIN-ready
+        # admin SMS/email (see notify_ein_ready) needs to fire right here,
+        # since filing_confirmed already happened long ago.
+        resume_ein_after_ssn_reentry(order_id)
     else:
+        # Normal flow: SSN is collected right after payment, before the
+        # LLC has even been name-checked yet - nothing EIN-related is
+        # ready to notify about. notify_ein_ready fires later on its own,
+        # from advance_past_filing_confirmed, once SCC approval comes in
+        # and finds the SSN already sitting in the vault.
         start_pipeline_after_ssn(order_id, background_tasks)
     return RedirectResponse(url=f"/status/{order_id}", status_code=303)
 
@@ -1206,6 +1321,26 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
     db.collection("webhook_events").add(log_entry)
     return Response(status_code=200)
+
+def ensure_payment_link(order_ref, order: dict) -> dict:
+    """run_asset_generation deliberately skips creating the payment link
+    until the connected Stripe account is actually active (see the
+    comment there) - this is what actually creates it once that happens,
+    triggered by the customer (or admin) simply viewing the status page
+    again after finishing Stripe's onboarding flow. No separate poller
+    needed since the status page is exactly where they'd check next."""
+    connect_id = order.get("stripe_connect_account_id")
+    if not connect_id or order.get("stripe_payment_link_url"):
+        return order
+    if not is_account_active(connect_id):
+        return order
+    try:
+        payment_link_url = create_pay_what_you_want_payment_link(connect_id, order.get("business_name", ""))
+        order_ref.set({"stripe_payment_link_url": payment_link_url}, merge=True)
+        order["stripe_payment_link_url"] = payment_link_url
+    except Exception as e:
+        print(f"⚠️ Could not create payment link for order {order_ref.id} after onboarding: {e}")
+    return order
 
 def status_context(order_id: str, order: dict) -> dict:
     """Shared between the full status page and the auto-refreshed timeline
@@ -1280,6 +1415,44 @@ def _verify_status_token(order_id: str, token: str) -> bool:
     expected = hmac.new(STATUS_SESSION_SECRET.encode(), f"{order_id}:{expiry}".encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig, expected)
 
+EIN_FILING_LINK_TTL_SECONDS = 86400  # 24 hours - regenerated fresh each time notify_ein_ready fires
+
+def _make_ein_filing_link_token(order_id: str) -> str:
+    """Same scheme as _make_status_token, but with an "ein-filing:" prefix
+    baked into the signed payload - sharing STATUS_SESSION_SECRET across
+    the two token types is fine precisely because each payload says what
+    kind of claim it is, so one can never be replayed as the other even
+    though both verify against the same secret."""
+    expiry = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + EIN_FILING_LINK_TTL_SECONDS
+    payload = f"ein-filing:{order_id}:{expiry}"
+    sig = hmac.new(STATUS_SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{expiry}:{sig}"
+
+def _verify_ein_filing_link_token(order_id: str, token: str) -> bool:
+    if not token or ":" not in token:
+        return False
+    expiry_str, _, sig = token.partition(":")
+    try:
+        expiry = int(expiry_str)
+    except ValueError:
+        return False
+    if expiry < datetime.datetime.now(datetime.timezone.utc).timestamp():
+        return False
+    expected = hmac.new(STATUS_SESSION_SECRET.encode(), f"ein-filing:{order_id}:{expiry}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
+
+def notify_ein_ready(order: dict, order_id: str):
+    """Fired the moment an order has both a filed-and-approved LLC and a
+    stored SSN - the only two prerequisites for EIN filing. Tells the
+    admin via SMS and a one-click email; the actual filing still waits for
+    an explicit "Apply for EIN" click (in the dashboard, or via the
+    email's link) - this never files anything by itself."""
+    business_name = order.get("business_name", "")
+    irs_note = "IRS open til 10pm ET" if is_irs_open() else "IRS closed - will auto-file when open"
+    send_admin_sms(f"🔐 SSN ready! {business_name} - open Chrome and file EIN now. {irs_note}. Admin: app.launchbridge.ai/admin")
+    ein_filing_url = f"https://app.launchbridge.ai/admin/ein-filing-link/{order_id}?token={_make_ein_filing_link_token(order_id)}"
+    send_ein_filing_ready_email(order, order_id, ein_filing_url)
+
 STATUS_IP_RATE_LIMIT = 10
 STATUS_IP_RATE_WINDOW = datetime.timedelta(minutes=1)
 STATUS_EMAIL_FAIL_LIMIT = 3
@@ -1335,6 +1508,7 @@ async def status_page(request: Request, order_id: str):
     if not order_snap.exists:
         return templates.TemplateResponse(request, "order_not_found.html", {}, status_code=404)
     order = order_snap.to_dict()
+    order = ensure_payment_link(order_snap.reference, order)
     state = order.get("state", "draft")
 
     if order.get("awaiting_ssn"):
@@ -1357,6 +1531,7 @@ async def status_page(request: Request, order_id: str):
         "email": order.get("email"),
         "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
         "ein": order.get("ein"),
+        "has_ein_letter": bool(order.get("ein_letter_uploaded_at")),
         "website_url": order.get("website_url"),
         "website_template": order.get("website_template"),
         "documents_generated": order.get("documents_generated", False),
@@ -1416,6 +1591,7 @@ async def status_timeline_partial(request: Request, order_id: str):
     if not order_snap.exists:
         return HTMLResponse("")
     order = order_snap.to_dict()
+    order = ensure_payment_link(order_snap.reference, order)
 
     if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
         return HTMLResponse("")
@@ -1523,18 +1699,43 @@ async def admin_apply_ein(order_id: str, background_tasks: BackgroundTasks, auth
     background_tasks.add_task(run_ein_filing, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
-@app.post("/admin/{order_id}/mark-ein")
-async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
+@app.get("/admin/ein-filing-link/{order_id}", response_class=HTMLResponse)
+async def admin_ein_filing_link(order_id: str, background_tasks: BackgroundTasks, token: str = ""):
+    """The one-click link sent by notify_ein_ready's admin email - lets
+    filing start straight from a phone without first logging into the
+    dashboard. The signed token (see _make_ein_filing_link_token) is the
+    auth here instead of verify_admin/HTTP Basic, so this route deliberately
+    has no Depends(verify_admin)."""
+    if not _verify_ein_filing_link_token(order_id, token):
+        raise HTTPException(status_code=404, detail="Not found")
+
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
-    record_state(order_ref, "ein_issued",
-        ein=ein, ein_issued_at=firestore.SERVER_TIMESTAMP,
-        ein_error=firestore.DELETE_FIELD, asset_generation_error=firestore.DELETE_FIELD,
-    )
+    if not order or order.get("state") not in EIN_ELIGIBLE_STATES:
+        return HTMLResponse("<p>This order is no longer ready for EIN filing - check the admin dashboard.</p>")
+
+    if order.get("ein_submitted_to_irs"):
+        return HTMLResponse("<p>An EIN was already submitted for this order - check the admin dashboard, do not re-file.</p>")
+
+    if not is_irs_open():
+        window = next_irs_open()
+        order_ref.set({"ein_status": "queued", "next_available_window": window.isoformat()}, merge=True)
+        return HTMLResponse(f"<p>IRS is currently closed - filing has been queued and will run automatically when it opens ({format_eta(window)}).</p>")
+
+    background_tasks.add_task(run_ein_filing, order_id)
+    return HTMLResponse(f"<p>✅ EIN filing started for {order.get('business_name', '')}. You'll get a text when it's done.</p>")
+
+@app.post("/admin/{order_id}/mark-ein")
+async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
+    """Manual fallback for the rare case run_ein_filing reports submitted
+    but couldn't read the EIN back off the confirmation page - the admin
+    types in the number recovered from the screenshot/IRS site/mail.
+    Shares mark_ein_issued with the automatic success path, so the
+    customer email/SMS/asset generation are identical either way."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
     if order:
-        send_ein_issued_email(order, order_id, ein)
-        send_admin_sms(f"✅ EIN done! {order.get('business_name', '')} {ein}")
-    background_tasks.add_task(run_asset_generation, order_id)
+        mark_ein_issued(order_ref, order, order_id, ein, background_tasks)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/retry-agents")
@@ -1607,6 +1808,26 @@ async def download_certificate(order_id: str):
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={safe_name}_Certificate.pdf"},
+    )
+
+@app.get("/download-ein-letter/{order_id}")
+async def download_ein_letter(order_id: str):
+    order = ORDERS.document(order_id).get().to_dict()
+    if not order or not order.get("ein_letter_uploaded_at"):
+        return HTMLResponse("Not found", status_code=404)
+
+    try:
+        pdf_bytes = fetch_ein_letter(order_id)
+    except Exception as e:
+        print(f"⚠️ Could not fetch EIN letter for order {order_id}: {e}")
+        return HTMLResponse("Not found", status_code=404)
+
+    business_name = order.get("business_name", "business")
+    safe_name = business_name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={safe_name}_EIN_Confirmation.pdf"},
     )
 
 @app.get("/download-pdf/{filename}")

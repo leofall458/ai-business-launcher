@@ -102,6 +102,16 @@ Launch Bridge LLC &nbsp;|&nbsp;
 </table>
 </body></html>"""
 
+def _ein_ascii_box(ein: str) -> str:
+    """A plain-text-friendly bordered box around the EIN, for clients that
+    render the plain-text body instead of the HTML alternative."""
+    label = f"YOUR EIN: {ein}"
+    width = len(label) + 4
+    top = "┌" + "─" * width + "┐"
+    middle = "│" + label.center(width) + "│"
+    bottom = "└" + "─" * width + "┘"
+    return f"{top}\n{middle}\n{bottom}"
+
 def _info_table(rows: list) -> str:
     trs = "".join(
         f'<tr><td style="padding:8px 16px;color:#6b7280;font-size:13px;">{label}</td>'
@@ -292,31 +302,80 @@ def forward_scc_approval_email(order: dict, certificate_bytes: bytes = None) -> 
 
 def send_ein_issued_email(order: dict, order_id: str, ein: str):
     """Email 5 (Part 4): sent once the EIN is issued by the IRS (or
-    immediately, for skip_ein customers who already had one)."""
+    immediately, for skip_ein customers who already had one). Standard for
+    every order the moment it has an EIN - see mark_ein_issued in
+    app/main.py, the single place both the automatic IRS-scrape path and
+    the admin's manual fallback both call through."""
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
     url = _status_url(order_id)
+    ein_box = _ein_ascii_box(ein)
     body = (
         f"Hi {name},\n\n"
-        "Your Employer Identification Number (EIN) has been issued by the IRS.\n\n"
-        f"Your EIN is: {ein}\n\n"
-        "Keep this number safe - you will need it to open a business bank account, hire employees, and file taxes.\n\n"
+        f"Great news - your Employer Identification Number (EIN) has been issued by the IRS for {business_name}!\n\n"
+        f"{ein_box}\n\n"
+        "Save this number - you need it to:\n"
+        "- Open a business bank account\n"
+        "- Hire employees\n"
+        "- File taxes\n"
+        "- Apply for business licenses\n\n"
+        "What happens next:\n"
+        "⏳ We're generating your business website\n"
+        "⏳ We're setting up your Stripe payment account\n\n"
         "Track your order here:\n"
         f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
-        "- Launch Bridge LLC"
+        "- Launch Bridge LLC\n"
+        f"{SUPPORT_EMAIL}"
     )
     html_inner = (
         f"<p>Hi {name},</p>"
-        "<p>Your Employer Identification Number (EIN) has been issued by the IRS.</p>"
-        + _info_table([("Your EIN", ein)])
-        + "<p>Keep this number safe - you will need it to open a business bank account, hire employees, "
-        "and file taxes.</p>"
+        f"<p>Great news - your Employer Identification Number (EIN) has been issued by the IRS for "
+        f"<strong>{business_name}</strong>!</p>"
+        '<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">'
+        '<tr><td align="center">'
+        '<table cellpadding="0" cellspacing="0" style="border:2px solid #16a34a;border-radius:10px;background:#f0fdf4;">'
+        '<tr><td style="padding:20px 36px;text-align:center;">'
+        '<p style="margin:0;color:#15803d;font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Your EIN</p>'
+        f'<p style="margin:6px 0 0;color:#14532d;font-size:28px;font-weight:700;letter-spacing:1px;">{ein}</p>'
+        "</td></tr></table>"
+        "</td></tr></table>"
+        "<p><strong>Save this number</strong> - you need it to:</p>"
+        "<ul style=\"margin:0 0 16px;padding-left:20px;color:#1f2937;\">"
+        "<li>Open a business bank account</li>"
+        "<li>Hire employees</li>"
+        "<li>File taxes</li>"
+        "<li>Apply for business licenses</li>"
+        "</ul>"
+        "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
+        "<p>⏳ We're generating your business website<br>"
+        "⏳ We're setting up your Stripe payment account</p>"
         f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
     )
     html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
     _send(email, f"Your EIN is Ready - {business_name}", body, html_body=html)
+
+def send_ein_filing_ready_email(order: dict, order_id: str, ein_filing_url: str):
+    """Admin-facing (not customer-facing): sent by app/main.py's
+    notify_ein_ready the moment an order has both SCC approval and a
+    stored SSN - the only two prerequisites for EIN filing. The button
+    links to a one-click, signed URL (see _make_ein_filing_link_token)
+    that starts filing without the admin needing to log into the
+    dashboard first - handy from a phone."""
+    business_name = order.get("business_name", "this order")
+    body = (
+        f"SSN is on file for {business_name} - ready to file the EIN.\n\n"
+        "Start filing here:\n"
+        f"{ein_filing_url}\n\n"
+        "(Make sure Chrome is open and logged into the IRS EIN Assistant session before clicking.)"
+    )
+    html_inner = (
+        f"<p>SSN is on file for <strong>{business_name}</strong> - ready to file the EIN.</p>"
+        "<p>Make sure Chrome is open and logged into the IRS EIN Assistant session before clicking below.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Apply for EIN Now", cta_url=ein_filing_url)
+    _send(GMAIL_USER, f"🔐 Ready to file EIN - {business_name}", body, html_body=html)
 
 def send_website_live_email(order: dict, order_id: str):
     """Email 6 (Part 4): sent once run_asset_generation finishes the

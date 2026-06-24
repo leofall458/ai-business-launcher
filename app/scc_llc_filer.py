@@ -113,7 +113,7 @@ def pay_scc_filing_fee(page):
     card = SCC_FILING_CARD
     if not card:
         print("❌ No filing card configured (SCC_FILING_CARD secret empty) - bailing out.")
-        page.screenshot(path="scc_payment_no_card.png")
+        page.screenshot(path="/tmp/scc_payment_no_card.png")
         return False
 
     print("📌 Adding to Shopping Cart...")
@@ -165,7 +165,7 @@ def pay_scc_filing_fee(page):
     body = page.inner_text("body").lower()
     if "is required" in body or "declined" in body or "invalid" in body:
         print("❌ Payment billing info was rejected - check SCC_FILING_CARD fields.")
-        page.screenshot(path="scc_payment_billing_error.png")
+        page.screenshot(path="/tmp/scc_payment_billing_error.png")
         return False
 
     # Custom-styled checkbox - the underlying native input is hidden, so a
@@ -180,10 +180,10 @@ def pay_scc_filing_fee(page):
     body = page.inner_text("body").lower()
     if "declined" in body:
         print("❌ Card was declined by the payment processor.")
-        page.screenshot(path="scc_payment_declined.png")
+        page.screenshot(path="/tmp/scc_payment_declined.png")
         return False
 
-    page.screenshot(path="scc_payment_complete.png")
+    page.screenshot(path="/tmp/scc_payment_complete.png")
     print("✅ Payment submitted - LLC filing fee paid!")
     return True
 
@@ -226,7 +226,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
 
         if "Hi," not in page.inner_text("body"):
             print("❌ Login failed - check SCC_USERNAME/SCC_PASSWORD in .env")
-            page.screenshot(path="scc_login_failed.png")
+            page.screenshot(path="/tmp/scc_login_failed.png")
             browser.close()
             return False
         print("✅ Logged into SCC")
@@ -279,7 +279,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
         except:
             if not interactive:
                 print("❌ Could not determine name availability - bailing out (non-interactive mode)")
-                page.screenshot(path="scc_name_check_unclear.png")
+                page.screenshot(path="/tmp/scc_name_check_unclear.png")
                 browser.close()
                 return False
             answer = input("Is name available? (y/n): ")
@@ -328,7 +328,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             page.wait_for_selector('#dialog', state='visible', timeout=10000)
             page.wait_for_timeout(1500)
 
-            page.screenshot(path="scc_ra_modal.png")
+            page.screenshot(path="/tmp/scc_ra_modal.png")
             print("📸 RA screenshot saved")
 
             # The dialog's fields live under createAgentinfo_NameFields_* and
@@ -373,7 +373,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
                     # requires a paper filing for addresses it truly can't match.
                     print("❌ Address has no suggested match - SCC cannot verify it online.")
                     print("📸 Saving screenshot - review and correct the address manually in the browser.")
-                    page.screenshot(path="scc_ra_address_unverified.png")
+                    page.screenshot(path="/tmp/scc_ra_address_unverified.png")
                     if not interactive:
                         print("Bailing out (non-interactive mode) - this address needs manual correction.")
                         browser.close()
@@ -398,7 +398,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             page.wait_for_selector('input[name="SelectedAgentID"]', timeout=15000)
             page.wait_for_timeout(1000)
 
-            page.screenshot(path="scc_ra_search_results.png")
+            page.screenshot(path="/tmp/scc_ra_search_results.png")
             print("📸 RA search results screenshot saved")
 
             print("📌 Selecting Leo Fall from search results...")
@@ -445,7 +445,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             else:
                 print("❌ Address has no suggested match - SCC cannot verify it online.")
                 print("📸 Saving screenshot - review and correct the address manually in the browser.")
-                page.screenshot(path="scc_principal_address_unverified.png")
+                page.screenshot(path="/tmp/scc_principal_address_unverified.png")
                 if not interactive:
                     print("Bailing out (non-interactive mode) - this address needs manual correction.")
                     browser.close()
@@ -491,7 +491,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
         print("📌 Going to Review...")
         click_next(page)
 
-        page.screenshot(path="scc_filled.png")
+        page.screenshot(path="/tmp/scc_filled.png")
         print("\n✅ All steps filled - on Review page!")
         print("📸 Screenshot saved")
 

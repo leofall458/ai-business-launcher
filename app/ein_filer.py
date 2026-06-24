@@ -1,6 +1,9 @@
+import re
+
 from playwright.sync_api import sync_playwright
 
 CDP_URL = "http://172.27.176.1:9222"
+EIN_PATTERN = re.compile(r"\b\d{2}-\d{7}\b")
 
 def fill_field(page, selector, value):
     try:
@@ -68,7 +71,28 @@ def click_continue(page):
     page.wait_for_timeout(2000)
     print(f"  → Step complete ({page.url})")
 
-def file_ein_with_irs(customer_data: dict, interactive=True):
+def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
+    """Returns a result dict, never a bare bool:
+      {"success": True, "ein": "XX-XXXXXXX", "cp575_bytes": bytes|None}
+        - the IRS issued an EIN and it was read back successfully.
+      {"success": False, "rejected": True}
+        - IRS rejected the application before any submission happened
+          (e.g. SSN didn't match IRS records) - safe to fix and retry.
+      {"success": False, "submitted": True, "ein": None, "screenshot": path}
+        - Submit was clicked (a real, permanent EIN now exists at the
+          IRS) but the confirmation page's EIN couldn't be read back.
+          Callers MUST NOT retry filing for this order - that would file
+          a second, duplicate EIN - and must recover the number manually
+          (the screenshot, or the IRS site/mail) instead.
+      {"success": False, "submitted": False, "error": str}
+        - Some other failure before Submit was ever reached. Safe to retry.
+
+    on_submitted, if given, is called with no arguments the instant the
+    Submit click (or, in interactive mode, the human's manual submission)
+    is confirmed to have happened - independent of whatever succeeds or
+    crashes afterward, so a caller can durably record "this is now a real,
+    permanent IRS filing" before attempting anything as fallible as
+    reading the confirmation page back."""
     business_name = customer_data["business_name"]
     if not business_name.upper().endswith(" LLC"):
         business_name = business_name + " LLC"
@@ -129,8 +153,8 @@ def file_ein_with_irs(customer_data: dict, interactive=True):
         if "We are unable to provide you with an EIN" in page.inner_text("body"):
             print("❌ IRS rejected the application at the Identity step (SSN did not match IRS records).")
             print("📸 Saving screenshot for review")
-            page.screenshot(path="ein_rejected.png")
-            return False
+            page.screenshot(path="/tmp/ein_rejected.png")
+            return {"success": False, "rejected": True}
 
         # === STEP 3: ADDRESSES ===
         print("📌 Step 3: Addresses...")
@@ -186,19 +210,68 @@ def file_ein_with_irs(customer_data: dict, interactive=True):
         click_radio(page, "confirmationLetterRadioInput", "DIGITAL")
         page.wait_for_timeout(500)
 
-        page.screenshot(path="ein_review.png", full_page=True)
+        page.screenshot(path="/tmp/ein_review.png", full_page=True)
         print("\n✅ All steps filled!")
-        print("📸 Screenshot saved as ein_review.png")
-        print("\n⚠️  REVIEW EVERYTHING IN THE BROWSER BEFORE SUBMITTING")
-        print("Submitting issues a real, permanent EIN immediately — this cannot be undone.")
-        print("Click 'Submit EIN Request' yourself in the browser when ready.")
-        if not interactive:
-            print("(non-interactive mode - leaving the tab open on the Review page for manual submission)")
-            return True
-        print("Press ENTER here when completely done...")
-        input()
+        print("📸 Screenshot saved as /tmp/ein_review.png")
 
-        return True
+        if interactive:
+            print("\n⚠️  REVIEW EVERYTHING IN THE BROWSER BEFORE SUBMITTING")
+            print("Submitting issues a real, permanent EIN immediately — this cannot be undone.")
+            print("Click 'Submit EIN Request' yourself in the browser, then press ENTER here.")
+            input()
+        else:
+            print("⚠️ Auto-submitting - this issues a real, permanent EIN immediately.")
+            submit_button = None
+            for text in ("Submit EIN Request", "Submit Request", "Submit"):
+                candidate = page.locator(f'button:has-text("{text}"), a:has-text("{text}")').last
+                if candidate.count() > 0:
+                    submit_button = candidate
+                    break
+            if submit_button is None:
+                print("❌ Could not find a Submit button on the Review page.")
+                page.screenshot(path="/tmp/ein_confirmation.png", full_page=True)
+                return {"success": False, "submitted": False, "error": "Could not find Submit button on Review page"}
+            submit_button.click()
+            page.wait_for_load_state("load", timeout=30000)
+            page.wait_for_timeout(2000)
+
+        # The Submit click (or the human's manual one, above) has now
+        # definitely happened - a real EIN exists at the IRS regardless of
+        # what happens from here on. Record that durably before doing
+        # anything else, so a crash mid-scrape can never look like "filing
+        # never happened" to a caller deciding whether it's safe to retry.
+        if on_submitted:
+            on_submitted()
+
+        # === CONFIRMATION: read back the issued EIN ===
+        print("📌 Reading the confirmation page for the issued EIN...")
+        page.wait_for_timeout(1000)
+        page.screenshot(path="/tmp/ein_confirmation.png", full_page=True)
+        body_text = page.inner_text("body")
+        match = EIN_PATTERN.search(body_text)
+
+        cp575_bytes = None
+        try:
+            for link_text in ("Confirmation Letter", "Notice", "Download", "CP 575", "CP575"):
+                link = page.locator(f'a:has-text("{link_text}")').first
+                if link.count() > 0:
+                    href = link.get_attribute("href")
+                    if href:
+                        resp = context.request.get(href)
+                        if resp.ok and "pdf" in resp.headers.get("content-type", "").lower():
+                            cp575_bytes = resp.body()
+                            break
+        except Exception as e:
+            print(f"⚠️ Could not download the CP575 confirmation letter (non-fatal): {e}")
+
+        if match:
+            ein = match.group(0)
+            print(f"✅ EIN issued: {ein}")
+            return {"success": True, "ein": ein, "cp575_bytes": cp575_bytes}
+
+        print("⚠️ Submitted, but could not find an EIN on the confirmation page.")
+        print("📸 Screenshot saved to /tmp/ein_confirmation.png for manual review.")
+        return {"success": False, "submitted": True, "ein": None, "screenshot": "/tmp/ein_confirmation.png", "cp575_bytes": cp575_bytes}
 
 if __name__ == "__main__":
     test_customer = {
@@ -217,4 +290,5 @@ if __name__ == "__main__":
         "members": "1",
         "business_description": "Business consulting services",
     }
-    file_ein_with_irs(test_customer)
+    result = file_ein_with_irs(test_customer)
+    print(result)

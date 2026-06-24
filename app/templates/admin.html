@@ -116,13 +116,19 @@
                 </div>
                 {% endif %}
 
-                {% if order.state == "filing_confirmed" and order.ein_status == "queued" %}
+                {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and order.ein_status == "queued" %}
                 <div class="bg-indigo-950 border border-indigo-800 rounded-lg p-3 mb-3">
                     <p class="text-xs text-indigo-300">⏳ EIN queued - IRS opens {{ order.next_available_window_eta }}. Will auto-submit then.</p>
                 </div>
                 {% endif %}
 
-                {% if order.state == "filing_confirmed" and not order.skip_ein and not order.ein and order.ein_status != "queued" and irs_open %}
+                {% if order.ein_submitted_to_irs and order.state in ("filing_confirmed", "awaiting_ein_filing") %}
+                <div class="bg-red-950 border border-red-700 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-red-300">🚫 A real EIN was already submitted to the IRS for this order but the number wasn't read back automatically - check the screenshot/email, then enter it below. Do NOT click Apply for EIN again.</p>
+                </div>
+                {% endif %}
+
+                {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and not order.skip_ein and not order.ein and not order.ein_submitted_to_irs and order.ein_status != "queued" and irs_open %}
                 <div class="bg-green-950 border border-green-700 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
                     <p class="text-xs text-green-300">🔔 EIN ready to file for {{ order.business_name }}</p>
                     <form method="post" action="/admin/{{ order.id }}/apply-ein">
@@ -159,7 +165,7 @@
                     {% endif %}
                     {% endif %}
 
-                    {% if order.state == "filing_confirmed" and not order.skip_ein %}
+                    {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and not order.skip_ein and not order.ein_submitted_to_irs %}
                         {% if irs_open %}
                         <form method="post" action="/admin/{{ order.id }}/apply-ein">
                             <button type="submit"

@@ -10,3 +10,12 @@ firebase-adminsdk*.json
 scc_session.json
 gmail_credentials.json
 gmail_token.json
+
+# Debug screenshots from app/scc_llc_filer.py and app/ein_filer.py - these
+# capture real customer data (legal name, address, phone, last-4 SSN) the
+# moment a real filing runs, so they must never be committed. The scripts
+# themselves now write to /tmp instead, but this stays as a backstop.
+# Root-only (/*.png) so it doesn't also catch legitimate image assets
+# nested under app/static or similar.
+/*.png
+

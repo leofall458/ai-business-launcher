@@ -32,3 +32,22 @@ def fetch_certificate(order_id: str) -> bytes:
     certificate_uploaded_at field first rather than relying on this to
     signal absence."""
     return _certificate_blob(order_id).download_as_bytes()
+
+def _ein_letter_blob(order_id: str):
+    bucket = _client.bucket(STORAGE_BUCKET)
+    return bucket.blob(f"orders/{order_id}/ein_confirmation.pdf")
+
+def upload_ein_letter(order_id: str, pdf_bytes: bytes):
+    """Uploads the IRS CP575 EIN confirmation letter - called from
+    app/main.py's run_ein_filing right after a best-effort download from
+    the IRS confirmation page (see app/ein_filer.py). Best-effort on the
+    scrape side means this is never guaranteed to be called; callers
+    check ein_letter_uploaded_at before offering a download link."""
+    blob = _ein_letter_blob(order_id)
+    blob.upload_from_string(pdf_bytes, content_type="application/pdf")
+
+def fetch_ein_letter(order_id: str) -> bytes:
+    """Raises google.cloud.exceptions.NotFound if no letter has been
+    uploaded for this order - callers should check ein_letter_uploaded_at
+    first rather than relying on this to signal absence."""
+    return _ein_letter_blob(order_id).download_as_bytes()
