@@ -1233,10 +1233,17 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
         return RedirectResponse(url="/")
 
     order = ORDERS.document(resolved_order_id).get().to_dict()
-    if order and order.get("awaiting_ssn"):
-        return RedirectResponse(url=f"/collect-ssn/{resolved_order_id}")
+    if not order:
+        return RedirectResponse(url="/")
 
-    return RedirectResponse(url=f"/status/{resolved_order_id}")
+    # Completing Stripe Checkout proves payment, not email ownership - so
+    # this must not mint a dashboard session directly. The customer's
+    # first magic link arrives via the order-received email instead (see
+    # send_order_received_email), sent from inside process_paid_order
+    # above.
+    return templates.TemplateResponse(request, "success_interstitial.html", {
+        "email": order.get("email", ""),
+    })
 
 # Locked down hard, on this one route only - the SSN page must never be
 # able to load a third-party script, image, or outbound connection, so a
@@ -1702,14 +1709,15 @@ async def dashboard_orders(request: Request):
         "orders": [{"order_id": doc.id, "business_name": doc.to_dict().get("business_name")} for doc in orders],
     })
 
-@app.get("/dashboard/orders/{order_id}", response_class=HTMLResponse)
-async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_order)):
-    order_ref, order, customer_id = owned
+def _dashboard_order_context(request: Request, order_ref, order: dict, ssn_error: str = None) -> dict:
+    """Shared between the order page and the SSN-submit route (which
+    re-renders the same page with an error instead of redirecting, so the
+    customer doesn't lose their place) - keeps both in sync rather than
+    risking the two contexts drifting apart."""
     order_id = order_ref.id
-    order = ensure_payment_link(order_ref, order)
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
-
-    return templates.TemplateResponse(request, "dashboard_order.html", {
+    ssn_expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
+    return {
         **status_context(order_id, order),
         "business_name": order.get("business_name"),
         "full_name": order.get("full_name"),
@@ -1718,14 +1726,53 @@ async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_ord
         "ein": order.get("ein"),
         "website_url": order.get("website_url"),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
-        "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
+        "needs_ssn_entry": bool(order.get("awaiting_ssn")) or ssn_expired,
+        "ssn_expired": ssn_expired,
+        "ssn_error": ssn_error,
         "csrf_token": make_csrf_token(session_id),
         "document_labels": DOCUMENT_LABELS,
         "available_documents": {
             doc_id: _document_object_name(order, order_id, doc_id) is not None
             for doc_id in DOCUMENT_LABELS
         },
-    })
+    }
+
+@app.get("/dashboard/orders/{order_id}", response_class=HTMLResponse)
+async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order = ensure_payment_link(order_ref, order)
+    return templates.TemplateResponse(request, "dashboard_order.html", _dashboard_order_context(request, order_ref, order))
+
+@app.post("/dashboard/orders/{order_id}/ssn", response_class=HTMLResponse)
+async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTasks, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    form = await request.form()
+    if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+
+    expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
+    if not order.get("awaiting_ssn") and not expired:
+        return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
+
+    ssn = (form.get("ssn") or "").strip()
+    error = validate_ssn(ssn)
+    if not error and not encrypt_ssn(ssn, order_id):
+        error = "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening."
+
+    if error:
+        order = ensure_payment_link(order_ref, order)
+        return templates.TemplateResponse(request, "dashboard_order.html",
+            _dashboard_order_context(request, order_ref, order, ssn_error=error), status_code=400)
+
+    if expired:
+        resume_ein_after_ssn_reentry(order_id)
+    else:
+        start_pipeline_after_ssn(order_id, background_tasks)
+
+    return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
 
 @app.get("/dashboard/orders/{order_id}/timeline", response_class=HTMLResponse)
 async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_owned_order)):

@@ -18,6 +18,7 @@ import mimetypes
 from email.message import EmailMessage
 
 from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
+from app.dashboard_auth import create_magic_link
 
 FROM_NAME = "Launch Bridge LLC"
 APP_BASE_URL = "https://app.launchbridge.ai"
@@ -170,20 +171,22 @@ def send_order_id_email(order: dict, order_id: str):
     _send(email, "Your Launch Bridge Order ID", body, html_body=html)
 
 def send_order_received_email(order: dict, order_id: str):
-    """Part 3: sent the moment an order moves draft -> paid."""
+    """Part 3: sent the moment an order moves draft -> paid. This is the
+    very first dashboard sign-in link a customer gets - /success
+    deliberately doesn't mint a session itself (completing Stripe
+    Checkout proves payment, not email ownership), so this link is the
+    real entry point."""
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = _status_url(order_id)
+    url = create_magic_link(email) if email else _status_url(order_id)
     body = (
         f"Hi {name},\n\n"
         "Thank you for choosing Launch Bridge LLC!\n\n"
         "Your order has been confirmed. Here are your details:\n\n"
-        f"Order ID: {order_id}\n"
         f"Business Name: {business_name}\n"
         "Amount Paid: $350\n\n"
-        "Save this Order ID — you will need it to track your order status.\n\n"
-        "Track your order here:\n"
+        "Sign in to your dashboard to track progress:\n"
         f"{url}\n\n"
         "What happens next:\n"
         "✅ Your documents are being generated now\n"
@@ -197,16 +200,15 @@ def send_order_received_email(order: dict, order_id: str):
         f"<p>Hi {name},</p>"
         "<p>Thank you for choosing Launch Bridge LLC!</p>"
         "<p>Your order has been confirmed. Here are your details:</p>"
-        + _info_table([("Order ID", order_id), ("Business Name", business_name), ("Amount Paid", "$350")])
-        + "<p><strong>Save this Order ID</strong> — you will need it to track your order status.</p>"
-        "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
+        + _info_table([("Business Name", business_name), ("Amount Paid", "$350")])
+        + "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
         "<p>✅ Your documents are being generated now<br>"
         "⏳ We will file your LLC with Virginia SCC within 24 hours<br>"
         "⏳ EIN application follows LLC approval (1-3 business days)<br>"
         "⏳ Your website will be live after LLC approval</p>"
         f"<p>Questions? Reply to this email or contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a></p>"
     )
-    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
+    html = _wrap_html(html_inner, cta_text="Sign In to Your Dashboard", cta_url=url)
     _send(email, f"Your Launch Bridge Order Confirmed - {business_name}", body, html_body=html)
 
 def send_documents_ready_email(order: dict, order_id: str):
