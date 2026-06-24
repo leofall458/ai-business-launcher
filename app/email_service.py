@@ -87,7 +87,8 @@ def send_llc_filed_email(order: dict, order_id: str):
     )
     _send(email, "Your LLC has been submitted to Virginia SCC", body)
 
-def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str = "", certificate_path: str = None):
+def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str = "",
+                             certificate_path: str = None, certificate_bytes: bytes = None):
     email = order.get("email", "")
     business_name = order.get("business_name", "your business")
     confirmation_line = f"Virginia SCC confirmation number: {confirmation_number}\n\n" if confirmation_number else ""
@@ -101,9 +102,11 @@ def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
         "- Launch Bridge LLC"
     )
-    _send(email, "Your LLC is approved!", body,
-        attachment_path=certificate_path,
-        attachment_filename=f"{business_name.replace(' ', '_')}_Certificate.pdf" if certificate_path else None)
+    safe_name = business_name.replace(" ", "_").replace("/", "_")
+    attachment_filename = f"{safe_name}_Certificate.pdf" if (certificate_bytes or certificate_path) else None
+    return _send(email, "Your LLC is approved!", body,
+        attachment_path=certificate_path, attachment_bytes=certificate_bytes,
+        attachment_filename=attachment_filename)
 
 def forward_scc_approval_email(order: dict, certificate_bytes: bytes = None) -> bool:
     """Sent by app/gmail_poller.py the moment it matches a real SCC
