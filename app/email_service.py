@@ -120,6 +120,27 @@ def _info_table(rows: list) -> str:
     )
     return f'<table style="width:100%;background:#f9fafb;border-radius:8px;margin:16px 0;border-collapse:collapse;">{trs}</table>'
 
+def send_magic_link_email(email: str, magic_link_url: str):
+    """The only email in the dashboard security rework that carries a
+    live, usable link directly - that's the point of a magic link. Every
+    other dashboard notification (see send_* below) links to the
+    dashboard generically and relies on the customer already having a
+    session or requesting a fresh link there."""
+    body = (
+        "Click the link below to sign in to your Launch Bridge dashboard:\n\n"
+        f"{magic_link_url}\n\n"
+        "This link expires in 15 minutes and can only be used once. If you "
+        "didn't request this, you can safely ignore this email.\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        "<p>Click the button below to sign in to your Launch Bridge dashboard.</p>"
+        "<p style=\"color:#6b7280;font-size:13px;\">This link expires in 15 minutes and can only be used once. "
+        "If you didn't request this, you can safely ignore this email.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Sign In", cta_url=magic_link_url)
+    _send(email, "Sign in to Launch Bridge", body, html_body=html)
+
 def send_order_id_email(order: dict, order_id: str):
     """Part 2: sent from POST /request-order-id when a customer has lost
     their order ID and looks it up by email."""

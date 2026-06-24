@@ -51,12 +51,19 @@ from app.email_service import (
     send_everything_complete_email,
     send_order_id_email,
     send_ssn_expired_email,
+    send_magic_link_email,
 )
 from app.storage_service import fetch_certificate, fetch_ein_letter
-from app.document_store import upload_document
+from app.document_store import upload_document, generate_signed_url
 from app.sms import send_admin_sms
+from app.dashboard_auth import (
+    create_magic_link, redeem_magic_link, create_session,
+    verify_and_touch_session, delete_session, SESSION_ABSOLUTE_SECONDS,
+)
+from app.dashboard_security import SecurityHeadersMiddleware, make_csrf_token, verify_csrf_token
 
 app = FastAPI(title="Launch Bridge LLC")
+app.add_middleware(SecurityHeadersMiddleware)
 
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -1600,6 +1607,125 @@ async def status_timeline_partial(request: Request, order_id: str):
     if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
         return HTMLResponse("")
 
+    return templates.TemplateResponse(request, "status_timeline.html", {
+        **status_context(order_id, order),
+        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
+    })
+
+# ─── Customer dashboard (magic-link auth) ──────────────────────────────
+# Replaces /status/* + /collect-ssn/* + the four /download-* routes once
+# fully verified on staging (see the security-rework plan) - built
+# alongside the routes above rather than in place of them, so the old
+# flow keeps working in production until everything here is promoted.
+
+DASHBOARD_SESSION_COOKIE = "lb_session"
+MAGIC_LINK_RATE_WINDOW = datetime.timedelta(hours=1)
+MAGIC_LINK_RATE_LIMIT = 3
+
+def get_owned_order(order_id: str, request: Request):
+    """Every failure mode - no session, expired session, order doesn't
+    exist, order belongs to a different email - returns the identical
+    404. A cross-customer guess at another order_id must be
+    indistinguishable from a typo, so this never returns 403."""
+    customer_id = verify_and_touch_session(request.cookies.get(DASHBOARD_SESSION_COOKIE, ""))
+    if not customer_id:
+        raise HTTPException(status_code=404)
+    order_ref = ORDERS.document(order_id)
+    order_snap = order_ref.get()
+    if not order_snap.exists:
+        raise HTTPException(status_code=404)
+    order = order_snap.to_dict()
+    if (order.get("email") or "").strip().lower() != customer_id:
+        raise HTTPException(status_code=404)
+    return order_ref, order, customer_id
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_login(request: Request):
+    return templates.TemplateResponse(request, "dashboard_login.html", {})
+
+@app.post("/dashboard/login", response_class=HTMLResponse)
+async def dashboard_login_submit(request: Request):
+    """Always returns the identical "check your email" response and
+    always queries Firestore for a matching order, whether or not the
+    email is real and whether or not the rate limit was already hit -
+    so neither response shape nor timing reveals which emails have
+    orders, or that a sender has been rate-limited."""
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+
+    if email:
+        over_limit = _rate_limited("magic_link_requests", "email", email, MAGIC_LINK_RATE_WINDOW, MAGIC_LINK_RATE_LIMIT)
+        has_order = next(iter(ORDERS.where("email", "==", email).limit(1).stream()), None) is not None
+        if has_order and not over_limit:
+            send_magic_link_email(email, create_magic_link(email))
+
+    return templates.TemplateResponse(request, "dashboard_check_email.html", {})
+
+@app.get("/dashboard/verify", response_class=HTMLResponse)
+async def dashboard_verify(request: Request, token: str = "", exp: str = "", sig: str = ""):
+    email = redeem_magic_link(token, exp, sig)
+    if not email:
+        return templates.TemplateResponse(request, "dashboard_login.html", {
+            "error": "This link is invalid or has expired - request a new one below.",
+        }, status_code=400)
+
+    session_id = create_session(email)
+    response = RedirectResponse(url="/dashboard/orders", status_code=303)
+    response.set_cookie(
+        key=DASHBOARD_SESSION_COOKIE, value=session_id,
+        max_age=SESSION_ABSOLUTE_SECONDS, httponly=True, secure=True, samesite="lax",
+        path="/",
+    )
+    return response
+
+@app.get("/dashboard/logout")
+async def dashboard_logout(request: Request):
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+    if session_id:
+        delete_session(session_id)
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.delete_cookie(DASHBOARD_SESSION_COOKIE, path="/")
+    return response
+
+@app.get("/dashboard/orders", response_class=HTMLResponse)
+async def dashboard_orders(request: Request):
+    customer_id = verify_and_touch_session(request.cookies.get(DASHBOARD_SESSION_COOKIE, ""))
+    if not customer_id:
+        return RedirectResponse(url="/dashboard")
+
+    orders = [doc for doc in ORDERS.where("email", "==", customer_id).stream()]
+    if len(orders) == 1:
+        return RedirectResponse(url=f"/dashboard/orders/{orders[0].id}")
+
+    return templates.TemplateResponse(request, "dashboard_order_list.html", {
+        "orders": [{"order_id": doc.id, "business_name": doc.to_dict().get("business_name")} for doc in orders],
+    })
+
+@app.get("/dashboard/orders/{order_id}", response_class=HTMLResponse)
+async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    order = ensure_payment_link(order_ref, order)
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    return templates.TemplateResponse(request, "dashboard_order.html", {
+        **status_context(order_id, order),
+        "business_name": order.get("business_name"),
+        "full_name": order.get("full_name"),
+        "email": order.get("email"),
+        "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
+        "ein": order.get("ein"),
+        "website_url": order.get("website_url"),
+        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
+        "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
+        "csrf_token": make_csrf_token(session_id),
+    })
+
+@app.get("/dashboard/orders/{order_id}/timeline", response_class=HTMLResponse)
+async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    order = ensure_payment_link(order_ref, order)
     return templates.TemplateResponse(request, "status_timeline.html", {
         **status_context(order_id, order),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
