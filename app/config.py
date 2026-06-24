@@ -44,6 +44,10 @@ GMAIL_USER = get_secret("GMAIL_USER")
 GMAIL_APP_PASSWORD = get_secret("GMAIL_APP_PASSWORD")
 SUPPORT_EMAIL = "support@launchbridge.ai"
 
+# Email-to-SMS gateway address for the admin's phone (e.g. a tmomail.net
+# address for T-Mobile) - see app/sms.py.
+ADMIN_PHONE_EMAIL = get_secret("ADMIN_PHONE_EMAIL")
+
 # Signs the /status/{order_id} email-verification cookie (see app/main.py) -
 # a pure server-side HMAC key with no external meaning, generated and
 # stored directly in Secret Manager rather than something the user provides.

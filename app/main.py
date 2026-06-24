@@ -52,6 +52,7 @@ from app.email_service import (
     send_ssn_expired_email,
 )
 from app.storage_service import fetch_certificate
+from app.sms import send_admin_sms
 
 app = FastAPI(title="Launch Bridge LLC")
 
@@ -605,6 +606,7 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
             asset_generation_error=firestore.DELETE_FIELD,
         )
         send_ein_issued_email(order, order_ref.id, existing_ein)
+        send_admin_sms(f"✅ EIN done! {order.get('business_name', '')} {existing_ein}")
         return True
 
     extra = {"filing_confirmed_at": firestore.SERVER_TIMESTAMP, "filing_error": firestore.DELETE_FIELD}
@@ -667,6 +669,7 @@ def run_scc_filing(order_id: str):
     except Exception as e:
         print(f"⚠️ SCC filing crashed for order {order_id}: {e}")
         order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
+        send_admin_sms(f"⚠️ SCC crashed for {order.get('business_name', '')} - check admin")
 
 def run_ein_filing(order_id: str):
     """Triggered by the admin's Apply for EIN button - only reachable once
@@ -703,6 +706,7 @@ def run_ein_filing(order_id: str):
             order_ref.set({
                 "ein_error": "SSN is no longer stored (it was deleted after 72 hours, or EIN was already filed once). The customer must re-enter it before EIN filing can proceed."
             }, merge=True)
+            send_admin_sms(f"⚠️ EIN setup failed for {order.get('business_name', '')} - SSN missing, check admin")
             return
 
         today = datetime.date.today()
@@ -734,12 +738,14 @@ def run_ein_filing(order_id: str):
             )
         else:
             order_ref.set({"ein_error": "EIN filing did not complete - check server screenshots, then apply again to retry."}, merge=True)
+            send_admin_sms(f"⚠️ EIN setup failed for {order.get('business_name', '')} - check admin")
     except Exception as e:
         # Scrubbed defensively, in case a Playwright/IRS error message
         # ever happens to echo back the SSN it was just given.
         safe_error = scrub_ssn(str(e))
         print(f"⚠️ EIN filing crashed for order {order_id}: {safe_error}")
         order_ref.set({"ein_error": f"Filing crashed unexpectedly: {safe_error}. Check server logs/screenshots."}, merge=True)
+        send_admin_sms(f"⚠️ EIN setup failed for {order.get('business_name', '')} - check admin")
 
 async def ein_queue_scheduler():
     """Runs for the lifetime of the process, woken every 5 minutes. Picks
@@ -892,7 +898,9 @@ def run_asset_generation(order_id: str):
             order["website_url"] = website_url
             order["stripe_connect_account_id"] = connect_account_id
             send_website_live_email(order, order_id)
+            send_admin_sms(f"🌐 Site live! {business_name}")
             send_everything_complete_email(order, order_id)
+            send_admin_sms(f"🎉 Done! {business_name} fully onboarded")
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
@@ -1015,6 +1023,7 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
 
     order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
     send_order_received_email(order, order_id)
+    send_admin_sms(f"🚀 New order! {order.get('business_name', '')} - {order.get('full_name', '')} paid $350")
 
     if needs_ssn(order):
         record_state(order_ref, "paid", awaiting_ssn=True)
@@ -1150,6 +1159,9 @@ async def collect_ssn_submit(request: Request, order_id: str, background_tasks: 
             "expired": expired,
             "error": "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening.",
         }, status_code=500, headers={"Content-Security-Policy": SSN_PAGE_CSP})
+
+    irs_note = "IRS open til 10pm ET" if is_irs_open() else "IRS closed - will auto-file when open"
+    send_admin_sms(f"🔐 SSN ready! {order.get('business_name', '')} - file EIN now. {irs_note}")
 
     if expired:
         resume_ein_after_ssn_reentry(order_id, background_tasks)
@@ -1521,6 +1533,7 @@ async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: 
     )
     if order:
         send_ein_issued_email(order, order_id, ein)
+        send_admin_sms(f"✅ EIN done! {order.get('business_name', '')} {ein}")
     background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 

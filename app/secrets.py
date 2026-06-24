@@ -30,6 +30,7 @@ MANAGED_SECRETS = [
     "GMAIL_USER",
     "GMAIL_APP_PASSWORD",
     "STATUS_SESSION_SECRET",
+    "ADMIN_PHONE_EMAIL",
 ]
 
 _PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ai-biz-launcher")
