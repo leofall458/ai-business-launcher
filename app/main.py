@@ -1606,16 +1606,22 @@ async def cancel():
     return RedirectResponse(url="/?cancelled=1")
 
 @app.get("/connect/onboard/{order_id}")
-async def connect_onboard(request: Request, order_id: str):
+async def connect_onboard(order_id: str):
     order = ORDERS.document(order_id).get().to_dict()
     if not order or not order.get("stripe_connect_account_id"):
         return RedirectResponse(url="/")
 
-    base_url = str(request.base_url)
+    # Not request.base_url - Cloud Run sits behind a proxy that terminates
+    # TLS, so Starlette sees the connection as plain http:// even though
+    # the customer's browser is on https://, and Stripe's live mode hard-
+    # rejects an http:// redirect URL ("Livemode requests must always be
+    # redirected via HTTPS"). Hardcoding the real public origin avoids
+    # depending on whether the proxy forwards X-Forwarded-Proto.
+    base_url = "https://app.launchbridge.ai"
     url = create_account_link(
         order["stripe_connect_account_id"],
-        refresh_url=f"{base_url}connect/onboard/{order_id}",
-        return_url=f"{base_url}status/{order_id}",
+        refresh_url=f"{base_url}/connect/onboard/{order_id}",
+        return_url=f"{base_url}/status/{order_id}",
     )
     return RedirectResponse(url=url)
 
