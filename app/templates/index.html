@@ -25,38 +25,10 @@
         {% endif %}
 
         <!-- Track Your Order -->
-        <div class="bg-gray-900 border border-gray-700 rounded-xl mb-8 overflow-hidden">
-            <button type="button" onclick="toggleTrackOrder()"
-                class="w-full flex items-center justify-between p-4 text-sm font-semibold text-blue-400">
-                <span>📦 Already have an order? Track your status →</span>
-                <span id="track-order-chevron" class="text-sm transition-transform">▾</span>
-            </button>
-            <div id="track-order-content" class="hidden p-4 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-                    <p class="text-xs font-semibold text-white mb-2">Track by Order ID</p>
-                    <form onsubmit="trackOrderById(event)" class="flex gap-2">
-                        <input id="track-order-id-input" type="text" required placeholder="Enter your Order ID"
-                            class="flex-1 bg-gray-800 rounded-lg p-2.5 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
-                        <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 rounded-lg transition text-sm whitespace-nowrap">
-                            Track Order →
-                        </button>
-                    </form>
-                </div>
-                <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-                    <p class="text-xs font-semibold text-white mb-2">Request Order ID by Email</p>
-                    <form hx-post="/request-order-id" hx-target="#track-order-email-result" hx-swap="innerHTML" class="flex gap-2">
-                        <input name="email" type="email" required placeholder="Enter your email address"
-                            class="flex-1 bg-gray-800 rounded-lg p-2.5 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
-                        <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 rounded-lg transition text-sm whitespace-nowrap">
-                            Send My Order ID
-                        </button>
-                    </form>
-                    <div id="track-order-email-result"></div>
-                </div>
-            </div>
-        </div>
+        <a href="/dashboard"
+            class="block bg-gray-900 border border-gray-700 rounded-xl mb-8 p-4 text-sm font-semibold text-blue-400 hover:border-blue-600 transition">
+            📦 Already have an order? Sign in to your dashboard →
+        </a>
 
         <!-- What's Included Banner -->
         <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-8">
@@ -582,18 +554,6 @@
     </div>
 
     <script>
-        function toggleTrackOrder() {
-            const content = document.getElementById('track-order-content');
-            const chevron = document.getElementById('track-order-chevron');
-            content.classList.toggle('hidden');
-            chevron.textContent = content.classList.contains('hidden') ? '▾' : '▴';
-        }
-
-        function trackOrderById(event) {
-            event.preventDefault();
-            const id = document.getElementById('track-order-id-input').value.trim();
-            if (id) window.location.href = '/status/' + encodeURIComponent(id);
-        }
 
         function toggleSelfRANotice() {
             const isSelf = document.querySelector('input[name="registered_agent_choice"]:checked').value === 'self';

@@ -7,7 +7,7 @@ import datetime
 from urllib.parse import quote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -49,11 +49,9 @@ from app.email_service import (
     send_ein_filing_ready_email,
     send_website_live_email,
     send_everything_complete_email,
-    send_order_id_email,
     send_ssn_expired_email,
     send_magic_link_email,
 )
-from app.storage_service import fetch_certificate, fetch_ein_letter
 from app.document_store import upload_document, generate_signed_url
 from app.sms import send_admin_sms
 from app.dashboard_auth import (
@@ -1245,71 +1243,6 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
         "email": order.get("email", ""),
     })
 
-# Locked down hard, on this one route only - the SSN page must never be
-# able to load a third-party script, image, or outbound connection, so a
-# compromised CDN or injected tag can't exfiltrate anything typed here.
-SSN_PAGE_CSP = "default-src 'self'; script-src 'none'; img-src 'none'; connect-src 'none'; style-src 'self' 'unsafe-inline'"
-
-@app.get("/collect-ssn/{order_id}", response_class=HTMLResponse)
-async def collect_ssn_page(request: Request, order_id: str):
-    order = ORDERS.document(order_id).get().to_dict()
-    if not order:
-        return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
-    if not order.get("awaiting_ssn") and not expired:
-        return RedirectResponse(url=f"/status/{order_id}")
-
-    return templates.TemplateResponse(request, "collect_ssn.html", {
-        "order_id": order_id,
-        "business_name": order.get("business_name", ""),
-        "expired": expired,
-        "error": None,
-    }, headers={"Content-Security-Policy": SSN_PAGE_CSP})
-
-@app.post("/collect-ssn/{order_id}", response_class=HTMLResponse)
-async def collect_ssn_submit(request: Request, order_id: str, background_tasks: BackgroundTasks):
-    order_ref = ORDERS.document(order_id)
-    order = order_ref.get().to_dict()
-    if not order:
-        return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
-    if not order.get("awaiting_ssn") and not expired:
-        return RedirectResponse(url=f"/status/{order_id}")
-
-    form = await request.form()
-    ssn = (form.get("ssn") or "").strip()
-    error = validate_ssn(ssn)
-    if error:
-        return templates.TemplateResponse(request, "collect_ssn.html", {
-            "order_id": order_id,
-            "business_name": order.get("business_name", ""),
-            "expired": expired,
-            "error": error,
-        }, status_code=400, headers={"Content-Security-Policy": SSN_PAGE_CSP})
-
-    if not encrypt_ssn(ssn, order_id):
-        return templates.TemplateResponse(request, "collect_ssn.html", {
-            "order_id": order_id,
-            "business_name": order.get("business_name", ""),
-            "expired": expired,
-            "error": "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening.",
-        }, status_code=500, headers={"Content-Security-Policy": SSN_PAGE_CSP})
-
-    if expired:
-        # The LLC is already SCC-approved by the time an SSN expires and
-        # gets re-entered - this is the only path where the EIN-ready
-        # admin SMS/email (see notify_ein_ready) needs to fire right here,
-        # since filing_confirmed already happened long ago.
-        resume_ein_after_ssn_reentry(order_id)
-    else:
-        # Normal flow: SSN is collected right after payment, before the
-        # LLC has even been name-checked yet - nothing EIN-related is
-        # ready to notify about. notify_ein_ready fires later on its own,
-        # from advance_past_filing_confirmed, once SCC approval comes in
-        # and finds the SSN already sitting in the vault.
-        start_pipeline_after_ssn(order_id, background_tasks)
-    return RedirectResponse(url=f"/status/{order_id}", status_code=303)
-
 @app.post("/webhook")
 async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
     """Server-to-server backstop for /success - if a customer closes their
@@ -1412,43 +1345,15 @@ def get_client_ip(request: Request) -> str:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
-STATUS_TOKEN_TTL_SECONDS = 86400  # 24 hours
-
-def _status_cookie_name(order_id: str) -> str:
-    return f"sv_{order_id}"
-
-def _make_status_token(order_id: str) -> str:
-    """A stateless, signed "this browser verified the email for this
-    order" claim - no server-side session storage needed. Scoped to one
-    order_id (baked into the signed payload, not just the cookie name) so
-    a token can't be replayed against a different order even if the
-    cookie name were somehow reused."""
-    expiry = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + STATUS_TOKEN_TTL_SECONDS
-    payload = f"{order_id}:{expiry}"
-    sig = hmac.new(STATUS_SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return f"{expiry}:{sig}"
-
-def _verify_status_token(order_id: str, token: str) -> bool:
-    if not token or ":" not in token:
-        return False
-    expiry_str, _, sig = token.partition(":")
-    try:
-        expiry = int(expiry_str)
-    except ValueError:
-        return False
-    if expiry < datetime.datetime.now(datetime.timezone.utc).timestamp():
-        return False
-    expected = hmac.new(STATUS_SESSION_SECRET.encode(), f"{order_id}:{expiry}".encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, expected)
-
 EIN_FILING_LINK_TTL_SECONDS = 86400  # 24 hours - regenerated fresh each time notify_ein_ready fires
 
 def _make_ein_filing_link_token(order_id: str) -> str:
-    """Same scheme as _make_status_token, but with an "ein-filing:" prefix
-    baked into the signed payload - sharing STATUS_SESSION_SECRET across
-    the two token types is fine precisely because each payload says what
-    kind of claim it is, so one can never be replayed as the other even
-    though both verify against the same secret."""
+    """Same stateless signed-claim scheme as dashboard_auth's magic links,
+    with an "ein-filing:" prefix baked into the signed payload - sharing
+    STATUS_SESSION_SECRET across token types is fine precisely because
+    each payload says what kind of claim it is, so one can never be
+    replayed as the other even though both verify against the same
+    secret."""
     expiry = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + EIN_FILING_LINK_TTL_SECONDS
     payload = f"ein-filing:{order_id}:{expiry}"
     sig = hmac.new(STATUS_SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -1479,152 +1384,11 @@ def notify_ein_ready(order: dict, order_id: str):
     ein_filing_url = f"https://app.launchbridge.ai/admin/ein-filing-link/{order_id}?token={_make_ein_filing_link_token(order_id)}"
     send_ein_filing_ready_email(order, order_id, ein_filing_url)
 
-STATUS_IP_RATE_LIMIT = 10
-STATUS_IP_RATE_WINDOW = datetime.timedelta(minutes=1)
-STATUS_EMAIL_FAIL_LIMIT = 3
-STATUS_EMAIL_FAIL_WINDOW = datetime.timedelta(hours=1)
-
-ORDER_ID_REQUEST_LIMIT = 3
-ORDER_ID_REQUEST_WINDOW = datetime.timedelta(hours=1)
-
-@app.post("/request-order-id", response_class=HTMLResponse)
-async def request_order_id(request: Request):
-    """Part 2 of the order-tracking system: a customer who's lost their
-    order ID can look it up by the email they originally used. Rate
-    limited per-email via a Firestore log (not an in-memory counter) so
-    the limit holds even with multiple Cloud Run instances."""
-    form = await request.form()
-    email = (form.get("email") or "").strip().lower()
-    if not email:
-        return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please enter your email address.</p>', status_code=400)
-
-    if _rate_limited("order_id_requests", "email", email, ORDER_ID_REQUEST_WINDOW, ORDER_ID_REQUEST_LIMIT):
-        return HTMLResponse(
-            '<p class="text-yellow-400 text-sm mt-2">Too many requests for this email — please try again in an '
-            'hour, or contact <a href="mailto:support@launchbridge.ai" class="underline">support@launchbridge.ai</a>.</p>',
-            status_code=429,
-        )
-
-    matches = list(ORDERS.where("email", "==", email).stream())
-    if not matches:
-        return HTMLResponse(
-            '<p class="text-red-400 text-sm mt-2">No order found for this email. Contact '
-            '<a href="mailto:support@launchbridge.ai" class="underline">support@launchbridge.ai</a>.</p>',
-            status_code=404,
-        )
-
-    # If the same email placed more than one order, the most recently
-    # created one is almost always the one they're asking about.
-    latest = max(matches, key=lambda d: d.to_dict().get("created_at") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-    send_order_id_email(latest.to_dict(), latest.id)
-
-    return HTMLResponse(f'<p class="text-green-400 text-sm mt-2">Check your email! We sent your order ID to {email}.</p>')
-
-def _status_gate_context(order_id: str, order: dict, error: str = None) -> dict:
-    return {
-        "order_id": order_id,
-        "business_name": order.get("business_name"),
-        "state_label": order.get("state", "draft").replace("_", " ").title(),
-        "error": error,
-    }
-
-@app.get("/status/{order_id}", response_class=HTMLResponse)
-async def status_page(request: Request, order_id: str):
-    order_snap = ORDERS.document(order_id).get()
-    if not order_snap.exists:
-        return templates.TemplateResponse(request, "order_not_found.html", {}, status_code=404)
-    order = order_snap.to_dict()
-    order = ensure_payment_link(order_snap.reference, order)
-    state = order.get("state", "draft")
-
-    if order.get("awaiting_ssn"):
-        return RedirectResponse(url=f"/collect-ssn/{order_id}")
-
-    if _rate_limited("status_ip_log", "ip", get_client_ip(request), STATUS_IP_RATE_WINDOW, STATUS_IP_RATE_LIMIT):
-        return HTMLResponse("<p>Too many requests - please wait a minute and try again.</p>", status_code=429)
-
-    if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
-        # Unverified visitors get only the business name and current
-        # state - everything else (EIN, timeline detail, documents,
-        # contact form prefilled with their email, etc) waits behind the
-        # email check below.
-        return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(order_id, order))
-
-    return templates.TemplateResponse(request, "status.html", {
-        **status_context(order_id, order),
-        "business_name": order.get("business_name"),
-        "full_name": order.get("full_name"),
-        "email": order.get("email"),
-        "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
-        "ein": order.get("ein"),
-        "has_ein_letter": bool(order.get("ein_letter_uploaded_at")),
-        "website_url": order.get("website_url"),
-        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
-        "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
-    })
-
-@app.post("/status/{order_id}/verify", response_class=HTMLResponse)
-async def status_verify(request: Request, order_id: str):
-    """The email gate's submit target. On a match, sets a signed,
-    httponly/secure/samesite=strict cookie (see _make_status_token) good
-    for 24 hours and scoped to this order's own status routes, then
-    redirects back to GET /status/{order_id} to render the full page."""
-    order_snap = ORDERS.document(order_id).get()
-    if not order_snap.exists:
-        return templates.TemplateResponse(request, "order_not_found.html", {}, status_code=404)
-    order = order_snap.to_dict()
-
-    if _rate_limited("status_ip_log", "ip", get_client_ip(request), STATUS_IP_RATE_WINDOW, STATUS_IP_RATE_LIMIT):
-        return HTMLResponse("<p>Too many requests - please wait a minute and try again.</p>", status_code=429)
-
-    form = await request.form()
-    submitted_email = (form.get("email") or "").strip().lower()
-    order_email = (order.get("email") or "").strip().lower()
-
-    if not submitted_email or submitted_email != order_email:
-        if _rate_limited("status_verify_failures", "order_id", order_id, STATUS_EMAIL_FAIL_WINDOW, STATUS_EMAIL_FAIL_LIMIT):
-            return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(
-                order_id, order, "Too many failed attempts - please try again in an hour, or contact support@launchbridge.ai."
-            ), status_code=429)
-        return templates.TemplateResponse(request, "status_gate.html", _status_gate_context(
-            order_id, order, "Email not found for this order."
-        ), status_code=403)
-
-    response = RedirectResponse(url=f"/status/{order_id}", status_code=303)
-    response.set_cookie(
-        key=_status_cookie_name(order_id), value=_make_status_token(order_id),
-        max_age=STATUS_TOKEN_TTL_SECONDS, httponly=True, secure=True, samesite="strict",
-        path=f"/status/{order_id}",
-    )
-    return response
-
-@app.get("/status/{order_id}/timeline", response_class=HTMLResponse)
-async def status_timeline_partial(request: Request, order_id: str):
-    """Polled every 30s by the status page (see status.html) to refresh
-    just the timeline + estimate, without reloading documents/contact/share
-    sections that don't change nearly as often. Gated by the same
-    verification cookie as the full page - without this check it would be
-    an unauthenticated backdoor to the same EIN/timeline detail the gate
-    is supposed to be hiding."""
-    order_snap = ORDERS.document(order_id).get()
-    if not order_snap.exists:
-        return HTMLResponse("")
-    order = order_snap.to_dict()
-    order = ensure_payment_link(order_snap.reference, order)
-
-    if not _verify_status_token(order_id, request.cookies.get(_status_cookie_name(order_id), "")):
-        return HTMLResponse("")
-
-    return templates.TemplateResponse(request, "status_timeline.html", {
-        **status_context(order_id, order),
-        "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
-    })
-
 # ─── Customer dashboard (magic-link auth) ──────────────────────────────
-# Replaces /status/* + /collect-ssn/* + the four /download-* routes once
-# fully verified on staging (see the security-rework plan) - built
-# alongside the routes above rather than in place of them, so the old
-# flow keeps working in production until everything here is promoted.
+# Replaced /status/*, /collect-ssn/*, /request-order-id, and the four
+# /download-* routes (see the security-rework plan) - ownership is now
+# checked per-request via get_owned_order instead of a long-lived
+# email-verification cookie scoped to one order_id.
 
 DASHBOARD_SESSION_COOKIE = "lb_session"
 MAGIC_LINK_RATE_WINDOW = datetime.timedelta(hours=1)
@@ -1793,9 +1557,10 @@ DOCUMENT_LABELS = {
 }
 
 # Orders uploaded before document_store.py existed have no "documents"
-# map at all - these are the deterministic legacy paths storage_service.py
-# always used, kept readable here (signed URLs work on any object
-# regardless of who uploaded it) rather than re-uploading old files.
+# map at all - these are the deterministic legacy paths the old
+# storage_service.py module always used (since removed), kept readable
+# here (signed URLs work on any object regardless of who uploaded it)
+# rather than re-uploading old files.
 LEGACY_DOCUMENT_FALLBACK = {
     "certificate": ("certificate_uploaded_at", lambda order_id: f"orders/{order_id}/certificate.pdf"),
     "ein_letter": ("ein_letter_uploaded_at", lambda order_id: f"orders/{order_id}/ein_confirmation.pdf"),
@@ -1856,10 +1621,11 @@ async def cancel():
     return RedirectResponse(url="/?cancelled=1")
 
 @app.get("/connect/onboard/{order_id}")
-async def connect_onboard(order_id: str):
-    order = ORDERS.document(order_id).get().to_dict()
-    if not order or not order.get("stripe_connect_account_id"):
-        return RedirectResponse(url="/")
+async def connect_onboard(owned: tuple = Depends(get_owned_order)):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    if not order.get("stripe_connect_account_id"):
+        return RedirectResponse(url="/dashboard/orders")
 
     # Not request.base_url - Cloud Run sits behind a proxy that terminates
     # TLS, so Starlette sees the connection as plain http:// even though
@@ -1871,7 +1637,7 @@ async def connect_onboard(order_id: str):
     url = create_account_link(
         order["stripe_connect_account_id"],
         refresh_url=f"{base_url}/connect/onboard/{order_id}",
-        return_url=f"{base_url}/status/{order_id}",
+        return_url=f"{base_url}/dashboard/orders/{order_id}",
     )
     return RedirectResponse(url=url)
 
@@ -1981,6 +1747,18 @@ async def admin_ein_filing_link(order_id: str, background_tasks: BackgroundTasks
     background_tasks.add_task(run_ein_filing, order_id)
     return HTMLResponse(f"<p>✅ EIN filing started for {order.get('business_name', '')}. You'll get a text when it's done.</p>")
 
+@app.get("/admin/{order_id}/view-dashboard")
+async def admin_view_dashboard(order_id: str, authorized: bool = Depends(verify_admin)):
+    """Admin-only "view as customer" shortcut - the customer dashboard
+    has no direct admin bypass of its own (ownership is always checked
+    via a real session), so this mints a fresh magic link for the
+    order's email and immediately redirects the admin's own browser
+    through it, the same one-click idea as admin_ein_filing_link above."""
+    order = ORDERS.document(order_id).get().to_dict()
+    if not order or not order.get("email"):
+        return RedirectResponse(url="/admin")
+    return RedirectResponse(url=create_magic_link(order["email"]))
+
 @app.post("/admin/{order_id}/mark-ein")
 async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: str = Form(...), authorized: bool = Depends(verify_admin)):
     """Manual fallback for the rare case run_ein_filing reports submitted
@@ -2041,72 +1819,6 @@ async def contact(request: Request):
     print(f"📬 New contact message from {name} <{email}> (order {order_id}): {message}")
 
     return templates.TemplateResponse(request, "contact_result.html", {})
-
-@app.get("/download-brand-kit/{order_id}")
-async def download_brand_kit(order_id: str):
-    order = ORDERS.document(order_id).get().to_dict()
-    if not order or not order.get("brand_result"):
-        return HTMLResponse("Not found", status_code=404)
-
-    business_name = order.get("business_name", "business")
-    safe_name = business_name.replace(" ", "_").replace("/", "_")
-    return Response(
-        content=order["brand_result"].get("result", ""),
-        media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={safe_name}_Brand_Kit.txt"},
-    )
-
-@app.get("/download-certificate/{order_id}")
-async def download_certificate(order_id: str):
-    order = ORDERS.document(order_id).get().to_dict()
-    if not order or not order.get("certificate_uploaded_at"):
-        return HTMLResponse("Not found", status_code=404)
-
-    try:
-        pdf_bytes = fetch_certificate(order_id)
-    except Exception as e:
-        print(f"⚠️ Could not fetch certificate for order {order_id}: {e}")
-        return HTMLResponse("Not found", status_code=404)
-
-    business_name = order.get("business_name", "business")
-    safe_name = business_name.replace(" ", "_").replace("/", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={safe_name}_Certificate.pdf"},
-    )
-
-@app.get("/download-ein-letter/{order_id}")
-async def download_ein_letter(order_id: str):
-    order = ORDERS.document(order_id).get().to_dict()
-    if not order or not order.get("ein_letter_uploaded_at"):
-        return HTMLResponse("Not found", status_code=404)
-
-    try:
-        pdf_bytes = fetch_ein_letter(order_id)
-    except Exception as e:
-        print(f"⚠️ Could not fetch EIN letter for order {order_id}: {e}")
-        return HTMLResponse("Not found", status_code=404)
-
-    business_name = order.get("business_name", "business")
-    safe_name = business_name.replace(" ", "_").replace("/", "_")
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={safe_name}_EIN_Confirmation.pdf"},
-    )
-
-@app.get("/download-pdf/{filename}")
-async def download_pdf(filename: str):
-    filepath = f"app/static/docs/{filename}"
-    if os.path.exists(filepath):
-        return FileResponse(
-            path=filepath,
-            media_type="application/pdf",
-            filename=filename,
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-    return {"error": "File not found"}
 
 @app.get("/health")
 def health():

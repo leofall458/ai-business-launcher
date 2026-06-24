@@ -21,10 +21,6 @@ from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
 from app.dashboard_auth import create_magic_link
 
 FROM_NAME = "Launch Bridge LLC"
-APP_BASE_URL = "https://app.launchbridge.ai"
-
-def _status_url(order_id: str) -> str:
-    return f"{APP_BASE_URL}/status/{order_id}"
 
 def _send(to_email: str, subject: str, body: str, html_body: str = None,
           attachment_path: str = None, attachment_filename: str = None,
@@ -142,34 +138,6 @@ def send_magic_link_email(email: str, magic_link_url: str):
     html = _wrap_html(html_inner, cta_text="Sign In", cta_url=magic_link_url)
     _send(email, "Sign in to Launch Bridge", body, html_body=html)
 
-def send_order_id_email(order: dict, order_id: str):
-    """Part 2: sent from POST /request-order-id when a customer has lost
-    their order ID and looks it up by email."""
-    email = order.get("email", "")
-    name = order.get("full_name", "") or "there"
-    business_name = order.get("business_name", "your business")
-    state = order.get("state", "draft").replace("_", " ").title()
-    url = _status_url(order_id)
-    body = (
-        f"Hi {name},\n\n"
-        "Here is your Launch Bridge order information:\n\n"
-        f"Order ID: {order_id}\n"
-        f"Business: {business_name}\n"
-        f"Status: {state}\n\n"
-        "Track your order here:\n"
-        f"{url}\n\n"
-        f"Questions? Email {SUPPORT_EMAIL}\n\n"
-        "- Launch Bridge LLC"
-    )
-    html_inner = (
-        f"<p>Hi {name},</p>"
-        "<p>Here is your Launch Bridge order information:</p>"
-        + _info_table([("Order ID", order_id), ("Business", business_name), ("Status", state)])
-        + f"<p>Questions? Email <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a></p>"
-    )
-    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
-    _send(email, "Your Launch Bridge Order ID", body, html_body=html)
-
 def send_order_received_email(order: dict, order_id: str):
     """Part 3: sent the moment an order moves draft -> paid. This is the
     very first dashboard sign-in link a customer gets - /success
@@ -179,7 +147,7 @@ def send_order_received_email(order: dict, order_id: str):
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Hi {name},\n\n"
         "Thank you for choosing Launch Bridge LLC!\n\n"
@@ -217,7 +185,7 @@ def send_documents_ready_email(order: dict, order_id: str):
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Hi {name},\n\n"
         "Your Articles of Organization, Operating Agreement, and brand kit are ready.\n\n"
@@ -240,7 +208,7 @@ def send_llc_filed_email(order: dict, order_id: str):
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     confirmation_number = order.get("scc_confirmation_number", "")
     confirmation_line = f"Confirmation #{confirmation_number}. " if confirmation_number else ""
     body = (
@@ -273,7 +241,7 @@ def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Hi {name},\n\n"
         f"Great news! {business_name} LLC has been officially approved by the Virginia State Corporation Commission.\n\n"
@@ -304,7 +272,7 @@ def forward_scc_approval_email(order: dict, order_id: str) -> bool:
     No longer attaches the certificate - see send_llc_approved_email."""
     email = order.get("email", "")
     customer_name = order.get("full_name", "") or "there"
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Dear {customer_name}, Great news! Your LLC has been approved by the Virginia State "
         "Corporation Commission. Your Certificate of Organization is available on your dashboard. "
@@ -328,7 +296,7 @@ def send_ein_issued_email(order: dict, order_id: str, ein: str):
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     ein_box = _ein_ascii_box(ein)
     body = (
         f"Hi {name},\n\n"
@@ -408,7 +376,7 @@ def send_website_live_email(order: dict, order_id: str):
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
     website_url = order.get("website_url", "")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Hi {name},\n\n"
         f"Your business website is now live at: {website_url}\n\n"
@@ -435,7 +403,7 @@ def send_ssn_expired_email(order: dict, order_id: str):
     plan), not a separate /collect-ssn page."""
     email = order.get("email", "")
     name = order.get("full_name", "") or "there"
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
     body = (
         f"Hi {name},\n\n"
         "For your security, we automatically delete stored information after 72 hours.\n\n"
@@ -465,7 +433,7 @@ def send_everything_complete_email(order: dict, order_id: str):
     ein = order.get("ein", "")
     website_url = order.get("website_url", "")
     connect_id = order.get("stripe_connect_account_id")
-    url = create_magic_link(email) if email else _status_url(order_id)
+    url = create_magic_link(email)
 
     llc_line = f"✅ LLC: {business_name}" + (f" (Confirmation #{confirmation_number})" if confirmation_number else "")
     stripe_line = "✅ Stripe: complete setup on your dashboard to start accepting payments" if connect_id else "✅ Stripe: Not set up"

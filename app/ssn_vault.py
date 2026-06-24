@@ -10,7 +10,7 @@ bytes exist outside of the original HTTP request body and the IRS filer's
 browser form fields.
 
 Uses its own Firestore client/collection (same pattern as
-app/storage_service.py) rather than importing app.main, so app.main can
+app/document_store.py) rather than importing app.main, so app.main can
 import this module without a circular import.
 """
 

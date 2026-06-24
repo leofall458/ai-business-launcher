@@ -48,13 +48,15 @@ SUPPORT_EMAIL = "support@launchbridge.ai"
 # address for T-Mobile) - see app/sms.py.
 ADMIN_PHONE_EMAIL = get_secret("ADMIN_PHONE_EMAIL")
 
-# Signs the /status/{order_id} email-verification cookie (see app/main.py) -
-# a pure server-side HMAC key with no external meaning, generated and
-# stored directly in Secret Manager rather than something the user provides.
+# Signs magic links, dashboard sessions, CSRF tokens, and the admin
+# EIN-filing-link token (see app/dashboard_auth.py, app/dashboard_security.py,
+# app/main.py) - a pure server-side HMAC key with no external meaning,
+# generated and stored directly in Secret Manager rather than something
+# the user provides.
 STATUS_SESSION_SECRET = get_secret("STATUS_SESSION_SECRET")
 
-# Private GCS bucket holding LLC certificates and similar order documents -
-# never served as a public URL; always streamed back through our own app
-# (see /download-certificate) the same way /download-pdf already serves
-# locally-generated PDFs.
+# Private, CMEK-encrypted GCS bucket holding LLC certificates and similar
+# order documents - never served as a public URL; always reached through
+# a short-lived V4 signed URL (see app/document_store.py and
+# /orders/{order_id}/documents/{doc_id} in app/main.py).
 STORAGE_BUCKET = os.getenv("STORAGE_BUCKET", "ai-biz-launcher-llc-certificates")

@@ -6,8 +6,10 @@ caller that ever turns an object_name into a URL is the signed-URL
 document route in app/main.py - the URL itself is never logged.
 
 Pre-existing orders' certificate/EIN-letter documents stay on the legacy
-deterministic paths in app/storage_service.py; this module is only used
-for documents uploaded from this point forward.
+deterministic blob paths (orders/{order_id}/certificate.pdf and
+orders/{order_id}/ein_confirmation.pdf - see LEGACY_DOCUMENT_FALLBACK in
+app/main.py); this module is only used for documents uploaded from this
+point forward.
 """
 
 import datetime
