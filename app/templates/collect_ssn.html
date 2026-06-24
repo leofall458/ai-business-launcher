@@ -4,60 +4,112 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secure SSN Submission · Launch Bridge LLC</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* No external stylesheet or script on this page by design - see
+           the Content-Security-Policy header set on this route in
+           app/main.py (script-src 'none', img-src 'none', connect-src
+           'none'). Everything below is hand-written, self-contained CSS
+           so the page still looks right with zero third-party loads. */
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 48px 16px; min-height: 100vh;
+            background: #030712; color: #fff;
+            font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        }
+        .wrap { max-width: 420px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 32px; }
+        .brand { color: #60a5fa; font-size: 13px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; margin: 0 0 8px; }
+        h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+        .business-name { color: #9ca3af; font-size: 14px; margin: 0; }
+        .card { background: #111827; border: 1px solid #b45309; border-radius: 12px; padding: 24px; }
+        .card.expired { border-color: #b91c1c; }
+        .notice { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+        .notice .icon { font-size: 24px; }
+        .notice h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; color: #fff; }
+        .notice p { font-size: 12px; color: #9ca3af; line-height: 1.6; margin: 0; }
+        .expired-banner {
+            background: #450a0a; border: 1px solid #b91c1c; border-radius: 8px;
+            padding: 12px; margin-bottom: 16px; font-size: 12px; color: #fca5a5; line-height: 1.6;
+        }
+        .error-banner {
+            background: #450a0a; border: 1px solid #b91c1c; border-radius: 8px;
+            padding: 12px; margin-bottom: 16px; font-size: 12px; color: #fca5a5;
+        }
+        label { display: block; font-size: 12px; font-weight: 600; color: #facc15; margin-bottom: 4px; }
+        input[type="password"] {
+            width: 100%; background: #1f2937; border: 1px solid #b45309; border-radius: 8px;
+            padding: 12px; color: #fff; font-size: 14px; letter-spacing: 0.1em;
+            margin-bottom: 16px;
+        }
+        input[type="password"]::placeholder { color: #6b7280; }
+        input[type="password"]:focus { outline: none; border-color: #facc15; }
+        button {
+            width: 100%; background: linear-gradient(to right, #2563eb, #7c3aed);
+            color: #fff; font-weight: 700; padding: 12px; border: none; border-radius: 8px;
+            font-size: 15px; cursor: pointer;
+        }
+        button:hover { opacity: 0.92; }
+        .terms { font-size: 11px; color: #6b7280; text-align: center; margin-top: 16px; }
+        .terms a { color: #60a5fa; text-decoration: underline; }
+        .footer { text-align: center; margin-top: 32px; padding-top: 24px; border-top: 1px solid #1f2937; }
+        .footer p { font-size: 11px; color: #4b5563; margin: 0; }
+        .footer p + p { margin-top: 4px; color: #374151; }
+        .footer a { color: #6b7280; text-decoration: none; }
+    </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen py-12">
-    <div class="max-w-md mx-auto p-8">
+<body>
+    <div class="wrap">
 
-        <div class="text-center mb-8">
-            <p class="text-blue-400 text-sm font-semibold tracking-widest uppercase mb-2">Launch Bridge LLC</p>
-            <h1 class="text-2xl font-bold mb-1">✅ Payment Received</h1>
-            <p class="text-gray-400 text-sm">{{ business_name }}</p>
+        <div class="header">
+            <p class="brand">Launch Bridge LLC</p>
+            <h1>✅ Payment Received</h1>
+            <p class="business-name">{{ business_name }}</p>
         </div>
 
-        <div class="bg-gray-900 border border-yellow-700 rounded-xl p-6">
-            <div class="flex items-start gap-3 mb-4">
-                <span class="text-2xl">🔒</span>
+        <div class="card{% if expired %} expired{% endif %}">
+            {% if expired %}
+            <div class="expired-banner">
+                🔒 Your previously stored SSN has been deleted for security after 72 hours.
+                Please re-enter it to continue with your EIN application.
+            </div>
+            {% endif %}
+
+            <div class="notice">
+                <span class="icon">🔒</span>
                 <div>
-                    <h2 class="text-base font-semibold text-white mb-1">One last step: your Social Security Number</h2>
-                    <p class="text-xs text-gray-400 leading-relaxed">
-                        Your SSN is needed only to apply for your EIN with the IRS. It is never stored in
-                        our database and is deleted immediately after your EIN is issued.
+                    <h2>One last step: your Social Security Number</h2>
+                    <p>
+                        Your information is securely stored with military-grade encryption and will be
+                        automatically deleted after your EIN is issued (or after 72 hours, whichever comes first).
+                        It is needed only to apply for your EIN with the IRS.
                     </p>
                 </div>
             </div>
 
             {% if error %}
-            <div class="bg-red-950 border border-red-700 rounded-lg p-3 mb-4">
-                <p class="text-xs text-red-300">⚠️ {{ error }}</p>
-            </div>
+            <div class="error-banner">⚠️ {{ error }}</div>
             {% endif %}
 
             <form method="post" action="/collect-ssn/{{ order_id }}">
-                <label class="block text-xs text-yellow-400 font-semibold mb-1">Social Security Number *</label>
-                <input name="ssn" type="password" placeholder="XXX-XX-XXXX" required autofocus
-                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-yellow-700 focus:border-yellow-400 focus:outline-none text-sm tracking-widest mb-4"/>
-
-                <button type="submit"
-                    class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 rounded-lg transition">
-                    Continue →
-                </button>
+                <label>Social Security Number *</label>
+                <input name="ssn" type="password" placeholder="XXX-XX-XXXX" required autofocus/>
+                <button type="submit">Continue →</button>
             </form>
 
-            <p class="text-xs text-gray-500 text-center mt-4">
+            <p class="terms">
                 By continuing you agree to our
-                <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a> and
-                <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.
+                <a href="/terms" target="_blank">Terms of Service</a> and
+                <a href="/privacy" target="_blank">Privacy Policy</a>.
             </p>
         </div>
 
-        <div class="text-center mt-8 pt-6 border-t border-gray-800">
-            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
-                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-                <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+        <div class="footer">
+            <p>© 2026 Launch Bridge LLC ·
+                <a href="/terms">Terms</a> ·
+                <a href="/privacy">Privacy</a> ·
+                <a href="mailto:support@launchbridge.ai">support@launchbridge.ai</a>
             </p>
-            <p class="text-xs text-gray-700 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
+            <p>Launch Bridge LLC is a document preparation service, not a law firm.</p>
         </div>
 
     </div>

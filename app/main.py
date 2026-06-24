@@ -33,7 +33,10 @@ from app.stripe_service import (
     is_account_active,
     construct_webhook_event,
 )
-from app.ssn_cache import stash as stash_ssn, peek as peek_ssn, discard as discard_ssn
+from app.ssn_vault import (
+    encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours,
+)
+from app.log_scrub import scrub_ssn
 from app.validators import validate_intake_form, validate_ssn, ALL_VALIDATED_FIELDS
 from app.email_service import (
     send_order_received_email,
@@ -44,6 +47,7 @@ from app.email_service import (
     send_website_live_email,
     send_everything_complete_email,
     send_order_id_email,
+    send_ssn_expired_email,
 )
 from app.storage_service import fetch_certificate
 
@@ -65,6 +69,9 @@ async def on_startup():
     # Disable it there and rely on app/local_filing_poller.py instead.
     if os.getenv("ENABLE_EIN_SCHEDULER", "true").lower() == "true":
         asyncio.create_task(ein_queue_scheduler())
+    # Pure Firestore/KMS work, no Playwright/CDP involved - safe to run
+    # everywhere (Cloud Run included), unlike the scheduler above.
+    asyncio.create_task(ssn_expiry_scheduler())
 
 # Canonical order of the order state machine. An order's "state" field is
 # always one of these. Progression is mostly linear, but filing_confirmed
@@ -666,12 +673,12 @@ def run_ein_filing(order_id: str):
     own check, to cover the race where hours close between the click and
     this background task actually running.
 
-    The SSN is only read (peeked) from the in-memory cache, and is only
-    discarded for good once EIN filing actually succeeds - a failed or
-    blocked attempt must leave it available for the next retry. If the
-    server restarts before EIN succeeds, the SSN is lost and the customer
-    must be asked for it again; that's the accepted tradeoff for never
-    persisting it to Firestore."""
+    The SSN is read (decrypted) from the KMS-encrypted vault (see
+    app/ssn_vault.py) and is only deleted from Firestore for good once EIN
+    filing actually succeeds - a failed or blocked attempt must leave it
+    in place for the next retry. If 72 hours pass without success, the
+    hourly ssn_expiry_scheduler deletes it anyway and the customer is
+    emailed to re-enter it at the same /collect-ssn page."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
@@ -689,10 +696,10 @@ def run_ein_filing(order_id: str):
         return
 
     try:
-        ssn = peek_ssn(order_id)
+        ssn = decrypt_ssn(order_id)
         if not ssn:
             order_ref.set({
-                "ein_error": "SSN is no longer in memory (server likely restarted since payment, or EIN was already filed once). The customer must be contacted to resubmit it before EIN filing can proceed."
+                "ein_error": "SSN is no longer stored (it was deleted after 72 hours, or EIN was already filed once). The customer must re-enter it before EIN filing can proceed."
             }, merge=True)
             return
 
@@ -716,7 +723,7 @@ def run_ein_filing(order_id: str):
         }
         ein_filed = file_ein_with_irs(ein_customer_data, interactive=False)
         if ein_filed:
-            discard_ssn(order_id)
+            delete_ssn(order_id)
             record_state(order_ref, "ein_requested",
                 ein_requested_at=firestore.SERVER_TIMESTAMP,
                 ein_error=firestore.DELETE_FIELD,
@@ -726,8 +733,11 @@ def run_ein_filing(order_id: str):
         else:
             order_ref.set({"ein_error": "EIN filing did not complete - check server screenshots, then apply again to retry."}, merge=True)
     except Exception as e:
-        print(f"⚠️ EIN filing crashed for order {order_id}: {e}")
-        order_ref.set({"ein_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
+        # Scrubbed defensively, in case a Playwright/IRS error message
+        # ever happens to echo back the SSN it was just given.
+        safe_error = scrub_ssn(str(e))
+        print(f"⚠️ EIN filing crashed for order {order_id}: {safe_error}")
+        order_ref.set({"ein_error": f"Filing crashed unexpectedly: {safe_error}. Check server logs/screenshots."}, merge=True)
 
 async def ein_queue_scheduler():
     """Runs for the lifetime of the process, woken every 5 minutes. Picks
@@ -754,6 +764,35 @@ async def ein_queue_scheduler():
         except Exception as e:
             print(f"⚠️ EIN queue scheduler tick failed: {e}")
         await asyncio.sleep(300)
+
+SSN_EXPIRY_HOURS = 72
+
+async def ssn_expiry_scheduler():
+    """Runs for the lifetime of the process, woken every hour. An SSN
+    that's been sitting encrypted in Firestore for more than 72 hours
+    without EIN filing having actually started yet gets deleted outright
+    - same "don't hold onto it longer than necessary" rationale that kept
+    it in-memory-only in the first place, just extended to cover
+    "persisted too long" instead of "persisted at all". Scans every order
+    rather than a filtered query - order volume here is small enough that
+    a full scan once an hour is simpler to ship than a composite index."""
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            for doc in ORDERS.stream():
+                order = doc.to_dict()
+                if not order.get("ssn_encrypted") or reached(order.get("state", "draft"), "ein_requested"):
+                    continue
+                age = await loop.run_in_executor(None, ssn_age_hours, doc.id)
+                if age < SSN_EXPIRY_HOURS:
+                    continue
+                await loop.run_in_executor(None, delete_ssn, doc.id)
+                doc.reference.set({"ssn_expired": True}, merge=True)
+                send_ssn_expired_email(order, doc.id)
+                print(f"🗑️ SSN expired (age {age:.1f}h) and deleted for order {doc.id}")
+        except Exception as e:
+            print(f"⚠️ SSN expiry sweep tick failed: {e}")
+        await asyncio.sleep(3600)
 
 def run_asset_generation(order_id: str):
     """Triggered once the admin records the real EIN (or immediately for
@@ -981,13 +1020,14 @@ def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
     """Picks up exactly where process_paid_order left off for an order
     that was waiting on an SSN - clears awaiting_ssn and kicks off the
     same pipeline process_paid_order would have started immediately had
-    the SSN not been needed."""
+    the SSN not been needed. ssn_collected_at is set by encrypt_ssn
+    itself, not here."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
 
-    order_ref.set({"awaiting_ssn": False, "ssn_collected_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    order_ref.set({"awaiting_ssn": False}, merge=True)
 
     if order.get("skip_llc_formation"):
         background_tasks.add_task(run_document_generation, order_id)
@@ -996,6 +1036,23 @@ def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
             background_tasks.add_task(run_asset_generation, order_id)
     else:
         background_tasks.add_task(run_name_check, order_id)
+
+def resume_ein_after_ssn_reentry(order_id: str, background_tasks: BackgroundTasks):
+    """Picks up after a customer re-enters an SSN that had expired
+    (ssn_expired) - unlike start_pipeline_after_ssn, the order has
+    already progressed past name/document/filing steps, so re-running
+    those would be wrong. The only thing actually waiting on the SSN is
+    the EIN filing itself, and only if the order is still eligible for
+    it (filing_confirmed and not already requested/issued)."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    order_ref.set({"ssn_expired": False}, merge=True)
+
+    if order.get("state") in EIN_ELIGIBLE_STATES:
+        background_tasks.add_task(run_ein_filing, order_id)
 
 @app.get("/success")
 async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
@@ -1022,19 +1079,26 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
 
     return RedirectResponse(url=f"/status/{resolved_order_id}")
 
+# Locked down hard, on this one route only - the SSN page must never be
+# able to load a third-party script, image, or outbound connection, so a
+# compromised CDN or injected tag can't exfiltrate anything typed here.
+SSN_PAGE_CSP = "default-src 'self'; script-src 'none'; img-src 'none'; connect-src 'none'; style-src 'self' 'unsafe-inline'"
+
 @app.get("/collect-ssn/{order_id}", response_class=HTMLResponse)
 async def collect_ssn_page(request: Request, order_id: str):
     order = ORDERS.document(order_id).get().to_dict()
     if not order:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    if not order.get("awaiting_ssn"):
+    expired = bool(order.get("ssn_expired"))
+    if not order.get("awaiting_ssn") and not expired:
         return RedirectResponse(url=f"/status/{order_id}")
 
     return templates.TemplateResponse(request, "collect_ssn.html", {
         "order_id": order_id,
         "business_name": order.get("business_name", ""),
+        "expired": expired,
         "error": None,
-    })
+    }, headers={"Content-Security-Policy": SSN_PAGE_CSP})
 
 @app.post("/collect-ssn/{order_id}", response_class=HTMLResponse)
 async def collect_ssn_submit(request: Request, order_id: str, background_tasks: BackgroundTasks):
@@ -1042,7 +1106,8 @@ async def collect_ssn_submit(request: Request, order_id: str, background_tasks: 
     order = order_ref.get().to_dict()
     if not order:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    if not order.get("awaiting_ssn"):
+    expired = bool(order.get("ssn_expired"))
+    if not order.get("awaiting_ssn") and not expired:
         return RedirectResponse(url=f"/status/{order_id}")
 
     form = await request.form()
@@ -1052,13 +1117,22 @@ async def collect_ssn_submit(request: Request, order_id: str, background_tasks: 
         return templates.TemplateResponse(request, "collect_ssn.html", {
             "order_id": order_id,
             "business_name": order.get("business_name", ""),
+            "expired": expired,
             "error": error,
-        }, status_code=400)
+        }, status_code=400, headers={"Content-Security-Policy": SSN_PAGE_CSP})
 
-    # In-memory only, same as the old intake-time flow - never written to
-    # Firestore. See app/ssn_cache.py.
-    stash_ssn(order_id, ssn)
-    start_pipeline_after_ssn(order_id, background_tasks)
+    if not encrypt_ssn(ssn, order_id):
+        return templates.TemplateResponse(request, "collect_ssn.html", {
+            "order_id": order_id,
+            "business_name": order.get("business_name", ""),
+            "expired": expired,
+            "error": "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening.",
+        }, status_code=500, headers={"Content-Security-Policy": SSN_PAGE_CSP})
+
+    if expired:
+        resume_ein_after_ssn_reentry(order_id, background_tasks)
+    else:
+        start_pipeline_after_ssn(order_id, background_tasks)
     return RedirectResponse(url=f"/status/{order_id}", status_code=303)
 
 @app.post("/webhook")

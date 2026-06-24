@@ -353,6 +353,30 @@ def send_website_live_email(order: dict, order_id: str):
     html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
     _send(email, f"Your Business Website is Live! - {business_name}", body, html_body=html)
 
+def send_ssn_expired_email(order: dict, order_id: str):
+    """Sent by app.main's ssn_expiry_scheduler the moment it deletes an
+    SSN that's been sitting encrypted for more than 72 hours without EIN
+    filing having started - the customer must re-enter it at the same
+    /collect-ssn page (now showing the expired-specific message)."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    collect_url = f"{APP_BASE_URL}/collect-ssn/{order_id}"
+    body = (
+        f"Hi {name},\n\n"
+        "For your security, we automatically delete stored information after 72 hours.\n\n"
+        "Your SSN has been deleted and needs to be re-entered to complete your EIN application.\n\n"
+        "Please re-enter it here:\n"
+        f"{collect_url}\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>For your security, we automatically delete stored information after 72 hours.</p>"
+        "<p>Your SSN has been deleted and needs to be re-entered to complete your EIN application.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Re-enter Your SSN", cta_url=collect_url)
+    _send(email, "Action Required - Re-enter SSN for EIN Application", body, html_body=html)
+
 def send_everything_complete_email(order: dict, order_id: str):
     """Email 7 (Part 4): the final milestone email, sent once the order
     reaches the "complete" state - the full business package summary."""
