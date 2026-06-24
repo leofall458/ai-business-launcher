@@ -31,6 +31,20 @@
             <p class="text-blue-200 text-sm leading-relaxed">{{ state_message }}</p>
         </div>
 
+        {% if needs_ssn_reentry %}
+        <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-5 sm:p-6">
+            <h2 class="text-base font-semibold text-yellow-300 mb-1">⚠️ Action Required: Re-enter Your SSN</h2>
+            <p class="text-sm text-yellow-200/90 leading-relaxed mb-4">
+                We no longer have your Social Security Number on file, so we can't apply for your EIN yet.
+                Please re-enter it on our secure page to continue.
+            </p>
+            <a href="/collect-ssn/{{ order_id }}"
+                class="block text-center bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 rounded-lg transition text-sm">
+                Re-enter Your SSN →
+            </a>
+        </div>
+        {% endif %}
+
         <!-- Progress Timeline (auto-refreshes every 30s) -->
         <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 sm:p-6"
              id="timeline-wrapper"

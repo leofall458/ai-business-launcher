@@ -34,7 +34,7 @@ from app.stripe_service import (
     construct_webhook_event,
 )
 from app.ssn_vault import (
-    encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours,
+    encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours, is_ssn_stored,
 )
 from app.log_scrub import scrub_ssn
 from app.validators import validate_intake_form, validate_ssn, ALL_VALIDATED_FIELDS
@@ -962,6 +962,26 @@ def needs_ssn(order: dict) -> bool:
     already have their own EIN and are never asked for one."""
     return not order.get("skip_ein")
 
+def needs_ssn_reentry(order: dict, order_id: str) -> bool:
+    """True if this order needs an EIN, has reached the point where EIN
+    filing is actually eligible (filing_confirmed), hasn't gotten one yet,
+    and there's currently no encrypted SSN on file for it.
+
+    Covers both the 72-hour vault expiry (ssn_expired gets set explicitly
+    by ssn_expiry_scheduler) and older orders that lost their SSN before
+    the vault existed at all - those have a stale ein_error but ssn_expired
+    was never set, since that flag didn't exist yet when they got stuck.
+    Recomputing from current state instead of trusting only the flag means
+    any such order is rescued automatically rather than needing a manual
+    Firestore patch."""
+    state = order.get("state", "draft")
+    return (
+        needs_ssn(order)
+        and reached(state, "filing_confirmed")
+        and not reached(state, "ein_requested")
+        and not is_ssn_stored(order_id)
+    )
+
 def process_paid_order(order_id: str, payment_status: str, background_tasks: BackgroundTasks) -> bool:
     """Advances an order past payment and kicks off the real pipeline -
     shared by /success (the customer's browser redirect) and /webhook
@@ -1089,7 +1109,7 @@ async def collect_ssn_page(request: Request, order_id: str):
     order = ORDERS.document(order_id).get().to_dict()
     if not order:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    expired = bool(order.get("ssn_expired"))
+    expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
     if not order.get("awaiting_ssn") and not expired:
         return RedirectResponse(url=f"/status/{order_id}")
 
@@ -1106,7 +1126,7 @@ async def collect_ssn_submit(request: Request, order_id: str, background_tasks: 
     order = order_ref.get().to_dict()
     if not order:
         return HTMLResponse("<p>Order not found.</p>", status_code=404)
-    expired = bool(order.get("ssn_expired"))
+    expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
     if not order.get("awaiting_ssn") and not expired:
         return RedirectResponse(url=f"/status/{order_id}")
 
@@ -1259,6 +1279,7 @@ async def status_page(request: Request, order_id: str):
         "scc_confirmation_number": order.get("scc_confirmation_number"),
         "has_certificate": bool(order.get("certificate_uploaded_at")),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
+        "needs_ssn_reentry": needs_ssn_reentry(order, order_id),
     })
 
 @app.get("/status/{order_id}/timeline", response_class=HTMLResponse)
