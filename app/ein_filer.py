@@ -71,6 +71,89 @@ def click_continue(page):
     page.wait_for_timeout(2000)
     print(f"  → Step complete ({page.url})")
 
+def _build_fallback_confirmation_pdf(business_name: str, ein: str, body_text: str, screenshot_path: str) -> bytes:
+    """A guaranteed-to-work record of the EIN confirmation when the IRS
+    site's own downloadable letter can't be captured (link text changed,
+    it's a JS-triggered download instead of a plain href, etc) - built
+    from the screenshot/text this function already had on hand anyway,
+    so there's always something real and useful in the dashboard's
+    documents instead of silently nothing (the gap that left Govcon Ramp
+    LLC's EIN letter missing entirely - see _capture_cp575 below)."""
+    import io
+    import os
+    from reportlab.lib.pagesizes import letter as pagesize_letter
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=pagesize_letter, topMargin=inch, bottomMargin=inch)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(f"EIN Confirmation Record - {business_name}", styles["Title"]),
+        Spacer(1, 0.15 * inch),
+    ]
+    if ein:
+        story.append(Paragraph(f"EIN: {ein}", styles["Heading2"]))
+        story.append(Spacer(1, 0.2 * inch))
+    # reportlab's Image flowable opens the file lazily at build() time,
+    # not at construction - checking existence up front is the only way
+    # to actually skip a missing screenshot instead of crashing build().
+    if os.path.exists(screenshot_path):
+        story.append(Image(screenshot_path, width=6.5 * inch, height=6.5 * inch, kind="proportional"))
+        story.append(Spacer(1, 0.2 * inch))
+    for line in body_text.splitlines():
+        line = line.strip()
+        if line:
+            story.append(Paragraph(line, styles["Normal"]))
+    doc.build(story)
+    return buffer.getvalue()
+
+def _capture_cp575(page, context, business_name: str, ein: str) -> bytes | None:
+    """Best-effort capture of the IRS's own CP575 confirmation letter,
+    falling back to a self-built PDF record (see
+    _build_fallback_confirmation_pdf) if that fails for any reason -
+    this should essentially never return None, so a captured EIN never
+    again ends up with no document in the dashboard at all."""
+    body_text = page.inner_text("body")
+
+    try:
+        for link_text in ("EIN Confirmation Letter", "Confirmation Letter", "CP575", "CP 575", "Notice", "Download"):
+            link = page.locator(f'a:has-text("{link_text}")').first
+            if link.count() == 0:
+                continue
+
+            href = link.get_attribute("href")
+            if href:
+                try:
+                    resp = context.request.get(href)
+                    if resp.ok and resp.body().startswith(b"%PDF"):
+                        return resp.body()
+                except Exception:
+                    pass
+
+            # Some IRS pages trigger the letter via a JS-driven download
+            # rather than a plain fetchable href - clicking and capturing
+            # the resulting download event covers that case too.
+            try:
+                with page.expect_download(timeout=10000) as download_info:
+                    link.click()
+                with open(download_info.value.path(), "rb") as f:
+                    candidate = f.read()
+                if candidate.startswith(b"%PDF"):
+                    return candidate
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"⚠️ Could not download the IRS's own CP575 confirmation letter (non-fatal): {e}")
+
+    print("⚠️ Falling back to a self-built confirmation PDF instead of the IRS's own CP575.")
+    try:
+        return _build_fallback_confirmation_pdf(business_name, ein, body_text, "/tmp/ein_confirmation.png")
+    except Exception as e:
+        print(f"⚠️ Could not build a fallback confirmation PDF either (non-fatal): {e}")
+        return None
+
 def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
     """Returns a result dict, never a bare bool:
       {"success": True, "ein": "XX-XXXXXXX", "cp575_bytes": bytes|None}
@@ -250,19 +333,7 @@ def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
         body_text = page.inner_text("body")
         match = EIN_PATTERN.search(body_text)
 
-        cp575_bytes = None
-        try:
-            for link_text in ("Confirmation Letter", "Notice", "Download", "CP 575", "CP575"):
-                link = page.locator(f'a:has-text("{link_text}")').first
-                if link.count() > 0:
-                    href = link.get_attribute("href")
-                    if href:
-                        resp = context.request.get(href)
-                        if resp.ok and "pdf" in resp.headers.get("content-type", "").lower():
-                            cp575_bytes = resp.body()
-                            break
-        except Exception as e:
-            print(f"⚠️ Could not download the CP575 confirmation letter (non-fatal): {e}")
+        cp575_bytes = _capture_cp575(page, context, business_name, match.group(0) if match else "")
 
         if match:
             ein = match.group(0)
