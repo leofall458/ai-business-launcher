@@ -1682,8 +1682,17 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
 
 @app.post("/admin/{order_id}/approve")
 async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """Bug fix: this used to only kick off SCC filing - it never went
+    through run_name_check, the only other caller of
+    run_document_generation, so an order approved here would reach
+    "complete" with no brand kit, marketing plan, name-screening result,
+    or LLC PDF ever generated (silently, since run_document_generation
+    was simply never invoked - found via Govcon Ramp LLC, order
+    8coHUbXK9NrQmuqmuQNo). Document generation doesn't actually depend on
+    SCC filing succeeding, so it's safe to kick off in parallel here too."""
     record_state(ORDERS.document(order_id), "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
     background_tasks.add_task(run_scc_filing, order_id)
+    background_tasks.add_task(run_document_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-filed")
