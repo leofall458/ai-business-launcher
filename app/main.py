@@ -37,10 +37,13 @@ from app.ssn_cache import stash as stash_ssn, peek as peek_ssn, discard as disca
 from app.validators import validate_intake_form, validate_ssn, ALL_VALIDATED_FIELDS
 from app.email_service import (
     send_order_received_email,
+    send_documents_ready_email,
     send_llc_filed_email,
     send_llc_approved_email,
     send_ein_issued_email,
     send_website_live_email,
+    send_everything_complete_email,
+    send_order_id_email,
 )
 from app.storage_service import fetch_certificate
 
@@ -545,11 +548,15 @@ def run_document_generation(order_id: str):
         update.get("marketing_result") or order.get("marketing_result"),
         update.get("pdf_filename") or order.get("pdf_filename"),
     ])
+    newly_generated = have_all and not order.get("documents_generated")
     update["documents_generated"] = have_all
     if have_all:
         update["documents_generated_at"] = firestore.SERVER_TIMESTAMP
     update["documents_error"] = "; ".join(errors.values()) if errors else firestore.DELETE_FIELD
     order_ref.set(update, merge=True)
+
+    if newly_generated:
+        send_documents_ready_email(order, order_id)
 
 SCC_FILED_STATES = {"filing_submitted", "filing_confirmed", "ein_requested", "ein_issued", "assets_generated", "complete"}
 
@@ -842,7 +849,9 @@ def run_asset_generation(order_id: str):
         if website_url:
             record_state(order_ref, "complete")
             order["website_url"] = website_url
+            order["stripe_connect_account_id"] = connect_account_id
             send_website_live_email(order, order_id)
+            send_everything_complete_email(order, order_id)
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
@@ -1104,11 +1113,56 @@ def status_context(order_id: str, order: dict) -> dict:
         "last_updated": datetime.datetime.now().strftime("%I:%M:%S %p").lstrip("0"),
     }
 
+ORDER_ID_REQUEST_LIMIT = 3
+ORDER_ID_REQUEST_WINDOW = datetime.timedelta(hours=1)
+
+@app.post("/request-order-id", response_class=HTMLResponse)
+async def request_order_id(request: Request):
+    """Part 2 of the order-tracking system: a customer who's lost their
+    order ID can look it up by the email they originally used. Rate
+    limited per-email via a Firestore log (not an in-memory counter) so
+    the limit holds even with multiple Cloud Run instances."""
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    if not email:
+        return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please enter your email address.</p>', status_code=400)
+
+    # Filtered by timestamp in Python rather than a second Firestore
+    # inequality clause - that would need a composite index, and request
+    # volume per email is small enough that fetching-then-filtering is
+    # simpler to ship and just as correct.
+    request_log = db.collection("order_id_requests")
+    window_start = datetime.datetime.now(datetime.timezone.utc) - ORDER_ID_REQUEST_WINDOW
+    same_email_requests = request_log.where("email", "==", email).stream()
+    recent = [r for r in same_email_requests if (r.to_dict().get("requested_at") or window_start) > window_start]
+    if len(recent) >= ORDER_ID_REQUEST_LIMIT:
+        return HTMLResponse(
+            '<p class="text-yellow-400 text-sm mt-2">Too many requests for this email — please try again in an '
+            'hour, or contact <a href="mailto:support@launchbridge.ai" class="underline">support@launchbridge.ai</a>.</p>',
+            status_code=429,
+        )
+    request_log.add({"email": email, "requested_at": firestore.SERVER_TIMESTAMP})
+
+    matches = list(ORDERS.where("email", "==", email).stream())
+    if not matches:
+        return HTMLResponse(
+            '<p class="text-red-400 text-sm mt-2">No order found for this email. Contact '
+            '<a href="mailto:support@launchbridge.ai" class="underline">support@launchbridge.ai</a>.</p>',
+            status_code=404,
+        )
+
+    # If the same email placed more than one order, the most recently
+    # created one is almost always the one they're asking about.
+    latest = max(matches, key=lambda d: d.to_dict().get("created_at") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    send_order_id_email(latest.to_dict(), latest.id)
+
+    return HTMLResponse(f'<p class="text-green-400 text-sm mt-2">Check your email! We sent your order ID to {email}.</p>')
+
 @app.get("/status/{order_id}", response_class=HTMLResponse)
 async def status_page(request: Request, order_id: str):
     order_snap = ORDERS.document(order_id).get()
     if not order_snap.exists:
-        return HTMLResponse("<p>Order not found.</p>", status_code=404)
+        return templates.TemplateResponse(request, "order_not_found.html", {}, status_code=404)
     order = order_snap.to_dict()
     state = order.get("state", "draft")
 

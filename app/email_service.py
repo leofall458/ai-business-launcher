@@ -6,6 +6,11 @@ check, filing, EIN, asset generation) that triggered it. Credentials come
 from Secret Manager (see app/config.py); if they're unset, sends are skipped
 entirely rather than raising, so local dev without GMAIL_APP_PASSWORD still
 works.
+
+Every email is sent multipart/alternative - a plain-text body plus a
+branded HTML body (see _wrap_html) - so it reads well in clients that prefer
+either, and the dark-blue-header/white-card/CTA-button/footer chrome looks
+the same across all of them.
 """
 
 import smtplib
@@ -15,8 +20,13 @@ from email.message import EmailMessage
 from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
 
 FROM_NAME = "Launch Bridge LLC"
+APP_BASE_URL = "https://app.launchbridge.ai"
 
-def _send(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_filename: str = None,
+def _status_url(order_id: str) -> str:
+    return f"{APP_BASE_URL}/status/{order_id}"
+
+def _send(to_email: str, subject: str, body: str, html_body: str = None,
+          attachment_path: str = None, attachment_filename: str = None,
           attachment_bytes: bytes = None) -> bool:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         print(f"⚠️ Gmail credentials not configured - skipping email '{subject}' to {to_email}")
@@ -29,6 +39,8 @@ def _send(to_email: str, subject: str, body: str, attachment_path: str = None, a
     msg["From"] = f"{FROM_NAME} <{GMAIL_USER}>"
     msg["To"] = to_email
     msg.set_content(body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
 
     if attachment_bytes is not None:
         ctype, _ = mimetypes.guess_type(attachment_filename or "")
@@ -54,57 +66,200 @@ def _send(to_email: str, subject: str, body: str, attachment_path: str = None, a
         print(f"⚠️ Could not send email '{subject}' to {to_email}: {e}")
         return False
 
-def send_order_received_email(order: dict, order_id: str):
+def _wrap_html(body_html: str, cta_text: str = None, cta_url: str = None) -> str:
+    """Shared chrome for every email: dark blue header with the Launch
+    Bridge name, white content card, an optional prominent CTA button, and
+    a footer with the support contact + unsubscribe links."""
+    cta_block = ""
+    if cta_text and cta_url:
+        cta_block = f"""
+        <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-top:12px;">
+          <a href="{cta_url}" style="background-color:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;
+             font-size:15px;padding:14px 36px;border-radius:8px;display:inline-block;">{cta_text}</a>
+        </td></tr></table>"""
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 16px;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;max-width:560px;width:100%;">
+<tr><td style="background-color:#0c2d6b;padding:28px 32px;">
+<span style="color:#ffffff;font-size:21px;font-weight:700;letter-spacing:0.3px;">Launch Bridge LLC</span>
+</td></tr>
+<tr><td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.65;">
+{body_html}
+{cta_block}
+</td></tr>
+<tr><td style="background-color:#f9fafb;padding:18px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+<p style="margin:0;color:#9ca3af;font-size:12px;">
+Launch Bridge LLC &nbsp;|&nbsp;
+<a href="mailto:support@launchbridge.ai" style="color:#9ca3af;text-decoration:underline;">support@launchbridge.ai</a> &nbsp;|&nbsp;
+<a href="mailto:support@launchbridge.ai?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a>
+</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>"""
+
+def _info_table(rows: list) -> str:
+    trs = "".join(
+        f'<tr><td style="padding:8px 16px;color:#6b7280;font-size:13px;">{label}</td>'
+        f'<td style="padding:8px 16px;font-size:14px;font-weight:600;color:#111827;">{value}</td></tr>'
+        for label, value in rows
+    )
+    return f'<table style="width:100%;background:#f9fafb;border-radius:8px;margin:16px 0;border-collapse:collapse;">{trs}</table>'
+
+def send_order_id_email(order: dict, order_id: str):
+    """Part 2: sent from POST /request-order-id when a customer has lost
+    their order ID and looks it up by email."""
     email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
+    state = order.get("state", "draft").replace("_", " ").title()
+    url = _status_url(order_id)
     body = (
-        f"Hi {order.get('full_name', '')},\n\n"
-        f"We received your payment for {business_name} - thank you!\n\n"
-        "Here's what happens next:\n"
-        "1. Immediately - our AI generates your documents, brand kit, and website\n"
-        "2. Within 24 hours - our team files your LLC with the Virginia SCC\n"
-        "3. 1-3 business days - Virginia SCC reviews and approves your LLC\n"
-        "4. Same day as approval - we apply for your EIN with the IRS\n"
-        "5. After your EIN - we set up your Stripe payment account\n"
-        "6. Complete - you receive everything by email\n\n"
-        f"Track your order anytime at: https://app.launchbridge.ai/status/{order_id}\n\n"
-        f"Questions? Reply to this email or contact {SUPPORT_EMAIL}.\n\n"
+        f"Hi {name},\n\n"
+        "Here is your Launch Bridge order information:\n\n"
+        f"Order ID: {order_id}\n"
+        f"Business: {business_name}\n"
+        f"Status: {state}\n\n"
+        "Track your order here:\n"
+        f"{url}\n\n"
+        f"Questions? Email {SUPPORT_EMAIL}\n\n"
         "- Launch Bridge LLC"
     )
-    _send(email, "We received your order - here's what happens next", body)
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>Here is your Launch Bridge order information:</p>"
+        + _info_table([("Order ID", order_id), ("Business", business_name), ("Status", state)])
+        + f"<p>Questions? Email <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a></p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
+    _send(email, "Your Launch Bridge Order ID", body, html_body=html)
 
-def send_llc_filed_email(order: dict, order_id: str):
+def send_order_received_email(order: dict, order_id: str):
+    """Part 3: sent the moment an order moves draft -> paid."""
     email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
+    url = _status_url(order_id)
     body = (
-        f"Hi {order.get('full_name', '')},\n\n"
-        f"{business_name} has been submitted to the Virginia State Corporation Commission for filing.\n\n"
-        "Virginia SCC typically reviews and approves new LLC filings within 1-3 business days. "
-        "We'll email you again as soon as it's approved.\n\n"
-        f"Track your order anytime at: https://app.launchbridge.ai/status/{order_id}\n\n"
+        f"Hi {name},\n\n"
+        "Thank you for choosing Launch Bridge LLC!\n\n"
+        "Your order has been confirmed. Here are your details:\n\n"
+        f"Order ID: {order_id}\n"
+        f"Business Name: {business_name}\n"
+        "Amount Paid: $350\n\n"
+        "Save this Order ID — you will need it to track your order status.\n\n"
+        "Track your order here:\n"
+        f"{url}\n\n"
+        "What happens next:\n"
+        "✅ Your documents are being generated now\n"
+        "⏳ We will file your LLC with Virginia SCC within 24 hours\n"
+        "⏳ EIN application follows LLC approval (1-3 business days)\n"
+        "⏳ Your website will be live after LLC approval\n\n"
+        f"Questions? Reply to this email or contact {SUPPORT_EMAIL}\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>Thank you for choosing Launch Bridge LLC!</p>"
+        "<p>Your order has been confirmed. Here are your details:</p>"
+        + _info_table([("Order ID", order_id), ("Business Name", business_name), ("Amount Paid", "$350")])
+        + "<p><strong>Save this Order ID</strong> — you will need it to track your order status.</p>"
+        "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
+        "<p>✅ Your documents are being generated now<br>"
+        "⏳ We will file your LLC with Virginia SCC within 24 hours<br>"
+        "⏳ EIN application follows LLC approval (1-3 business days)<br>"
+        "⏳ Your website will be live after LLC approval</p>"
+        f"<p>Questions? Reply to this email or contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a></p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
+    _send(email, f"Your Launch Bridge Order Confirmed - {business_name}", body, html_body=html)
+
+def send_documents_ready_email(order: dict, order_id: str):
+    """Email 2 (Part 4): sent the first time run_document_generation
+    finishes every agent successfully for this order."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    business_name = order.get("business_name", "your business")
+    url = _status_url(order_id)
+    body = (
+        f"Hi {name},\n\n"
+        "Your Articles of Organization, Operating Agreement, and brand kit are ready.\n\n"
+        "Download them here:\n"
+        f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
         "- Launch Bridge LLC"
     )
-    _send(email, "Your LLC has been submitted to Virginia SCC", body)
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>Your Articles of Organization, Operating Agreement, and brand kit are ready.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Download Your Documents", cta_url=url)
+    _send(email, f"Your LLC Documents are Ready - {business_name}", body, html_body=html)
+
+def send_llc_filed_email(order: dict, order_id: str):
+    """Email 3 (Part 4): sent right after run_scc_filing submits the
+    Articles of Organization to the Virginia SCC."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    business_name = order.get("business_name", "your business")
+    url = _status_url(order_id)
+    confirmation_number = order.get("scc_confirmation_number", "")
+    confirmation_line = f"Confirmation #{confirmation_number}. " if confirmation_number else ""
+    body = (
+        f"Hi {name},\n\n"
+        f"We have submitted your Articles of Organization to the Virginia SCC. {confirmation_line}"
+        "Processing takes 1-3 business days.\n\n"
+        "Track your order here:\n"
+        f"{url}\n\n"
+        f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>We have submitted your Articles of Organization to the Virginia SCC. {confirmation_line}"
+        "Processing takes 1-3 business days.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
+    _send(email, f"Your LLC Has Been Filed - {business_name}", body, html_body=html)
 
 def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str = "",
                              certificate_path: str = None, certificate_bytes: bytes = None):
+    """Email 4 (Part 4): sent once the Virginia SCC has actually approved
+    the LLC. confirmation_number is still accepted (and stored on the order
+    by every caller) so it's visible on the status page - this email's own
+    wording follows the requested template, which doesn't repeat it."""
     email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
-    confirmation_line = f"Virginia SCC confirmation number: {confirmation_number}\n\n" if confirmation_number else ""
+    url = _status_url(order_id)
+    has_certificate = bool(certificate_bytes or certificate_path)
+    cert_line = "Your certificate is attached. " if has_certificate else ""
     body = (
-        f"Hi {order.get('full_name', '')},\n\n"
-        f"Great news - {business_name} has been officially approved by the Virginia SCC!\n\n"
-        f"{confirmation_line}"
-        "We're now preparing your EIN application with the IRS - you'll hear from us again "
-        "the same day it's issued.\n\n"
-        f"Track your order anytime at: https://app.launchbridge.ai/status/{order_id}\n\n"
+        f"Hi {name},\n\n"
+        f"Great news! {business_name} LLC has been officially approved by the Virginia State Corporation Commission.\n\n"
+        f"{cert_line}We are now applying for your EIN.\n\n"
+        "Track your order here:\n"
+        f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
         "- Launch Bridge LLC"
     )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>🎉 Great news! <strong>{business_name} LLC</strong> has been officially approved by the "
+        "Virginia State Corporation Commission.</p>"
+        f"<p>{cert_line}We are now applying for your EIN.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
     safe_name = business_name.replace(" ", "_").replace("/", "_")
-    attachment_filename = f"{safe_name}_Certificate.pdf" if (certificate_bytes or certificate_path) else None
-    return _send(email, "Your LLC is approved!", body,
+    attachment_filename = f"{safe_name}_Certificate.pdf" if has_certificate else None
+    return _send(email, f"🎉 Your LLC is Approved! - {business_name}", body, html_body=html,
         attachment_path=certificate_path, attachment_bytes=certificate_bytes,
         attachment_filename=attachment_filename)
 
@@ -123,39 +278,130 @@ def forward_scc_approval_email(order: dict, certificate_bytes: bytes = None) -> 
         "Corporation Commission. Please find your Certificate of Organization attached. "
         "Our team will now proceed with your EIN application. - Launch Bridge LLC"
     )
+    html_inner = (
+        f"<p>Dear {customer_name},</p>"
+        "<p>Great news! Your LLC has been approved by the Virginia State Corporation Commission. "
+        "Please find your Certificate of Organization attached. Our team will now proceed with your "
+        "EIN application.</p>"
+    )
+    html = _wrap_html(html_inner)
     safe_name = business_name.replace(" ", "_").replace("/", "_")
-    return _send(email, "Your LLC is approved!", body,
+    return _send(email, "Your LLC is approved!", body, html_body=html,
         attachment_bytes=certificate_bytes,
         attachment_filename=f"{safe_name}_Certificate.pdf" if certificate_bytes else None)
 
 def send_ein_issued_email(order: dict, order_id: str, ein: str):
+    """Email 5 (Part 4): sent once the EIN is issued by the IRS (or
+    immediately, for skip_ein customers who already had one)."""
     email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
+    url = _status_url(order_id)
     body = (
-        f"Hi {order.get('full_name', '')},\n\n"
-        f"Your EIN for {business_name} has been issued.\n\n"
+        f"Hi {name},\n\n"
+        "Your Employer Identification Number (EIN) has been issued by the IRS.\n\n"
         f"Your EIN is: {ein}\n\n"
-        "Keep this number somewhere safe - you'll need it for opening a business bank account, "
-        "filing taxes, and applying for licenses or permits.\n\n"
-        "Next, we're setting up your Stripe payment account so you can start accepting payments.\n\n"
-        f"Track your order anytime at: https://app.launchbridge.ai/status/{order_id}\n\n"
+        "Keep this number safe - you will need it to open a business bank account, hire employees, and file taxes.\n\n"
+        "Track your order here:\n"
+        f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
         "- Launch Bridge LLC"
     )
-    _send(email, f"Your EIN is {ein}", body)
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>Your Employer Identification Number (EIN) has been issued by the IRS.</p>"
+        + _info_table([("Your EIN", ein)])
+        + "<p>Keep this number safe - you will need it to open a business bank account, hire employees, "
+        "and file taxes.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
+    _send(email, f"Your EIN is Ready - {business_name}", body, html_body=html)
 
 def send_website_live_email(order: dict, order_id: str):
+    """Email 6 (Part 4): sent once run_asset_generation finishes the
+    customer's website."""
     email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
     website_url = order.get("website_url", "")
+    url = _status_url(order_id)
+    connect_id = order.get("stripe_connect_account_id")
+    onboarding_url = f"{APP_BASE_URL}/connect/onboard/{order_id}" if connect_id else None
+    stripe_para = f"Your Stripe payment account setup link:\n{onboarding_url}\n\n" if onboarding_url else ""
+    stripe_html = (
+        f"<p>Your Stripe payment account setup link: <a href=\"{onboarding_url}\">{onboarding_url}</a></p>"
+        if onboarding_url else ""
+    )
     body = (
-        f"Hi {order.get('full_name', '')},\n\n"
-        f"{business_name} is fully set up and your website is live!\n\n"
-        f"Visit it here: {website_url}\n\n"
-        "Your full business package - LLC documents, brand kit, marketing plan, EIN, and "
-        "Stripe payment account - is ready and waiting for you.\n\n"
-        f"View everything anytime at: https://app.launchbridge.ai/status/{order_id}\n\n"
+        f"Hi {name},\n\n"
+        f"Your business website is now live at: {website_url}\n\n"
+        "Share it with your customers!\n\n"
+        f"{stripe_para}"
+        "Track your order here:\n"
+        f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
         "- Launch Bridge LLC"
     )
-    _send(email, "Your website is live!", body)
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>Your business website is now live at: <a href=\"{website_url}\">{website_url}</a></p>"
+        "<p>Share it with your customers!</p>"
+        f"{stripe_html}"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
+    _send(email, f"Your Business Website is Live! - {business_name}", body, html_body=html)
+
+def send_everything_complete_email(order: dict, order_id: str):
+    """Email 7 (Part 4): the final milestone email, sent once the order
+    reaches the "complete" state - the full business package summary."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    business_name = order.get("business_name", "your business")
+    confirmation_number = order.get("scc_confirmation_number", "")
+    ein = order.get("ein", "")
+    website_url = order.get("website_url", "")
+    connect_id = order.get("stripe_connect_account_id")
+    url = _status_url(order_id)
+
+    llc_line = f"✅ LLC: {business_name}" + (f" (Confirmation #{confirmation_number})" if confirmation_number else "")
+    if connect_id:
+        onboarding_url = f"{APP_BASE_URL}/connect/onboard/{order_id}"
+        stripe_line = f"✅ Stripe: {onboarding_url} (complete setup to start accepting payments)"
+        stripe_html = f"✅ Stripe: <a href=\"{onboarding_url}\">Finish setup</a> to start accepting payments"
+    else:
+        stripe_line = "✅ Stripe: Not set up"
+        stripe_html = "✅ Stripe: Not set up"
+
+    body = (
+        f"Hi {name},\n\n"
+        "Congratulations! Everything is set up. Here is your complete business package:\n\n"
+        f"{llc_line}\n"
+        f"✅ EIN: {ein}\n"
+        f"✅ Website: {website_url}\n"
+        f"{stripe_line}\n\n"
+        "Next steps:\n"
+        "1. Complete your Stripe account setup to accept payments\n"
+        "2. Open a business bank account using your EIN\n"
+        "3. File your annual report with Virginia SCC each year\n\n"
+        "Thank you for choosing Launch Bridge LLC!\n"
+        "- The Launch Bridge Team"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>Congratulations! Everything is set up. Here is your complete business package:</p>"
+        "<p>"
+        f"{llc_line}<br>"
+        f"✅ EIN: {ein}<br>"
+        f"✅ Website: <a href=\"{website_url}\">{website_url}</a><br>"
+        f"{stripe_html}"
+        "</p>"
+        "<p style=\"margin-top:24px;font-weight:600;\">Next steps:</p>"
+        "<p>1. Complete your Stripe account setup to accept payments<br>"
+        "2. Open a business bank account using your EIN<br>"
+        "3. File your annual report with Virginia SCC each year</p>"
+        "<p>Thank you for choosing Launch Bridge LLC!<br>- The Launch Bridge Team</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="View Your Business Package", cta_url=url)
+    _send(email, f"🚀 {business_name} is Ready for Business!", body, html_body=html)
