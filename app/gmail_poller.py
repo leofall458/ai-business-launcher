@@ -193,7 +193,7 @@ def process_message(service, message_id: str):
         order_ref.update(firestore_update)
 
     try:
-        log_entry["forwarded"] = forward_scc_approval_email(order, certificate_bytes)
+        log_entry["forwarded"] = forward_scc_approval_email(order, order_id)
     except Exception as e:
         print(f"⚠️ Could not forward SCC approval email for order {order_id}: {e}")
         log_entry["error"] = f"Forward failed: {e}"

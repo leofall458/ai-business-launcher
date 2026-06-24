@@ -203,7 +203,7 @@ def check_once():
                     order_ref.update(firestore_update)
 
                 trigger_assets = advance_past_filing_confirmed(order_ref, order)
-                send_llc_approved_email(order, order_id, confirmation_number, certificate_bytes=certificate_bytes)
+                send_llc_approved_email(order, order_id, confirmation_number)
                 if trigger_assets:
                     run_asset_generation(order_id)
                 notify_windows("Launch Bridge LLC", f"{business_name} approved by Virginia SCC!")
