@@ -125,6 +125,10 @@
                 </button>
             </div>
             <p class="text-xs text-gray-400 italic">"I just launched {{ business_name }} with Launch Bridge! 🚀"</p>
+            <div class="mt-5 rounded-lg overflow-hidden border border-gray-700">
+                <iframe src="{{ website_url }}" class="w-full h-96 bg-white" loading="lazy" title="{{ business_name }} website preview"></iframe>
+            </div>
+            <a href="{{ website_url }}" target="_blank" class="block mt-2 text-center text-xs text-blue-400 hover:text-blue-300">Open in new tab →</a>
         </div>
         {% endif %}
 

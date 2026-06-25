@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if error %}Message Not Sent{% else %}Message Sent{% endif %}{% if business_name %} - {{ business_name }}{% endif %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex items-center justify-center px-6">
+    <div class="max-w-md w-full text-center">
+        {% if error %}
+        <div class="text-4xl mb-4">⚠️</div>
+        <h1 class="text-xl font-bold mb-2">Message Not Sent</h1>
+        <p class="text-gray-600">{{ error }}</p>
+        {% else %}
+        <div class="text-4xl mb-4">✅</div>
+        <h1 class="text-xl font-bold mb-2">Message Sent!</h1>
+        <p class="text-gray-600">{% if business_name %}{{ business_name }} will{% else %}We'll{% endif %} get back to you soon.</p>
+        {% endif %}
+        {% if back_url %}
+        <a href="{{ back_url }}" class="inline-block mt-6 text-sm font-semibold text-blue-600 hover:text-blue-700">← Back{% if business_name %} to {{ business_name }}{% endif %}</a>
+        {% endif %}
+    </div>
+</body>
+</html>

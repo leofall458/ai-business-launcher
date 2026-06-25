@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
@@ -51,6 +51,7 @@ from app.email_service import (
     send_everything_complete_email,
     send_ssn_expired_email,
     send_magic_link_email,
+    send_visitor_message_email,
 )
 from app.document_store import upload_document, generate_signed_url
 from app.sms import send_admin_sms
@@ -540,10 +541,19 @@ def run_document_generation(order_id: str):
 
     if not order.get("brand_result"):
         try:
-            brand_result = generate_brand_kit(business_name, business_idea, target_customer)
+            brand_result = generate_brand_kit(
+                business_name, business_idea, target_customer,
+                full_name=full_name, email=order.get("email", ""), phone=order.get("phone", ""),
+                website_url=order.get("website_url", ""),
+            )
+            pdf_bytes = brand_result.pop("pdf_bytes")
+            logo_svg = brand_result.get("logo_svg", "")
             update["brand_result"] = brand_result
-            object_name = upload_document(order_id, brand_result.get("result", "").encode("utf-8"), "text/plain", "txt")
+            object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
             update["documents.brand_kit"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+            if logo_svg:
+                logo_object_name = upload_document(order_id, logo_svg.encode("utf-8"), "image/svg+xml", "svg")
+                update["documents.logo"] = {"object_name": logo_object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
         except Exception as e:
             print(f"⚠️ Brand kit agent failed for order {order_id}: {e}")
             errors["brand_result"] = f"Brand kit: {e}"
@@ -984,6 +994,7 @@ def run_asset_generation(order_id: str):
                     color_preference=order.get("color_preference", "default"),
                     custom_primary_color=order.get("custom_primary_color", ""),
                     payment_link_url=payment_link_url,
+                    order_id=order_id,
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
@@ -1023,6 +1034,60 @@ def run_asset_generation(order_id: str):
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
+
+def run_website_regeneration(order_id: str):
+    """Admin-triggered (see /admin/{order_id}/regenerate-website) - unlike
+    run_asset_generation, this always re-generates and re-deploys the
+    website even if order.website_url is already set, since the whole
+    point is to redo a website the admin wasn't happy with. Deliberately
+    only touches the website - Stripe Connect/payment link are untouched,
+    so this never risks creating a second Connect account."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    try:
+        business_name = order["business_name"]
+        business_idea = order["business_idea"]
+        target_customer = order["target_customer"]
+        principal_address = order["principal_address"]
+        email = order["email"]
+        phone = order["phone"]
+        services = [
+            {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+            for i in (1, 2, 3)
+        ]
+        photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+        result = generate_website(
+            business_name, business_idea, target_customer, email, phone, principal_address,
+            template_name=order.get("website_template", "professional"),
+            tagline=order.get("website_tagline", ""),
+            description=order.get("website_description", ""),
+            services=services,
+            hours=order.get("business_hours", ""),
+            photos=photos,
+            instagram_url=order.get("instagram_url", ""),
+            facebook_url=order.get("facebook_url", ""),
+            tiktok_url=order.get("tiktok_url", ""),
+            color_preference=order.get("color_preference", "default"),
+            custom_primary_color=order.get("custom_primary_color", ""),
+            payment_link_url=order.get("stripe_payment_link_url"),
+            order_id=order_id,
+        )
+        deployed = deploy_website(business_name, result["html"], order_id=order_id)
+        if deployed:
+            order_ref.set({
+                "website_template": result["template"], "website_content": result["content"],
+                "website_url": deployed["url"], "asset_generation_error": firestore.DELETE_FIELD,
+            }, merge=True)
+            print(f"✅ Website regenerated for order {order_id}: {deployed['url']}")
+        else:
+            print(f"⚠️ Website regeneration deploy returned no URL for order {order_id} - check logs above for the GitHub API error.")
+            order_ref.set({"asset_generation_error": "Could not redeploy your business website - check server logs, then retry."}, merge=True)
+    except Exception as e:
+        print(f"⚠️ Website regeneration crashed for order {order_id}: {e}")
+        order_ref.set({"asset_generation_error": f"Website regeneration crashed unexpectedly: {e}. Check server logs."}, merge=True)
 
 @app.post("/launch", response_class=HTMLResponse)
 async def launch(request: Request):
@@ -1554,6 +1619,7 @@ DOCUMENT_LABELS = {
     "articles": "Articles of Organization",
     "operating_agreement": "Operating Agreement",
     "brand_kit": "Brand Kit",
+    "logo": "Logo (SVG)",
 }
 
 # Orders uploaded before document_store.py existed have no "documents"
@@ -1798,36 +1864,77 @@ async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, a
     background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
+@app.post("/admin/{order_id}/regenerate-website")
+async def admin_regenerate_website(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """Force-redeploys just the website, even if one already exists - for
+    when the admin isn't happy with what generated and wants a fresh
+    attempt. Never touches Stripe Connect/payment link."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    background_tasks.add_task(run_website_regeneration, order_id)
+    return RedirectResponse(url="/admin", status_code=303)
+
 @app.post("/contact", response_class=HTMLResponse)
 async def contact(request: Request):
+    """Two distinct callers share this one route: the authenticated
+    dashboard's own "contact support" form (an htmx partial swap, identified
+    by the HX-Request header) and the public contact form embedded on every
+    deployed customer website (a plain, full-page <form> POST - no fetch, no
+    JS, so no CORS preflight is ever involved even though those sites live
+    on a different origin on GitHub Pages). The two need different
+    responses: htmx gets the small result partial it already targets,
+    everyone else gets a real standalone page since their browser actually
+    navigates here."""
     form = await request.form()
     order_id = (form.get("order_id") or "").strip()
+    business_name = (form.get("business_name") or "").strip()
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     message = (form.get("message") or "").strip()
+    is_htmx = request.headers.get("hx-request") == "true"
+    back_url = request.headers.get("referer")
 
-    # Only an authenticated dashboard session needs CSRF protection - the
-    # legacy, unauthenticated status page has no session to protect and
-    # has no csrf_token field at all, so it's left alone. This is the one
-    # route in the rework where a real 403 is correct, since a CSRF
-    # mismatch is "stale form," not an ownership question.
+    # Only an authenticated dashboard session needs CSRF protection - a
+    # public website visitor has no session to protect and no csrf_token
+    # field at all, so it's left alone. This is the one route in the
+    # rework where a real 403 is correct, since a CSRF mismatch is "stale
+    # form," not an ownership question.
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
     if session_id and verify_and_touch_session(session_id):
         if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
             raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
 
     if not (name and email and message):
-        return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please fill in your name, email, and message.</p>', status_code=400)
+        if is_htmx:
+            return HTMLResponse('<p class="text-red-400 text-sm mt-2">Please fill in your name, email, and message.</p>', status_code=400)
+        return templates.TemplateResponse(request, "contact_success.html", {
+            "error": "Please fill in your name, email, and message.", "back_url": back_url,
+            "business_name": business_name,
+        }, status_code=400)
 
     db.collection("contact_messages").add({
-        "order_id": order_id, "name": name, "email": email, "message": message,
+        "order_id": order_id, "business_name": business_name, "name": name, "email": email, "message": message,
         "created_at": firestore.SERVER_TIMESTAMP,
     })
-    # No email/SMS service is wired up yet - this is the admin notification
-    # for now. Once one exists, replace this with a real page/alert.
-    print(f"📬 New contact message from {name} <{email}> (order {order_id}): {message}")
 
-    return templates.TemplateResponse(request, "contact_result.html", {})
+    send_visitor_message_email(business_name or "your business", name, email, message, SUPPORT_EMAIL)
+    if not is_htmx and order_id:
+        # A public website visitor's message also goes straight to the
+        # business owner, not just our own support inbox - they're the one
+        # who actually needs the lead. The dashboard's own contact-support
+        # form (is_htmx) skips this since there the "visitor" is already
+        # the order's owner messaging us, not a customer of theirs.
+        order = ORDERS.document(order_id).get().to_dict()
+        if order and order.get("email"):
+            send_visitor_message_email(business_name or order.get("business_name", "your business"), name, email, message, order["email"])
+
+    if is_htmx:
+        return templates.TemplateResponse(request, "contact_result.html", {})
+    return templates.TemplateResponse(request, "contact_success.html", {
+        "back_url": back_url, "business_name": business_name,
+    })
 
 @app.get("/health")
 def health():

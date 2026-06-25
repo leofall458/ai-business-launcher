@@ -8,64 +8,75 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
+  :root { --brown: #6B4226; }
   body { font-family: 'Nunito', sans-serif; }
   .display { font-family: 'Fredoka', sans-serif; }
+  .brown-text { color: var(--brown); }
+  .brown-bg { background-color: var(--brown); }
 </style>
 </head>
 <body class="bg-orange-50 text-gray-800">
 
   <!-- Nav -->
-  <header class="bg-white shadow-sm">
+  <header class="bg-white shadow-sm sticky top-0 z-50">
     <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
       <span class="display text-2xl font-bold" style="color:{{ primary_color }}">{{ business_name }}</span>
-      <a href="#contact" class="text-sm font-bold px-5 py-2.5 rounded-full text-white" style="background-color:{{ secondary_color }}">📞 Call Us</a>
+      <a href="#contact" class="text-sm font-bold px-5 py-2.5 rounded-full text-white" style="background-color:{{ secondary_color }}">📞 {{ cta_text }}</a>
     </div>
   </header>
 
-  <!-- Hero -->
-  <section class="max-w-5xl mx-auto px-6 py-16 md:py-24 text-center">
-    <div class="inline-block px-4 py-1 rounded-full text-sm font-bold mb-6 text-white" style="background-color:{{ primary_color }}">🏡 Proudly Serving Our Community</div>
-    <h1 class="display text-4xl md:text-6xl font-bold leading-tight mb-6" style="color:{{ primary_color }}">{{ tagline }}</h1>
-    <p class="max-w-2xl mx-auto text-lg text-gray-700 leading-relaxed">{{ about_text }}</p>
-    {% if hero_photo %}
-    <div class="mt-10">
-      <img src="{{ hero_photo }}" alt="{{ business_name }}" class="rounded-3xl mx-auto max-h-96 object-cover shadow-md"/>
-    </div>
-    {% endif %}
-    <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
-      <a href="#contact" class="inline-block px-8 py-3 rounded-full text-white font-bold shadow-md" style="background-color:{{ primary_color }}">Get Started</a>
-      <a href="tel:{{ phone }}" class="inline-block px-8 py-3 rounded-full font-bold border-2" style="border-color:{{ secondary_color }}; color:{{ secondary_color }}">{{ phone }}</a>
+  <!-- Full-width hero with overlay -->
+  <section class="relative text-center overflow-hidden"
+    {% if hero_photo %}style="background-image:url('{{ hero_photo }}'); background-size:cover; background-position:center;"{% endif %}>
+    <div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55"></div>
+    <div class="relative z-10 max-w-3xl mx-auto px-6 py-24 md:py-36">
+      <div class="inline-block px-4 py-1 rounded-full text-sm font-bold mb-6 text-white" style="background-color:{{ secondary_color }}">🏡 Proudly Serving Our Community</div>
+      <h1 class="display text-4xl md:text-6xl font-bold leading-tight mb-6 text-white drop-shadow">{{ tagline }}</h1>
+      <p class="max-w-2xl mx-auto text-lg text-white/90 leading-relaxed drop-shadow">{{ about_text }}</p>
+      <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#contact" class="inline-block px-8 py-3 rounded-full text-white font-bold shadow-md" style="background-color:{{ primary_color }}">{{ cta_text }}</a>
+        <a href="tel:{{ phone }}" class="inline-block px-8 py-3 rounded-full font-bold border-2 bg-white/90" style="border-color:{{ secondary_color }}; color:{{ secondary_color }}">{{ phone }}</a>
+      </div>
     </div>
   </section>
 
-  <!-- About -->
+  <!-- Our Story -->
   <section class="bg-white">
-    <div class="max-w-5xl mx-auto px-6 py-16">
-      <div class="bg-orange-50 rounded-3xl p-8 md:p-12 text-center">
-        <h2 class="display text-3xl font-bold mb-4" style="color:{{ primary_color }}">Who We Are</h2>
+    <div class="max-w-5xl mx-auto px-6 py-20 grid md:grid-cols-2 gap-10 items-center">
+      {% if gallery_photos %}
+      <img src="{{ gallery_photos[0] }}" alt="{{ business_name }}" class="rounded-3xl shadow-md w-full h-72 object-cover order-1 md:order-none"/>
+      {% endif %}
+      <div class="bg-orange-50 rounded-3xl p-8 md:p-10 text-center {% if not gallery_photos %}md:col-span-2{% endif %}">
+        <h2 class="display text-3xl font-bold mb-4 brown-text">Our Story</h2>
         <p class="text-gray-700 leading-relaxed max-w-2xl mx-auto">{{ about_text }}</p>
       </div>
     </div>
   </section>
 
-  <!-- Services -->
-  <section class="max-w-5xl mx-auto px-6 py-16">
+  <!-- Services / Menu with photos -->
+  <section class="max-w-5xl mx-auto px-6 py-20">
     <h2 class="display text-3xl font-bold mb-10 text-center" style="color:{{ primary_color }}">How We Can Help</h2>
     <div class="grid md:grid-cols-3 gap-6">
       {% for service in services %}
-      <div class="bg-white rounded-2xl p-6 shadow-md text-center">
-        <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl text-white" style="background-color:{{ secondary_color }}">{{ loop.index }}</div>
-        <h3 class="display text-lg font-bold mb-2">{{ service.name }}</h3>
-        <p class="text-sm text-gray-600 leading-relaxed">{{ service.description }}</p>
+      <div class="bg-white rounded-2xl shadow-md text-center overflow-hidden">
+        {% if gallery_photos and gallery_photos[loop.index0 % gallery_photos|length] %}
+        <img src="{{ gallery_photos[loop.index0 % gallery_photos|length] }}" alt="{{ service.name }}" class="w-full h-40 object-cover"/>
+        {% else %}
+        <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mt-6 text-2xl text-white" style="background-color:{{ secondary_color }}">{{ loop.index }}</div>
+        {% endif %}
+        <div class="p-6">
+          <h3 class="display text-lg font-bold mb-2">{{ service.name }}</h3>
+          <p class="text-sm text-gray-600 leading-relaxed">{{ service.description }}</p>
+        </div>
       </div>
       {% endfor %}
     </div>
   </section>
 
-  {% if gallery_photos %}
+  {% if gallery_photos and gallery_photos|length > 1 %}
   <!-- Gallery -->
   <section class="bg-white">
-    <div class="max-w-5xl mx-auto px-6 py-16">
+    <div class="max-w-5xl mx-auto px-6 py-20">
       <h2 class="display text-3xl font-bold mb-10 text-center" style="color:{{ primary_color }}">A Peek Inside</h2>
       <div class="grid md:grid-cols-3 gap-4">
         {% for photo in gallery_photos %}
@@ -77,41 +88,87 @@
   {% endif %}
 
   {% if hours %}
-  <!-- Hours -->
-  <section class="max-w-5xl mx-auto px-6 py-12 text-center">
-    <h2 class="display text-2xl font-bold mb-2" style="color:{{ primary_color }}">🕐 Hours</h2>
-    <p class="text-gray-700">{{ hours }}</p>
+  <!-- Hours of Operation -->
+  <section class="max-w-3xl mx-auto px-6 py-16 text-center">
+    <h2 class="display text-2xl font-bold mb-3 brown-text">🕐 Hours of Operation</h2>
+    <div class="bg-white rounded-2xl shadow-md p-6 inline-block text-gray-700">{{ hours }}</div>
   </section>
   {% endif %}
 
-  <!-- Pay Now -->
-  <section class="max-w-5xl mx-auto px-6 py-16 text-center">
+  <!-- Reviews -->
+  <!-- Replace these placeholders with real customer reviews as you collect them. -->
+  <section class="bg-white">
+    <div class="max-w-5xl mx-auto px-6 py-20">
+      <h2 class="display text-3xl font-bold mb-10 text-center" style="color:{{ primary_color }}">What Our Neighbors Say</h2>
+      <div class="grid md:grid-cols-3 gap-6">
+        {% for quote, who in [
+          (business_name ~ " feels like family. We're customers for life.", "Local Regular"),
+          ("So glad we found this place — friendly faces and great service every time.", "Community Member"),
+          ("Exactly the kind of business our neighborhood needed.", "Nearby Resident"),
+        ] %}
+        <div class="bg-orange-50 rounded-2xl p-6 text-center">
+          <div class="text-amber-500 mb-3">⭐⭐⭐⭐⭐</div>
+          <p class="text-sm text-gray-700 leading-relaxed italic mb-3">"{{ quote }}"</p>
+          <p class="text-xs font-bold brown-text">— {{ who }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <!-- Pay / Book Now -->
+  <section class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="display text-3xl font-bold mb-3" style="color:{{ primary_color }}">Ready to Book?</h2>
     {% if payment_link_url %}
     <p class="text-gray-600 mb-8">Pay securely online to reserve your spot.</p>
     <a href="{{ payment_link_url }}" class="inline-block px-8 py-3 rounded-full text-white font-bold shadow-md" style="background-color:{{ secondary_color }}">Book Now →</a>
     {% else %}
-    <p class="text-gray-600 mb-8">Online booking is coming soon.</p>
+    <p class="text-gray-600 mb-8">Online payments coming soon — contact us to pay.</p>
     <span class="inline-block px-8 py-3 rounded-full bg-gray-200 text-gray-500 font-bold cursor-not-allowed">Coming Soon — Accept Payments</span>
     {% endif %}
   </section>
 
-  <!-- Contact -->
+  <!-- Contact + Map -->
   <section id="contact" style="background-color:{{ primary_color }}" class="text-white">
-    <div class="max-w-5xl mx-auto px-6 py-16 text-center">
-      <h2 class="display text-3xl font-bold mb-6">Come Say Hello</h2>
-      <div class="flex flex-col md:flex-row justify-center gap-6 text-lg font-semibold">
-        <p>📞 {{ phone }}</p>
-        <p>✉️ {{ email }}</p>
-        <p>📍 {{ address }}</p>
+    <div class="max-w-5xl mx-auto px-6 py-20 grid md:grid-cols-2 gap-10">
+      <div>
+        <h2 class="display text-3xl font-bold mb-6">Come Say Hello</h2>
+        <div class="space-y-3 text-lg font-semibold mb-6">
+          <p>📞 {{ phone }}</p>
+          <p>✉️ {{ email }}</p>
+          <p>📍 {{ address }}</p>
+        </div>
+        {% if instagram_url or facebook_url or tiktok_url %}
+        <div class="flex gap-5 text-sm font-bold">
+          {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="underline">Instagram</a>{% endif %}
+          {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" class="underline">Facebook</a>{% endif %}
+          {% if tiktok_url %}<a href="{{ tiktok_url }}" target="_blank" class="underline">TikTok</a>{% endif %}
+        </div>
+        {% endif %}
+        <div class="rounded-2xl overflow-hidden mt-6 border-2 border-white/30">
+          <iframe
+            src="https://www.google.com/maps?q={{ address|urlencode }}&output=embed"
+            width="100%" height="200" style="border:0;" loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade" title="Map to {{ business_name }}"></iframe>
+        </div>
       </div>
-      {% if instagram_url or facebook_url or tiktok_url %}
-      <div class="flex justify-center gap-5 mt-6 text-sm font-bold">
-        {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="underline">Instagram</a>{% endif %}
-        {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" class="underline">Facebook</a>{% endif %}
-        {% if tiktok_url %}<a href="{{ tiktok_url }}" target="_blank" class="underline">TikTok</a>{% endif %}
-      </div>
-      {% endif %}
+      <form method="post" action="{{ contact_endpoint }}" class="bg-white text-gray-800 rounded-2xl p-6 space-y-3 shadow-md">
+        <input type="hidden" name="order_id" value="{{ order_id or '' }}"/>
+        <input type="hidden" name="business_name" value="{{ business_name }}"/>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Name</label>
+          <input name="name" type="text" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Email</label>
+          <input name="email" type="email" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Message</label>
+          <textarea name="message" rows="4" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm"></textarea>
+        </div>
+        <button type="submit" class="w-full font-bold py-2.5 rounded-full text-sm text-white" style="background-color:{{ secondary_color }}">Send Message</button>
+      </form>
     </div>
   </section>
 

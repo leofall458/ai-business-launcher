@@ -395,6 +395,27 @@ def send_website_live_email(order: dict, order_id: str):
     html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
     _send(email, f"Your Business Website is Live! - {business_name}", body, html_body=html)
 
+def send_visitor_message_email(business_name: str, visitor_name: str, visitor_email: str, message: str, to_email: str):
+    """A lead from a deployed customer website's contact form (see the
+    website templates' contact sections) - sent both to our own support
+    inbox and, separately, straight to the business owner's email, since
+    they're the one who actually needs to follow up with the visitor."""
+    subject = f"New message from your website - {business_name}"
+    body = (
+        f"You have a new message from your {business_name} website:\n\n"
+        f"From: {visitor_name} <{visitor_email}>\n\n"
+        f"{message}\n\n"
+        f"Reply directly to {visitor_email} to respond."
+    )
+    html_inner = (
+        f"<p>You have a new message from your <strong>{business_name}</strong> website:</p>"
+        + _info_table([("From", f"{visitor_name} ({visitor_email})")])
+        + f"<p style=\"white-space:pre-wrap;\">{message}</p>"
+        f"<p>Reply directly to <a href=\"mailto:{visitor_email}\">{visitor_email}</a> to respond.</p>"
+    )
+    html = _wrap_html(html_inner)
+    _send(to_email, subject, body, html_body=html)
+
 def send_ssn_expired_email(order: dict, order_id: str):
     """Sent by app.main's ssn_expiry_scheduler the moment it deletes an
     SSN that's been sitting encrypted for more than 72 hours without EIN

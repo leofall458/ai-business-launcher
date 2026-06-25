@@ -26,36 +26,53 @@ _jinja_env = Environment(loader=FileSystemLoader(WEBSITES_DIR))
 CONTENT_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "tagline": {"type": "STRING", "description": "A punchy 5-10 word headline for the homepage hero section"},
-        "about_text": {"type": "STRING", "description": "2-4 sentence paragraph describing the business, written for customers (not investors)"},
+        "tagline": {"type": "STRING", "description": "A specific, compelling 5-10 word hero headline - never generic filler like 'Quality you can trust', it must reference something concrete about this actual business"},
+        "about_text": {"type": "STRING", "description": "2-4 sentence paragraph describing the business, written in a warm, human, first-person-plural voice ('we'), not corporate jargon"},
         "services": {
             "type": "ARRAY", "minItems": 3, "maxItems": 3,
             "items": {"type": "OBJECT", "properties": {
                 "name": {"type": "STRING", "description": "Short service name, 1-4 words"},
-                "description": {"type": "STRING", "description": "1-2 sentence description of this service"}
+                "description": {"type": "STRING", "description": "1-2 sentence description of this service, specific to this business, not generic"}
             }, "required": ["name", "description"]}
+        },
+        "cta_text": {"type": "STRING", "description": "A short call-to-action button label that fits this specific business, e.g. 'Book a Call', 'Order Now', 'Get a Quote', 'Reserve Your Spot'"},
+        "faq": {
+            "type": "ARRAY", "minItems": 4, "maxItems": 5,
+            "items": {"type": "OBJECT", "properties": {
+                "question": {"type": "STRING", "description": "A real question a prospective customer of this specific business would ask"},
+                "answer": {"type": "STRING", "description": "1-3 sentence answer"}
+            }, "required": ["question", "answer"]}
         },
         "primary_color": {"type": "STRING", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Hex color code, e.g. #1A4D8F"},
         "secondary_color": {"type": "STRING", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Hex color code, e.g. #F2A93B"},
     },
-    "required": ["tagline", "about_text", "services", "primary_color", "secondary_color"]
+    "required": ["tagline", "about_text", "services", "cta_text", "faq", "primary_color", "secondary_color"]
 }
 
 def generate_website_content(business_name: str, business_idea: str, target_customer: str) -> dict:
     """Calls Gemini for whatever copy/colors the customer didn't provide
-    themselves. Always asks for all five fields - the caller picks and
+    themselves. Always asks for every field - the caller picks and
     chooses which ones it actually needs per-field."""
     client = get_client()
 
     prompt = f"""
     You are a copywriter and designer creating website content for a new Virginia small business.
+    Write copy that sounds like a real small business owner talking to their community, not
+    generic marketing filler - be specific to this actual business, not interchangeable with any
+    other business in the same industry.
 
     Business Name: {business_name}
     Business Idea: {business_idea}
     Target Customer: {target_customer}
 
-    Write a tagline, an about paragraph, three services this business would plausibly offer,
-    and a primary/secondary hex color pair that fits the business's vibe.
+    Write:
+    - A compelling, specific hero headline (tagline)
+    - An authentic, human-sounding about paragraph
+    - Three unique services this business would plausibly offer, each with its own real description
+    - A call-to-action button label that fits this specific business (e.g. "Book a Call", "Order Now",
+      "Get a Quote", "Reserve Your Spot" - pick or invent whatever fits best)
+    - 4-5 FAQ questions a real prospective customer of this business would actually ask, with answers
+    - A primary/secondary hex color pair that fits the business's vibe
     """
 
     response = client.models.generate_content(
@@ -86,7 +103,8 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
                          template_name: str, payment_link_url: str = None,
                          hero_photo: str = None, gallery_photos: list = None,
                          hours: str = None, instagram_url: str = None,
-                         facebook_url: str = None, tiktok_url: str = None) -> str:
+                         facebook_url: str = None, tiktok_url: str = None,
+                         order_id: str = None) -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
     caller)."""
@@ -99,6 +117,8 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         tagline=content["tagline"],
         about_text=content["about_text"],
         services=content["services"],
+        cta_text=content.get("cta_text") or "Get in Touch",
+        faq=content.get("faq") or [],
         primary_color=content["primary_color"],
         secondary_color=content["secondary_color"],
         email=email,
@@ -111,6 +131,8 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         instagram_url=instagram_url,
         facebook_url=facebook_url,
         tiktok_url=tiktok_url,
+        order_id=order_id,
+        contact_endpoint="https://app.launchbridge.ai/contact",
     )
 
 def generate_website(
@@ -123,30 +145,27 @@ def generate_website(
     photos: list = None,
     instagram_url: str = None, facebook_url: str = None, tiktok_url: str = None,
     color_preference: str = "default", custom_primary_color: str = None,
-    payment_link_url: str = None,
+    payment_link_url: str = None, order_id: str = None,
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
     (tagline, description, services, colors) with Gemini-generated content,
-    field by field rather than all-or-nothing."""
+    field by field rather than all-or-nothing. cta_text and faq have no
+    customer-provided equivalent, so Gemini is always called for those."""
     if template_name not in TEMPLATE_FILES:
         template_name = "professional"
 
     services = services or [{}, {}, {}]
     tagline = (tagline or "").strip()
     description = (description or "").strip()
-    services_need_ai = any(not (s.get("name") or "").strip() or not (s.get("description") or "").strip() for s in services[:3])
-    need_ai = not tagline or not description or services_need_ai or color_preference == "brand_kit"
 
-    ai_content = None
-    if need_ai:
-        ai_content = generate_website_content(business_name, business_idea, target_customer)
+    ai_content = generate_website_content(business_name, business_idea, target_customer)
 
-    final_tagline = tagline or (ai_content["tagline"] if ai_content else "")
-    final_about = description or (ai_content["about_text"] if ai_content else "")
-    final_services = _merge_services(services, ai_content["services"] if ai_content else None)
+    final_tagline = tagline or ai_content["tagline"]
+    final_about = description or ai_content["about_text"]
+    final_services = _merge_services(services, ai_content["services"])
 
-    if color_preference == "brand_kit" and ai_content:
+    if color_preference == "brand_kit":
         primary_color, secondary_color = ai_content["primary_color"], ai_content["secondary_color"]
     elif color_preference == "custom" and custom_primary_color:
         _, default_secondary = TEMPLATE_DEFAULT_COLORS[template_name]
@@ -158,6 +177,8 @@ def generate_website(
         "tagline": final_tagline,
         "about_text": final_about,
         "services": final_services,
+        "cta_text": ai_content["cta_text"],
+        "faq": ai_content["faq"],
         "primary_color": primary_color,
         "secondary_color": secondary_color,
     }
@@ -173,6 +194,7 @@ def generate_website(
         instagram_url=(instagram_url or "").strip() or None,
         facebook_url=(facebook_url or "").strip() or None,
         tiktok_url=(tiktok_url or "").strip() or None,
+        order_id=order_id,
     )
 
     return {"html": html, "template": template_name, "content": content}
