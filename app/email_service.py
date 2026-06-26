@@ -307,9 +307,8 @@ def send_ein_issued_email(order: dict, order_id: str, ein: str):
         "- Hire employees\n"
         "- File taxes\n"
         "- Apply for business licenses\n\n"
-        "What happens next:\n"
-        "⏳ We're generating your business website\n"
-        "⏳ We're setting up your Stripe payment account\n\n"
+        "Your website is live and your Stripe account is ready.\n"
+        "Complete your Stripe account setup on your dashboard to start accepting payments.\n\n"
         "Track your order here:\n"
         f"{url}\n\n"
         f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
@@ -336,8 +335,8 @@ def send_ein_issued_email(order: dict, order_id: str, ein: str):
         "<li>Apply for business licenses</li>"
         "</ul>"
         "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
-        "<p>⏳ We're generating your business website<br>"
-        "⏳ We're setting up your Stripe payment account</p>"
+        "<p>Your website is live and your Stripe account is ready.<br>"
+        "Complete your Stripe account setup on your dashboard to start accepting payments.</p>"
         f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
     )
     html = _wrap_html(html_inner, cta_text="Track Your Order", cta_url=url)
@@ -363,6 +362,70 @@ def send_ein_filing_ready_email(order: dict, order_id: str, ein_filing_url: str)
     )
     html = _wrap_html(html_inner, cta_text="Apply for EIN Now", cta_url=ein_filing_url)
     _send(GMAIL_USER, f"🔐 Ready to file EIN - {business_name}", body, html_body=html)
+
+def send_early_assets_email(order: dict, order_id: str):
+    """Sent right after run_early_assets() finishes — brand kit, marketing
+    plan, LLC docs, website, and Stripe Connect account are all ready while
+    the LLC filing is still in progress. Replaces send_documents_ready_email
+    for orders going through the intake flow."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    business_name = order.get("business_name", "your business")
+    website_url = order.get("website_url", "")
+    connect_id = order.get("stripe_connect_account_id")
+    url = create_magic_link(email)
+
+    website_line = (
+        f"✅ Your website is live at {website_url}"
+        if website_url else
+        "⏳ Your website is being set up (see dashboard for status)"
+    )
+    stripe_line = (
+        "✅ Your Stripe account is ready — complete setup on your dashboard to start accepting payments"
+        if connect_id else
+        "⏳ Your Stripe account is being created"
+    )
+    body = (
+        f"Hi {name},\n\n"
+        "While your LLC is being filed, here's everything we've already built for you:\n\n"
+        "✅ Your brand kit is ready — view it on your dashboard\n"
+        f"{website_line}\n"
+        "✅ Your marketing plan is ready — view it on your dashboard\n"
+        "✅ Your LLC documents are ready — view them on your dashboard\n"
+        f"{stripe_line}\n\n"
+        "We are filing your LLC with Virginia SCC within 24 hours.\n"
+        "You will receive your certificate and EIN within 1-3 business days.\n\n"
+        "View your dashboard:\n"
+        f"{url}\n\n"
+        f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
+        "- Launch Bridge LLC"
+    )
+    website_html = (
+        f'<li>✅ Your website is live at <a href="{website_url}">{website_url}</a></li>'
+        if website_url else
+        "<li>⏳ Your website is being set up (see dashboard for status)</li>"
+    )
+    stripe_html = (
+        "<li>✅ Your Stripe account is ready — complete setup on your dashboard to start accepting payments</li>"
+        if connect_id else
+        "<li>⏳ Your Stripe account is being created</li>"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>While your LLC is being filed, here's everything we've already built for you:</p>"
+        "<ul style='margin:0 0 16px;padding-left:20px;line-height:2;'>"
+        "<li>✅ Your brand kit is ready — view it on your dashboard</li>"
+        f"{website_html}"
+        "<li>✅ Your marketing plan is ready — view it on your dashboard</li>"
+        "<li>✅ Your LLC documents are ready — view them on your dashboard</li>"
+        f"{stripe_html}"
+        "</ul>"
+        "<p><strong>We are filing your LLC with Virginia SCC within 24 hours.</strong><br>"
+        "You will receive your certificate and EIN within 1–3 business days.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
+    _send(email, f"Your Business Package is Ready — {business_name}", body, html_body=html)
 
 def send_website_live_email(order: dict, order_id: str):
     """Email 6 (Part 4): sent once run_asset_generation finishes the

@@ -45,7 +45,7 @@ from app.validators import (
 )
 from app.email_service import (
     send_order_received_email,
-    send_documents_ready_email,
+    send_early_assets_email,
     send_llc_filed_email,
     send_llc_approved_email,
     send_ein_issued_email,
@@ -699,7 +699,6 @@ def run_document_generation(order_id: str):
         update.get("marketing_result") or order.get("marketing_result"),
         update.get("documents.articles") or existing_documents.get("articles"),
     ])
-    newly_generated = have_all and not order.get("documents_generated")
     update["documents_generated"] = have_all
     if have_all:
         update["documents_generated_at"] = firestore.SERVER_TIMESTAMP
@@ -709,8 +708,93 @@ def run_document_generation(order_id: str):
     # field names containing dots) by .update().
     order_ref.update(update)
 
-    if newly_generated:
-        send_documents_ready_email(order, order_id)
+def run_early_assets(order_id: str):
+    """Triggered immediately after post-payment intake is submitted.
+    Generates all deliverables that don't require SCC approval or an EIN:
+    brand kit, marketing plan, LLC docs, business website, and Stripe Connect
+    account. Runs concurrently with run_name_check — both are idempotent, so
+    they can safely overlap without duplicating work."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+
+    # Brand kit, marketing plan, LLC docs — idempotent, skips already-done steps
+    run_document_generation(order_id)
+    order = order_ref.get().to_dict()
+
+    business_name = order.get("business_name", "")
+    business_idea = order.get("business_idea", "")
+    target_customer = order.get("target_customer", "")
+    principal_address = order.get("principal_address", "")
+    email = order.get("email", "")
+    phone = order.get("phone", "")
+    asset_error = None
+
+    connect_account_id = order.get("stripe_connect_account_id")
+    if not connect_account_id:
+        try:
+            account = create_connect_account(
+                email=email,
+                business_name=business_name,
+                multi_member=len(order.get("all_signatures", [])) > 1,
+            )
+            connect_account_id = account.id
+            order_ref.set({"stripe_connect_account_id": connect_account_id}, merge=True)
+        except Exception as e:
+            print(f"⚠️ Could not create Stripe Connect for order {order_id}: {e}")
+            asset_error = f"Could not set up your Stripe payment account: {e}"
+
+    website_url = order.get("website_url")
+    if not website_url:
+        try:
+            services = [
+                {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+                for i in (1, 2, 3)
+            ]
+            photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+            result = generate_website(
+                business_name, business_idea, target_customer, email, phone, principal_address,
+                template_name=order.get("website_template", "professional"),
+                tagline=order.get("website_tagline", ""),
+                description=order.get("website_description", ""),
+                services=services,
+                hours=order.get("business_hours", ""),
+                photos=photos,
+                instagram_url=order.get("instagram_url", ""),
+                facebook_url=order.get("facebook_url", ""),
+                tiktok_url=order.get("tiktok_url", ""),
+                color_preference=order.get("color_preference", "default"),
+                custom_primary_color=order.get("custom_primary_color", ""),
+                payment_link_url=None,  # Added after EIN + Stripe onboarding completes
+                order_id=order_id,
+            )
+            deployed = deploy_website(business_name, result["html"], order_id=order_id)
+            if deployed:
+                website_url = deployed["url"]
+                order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
+            else:
+                print(f"⚠️ Early website deploy returned no URL for order {order_id}")
+                asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
+        except Exception as e:
+            print(f"⚠️ Early website generation/deploy failed for order {order_id}: {e}")
+            asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed: {e}"
+
+    flag_update: dict = {
+        "early_assets_done": True,
+        "early_assets_done_at": firestore.SERVER_TIMESTAMP,
+        "asset_generation_error": asset_error if asset_error else firestore.DELETE_FIELD,
+    }
+    if website_url:
+        flag_update["website_url"] = website_url
+    order_ref.set(flag_update, merge=True)
+
+    order = {**order, "website_url": website_url, "stripe_connect_account_id": connect_account_id}
+    send_early_assets_email(order, order_id)
+    send_admin_sms(
+        f"🎨 Early assets done for {business_name}" +
+        (f" — site: {website_url}" if website_url else " — website failed, check logs")
+    )
 
 SCC_FILED_STATES = {
     "filing_submitted", "filing_confirmed", "awaiting_ein_filing",
@@ -1178,8 +1262,11 @@ def run_asset_generation(order_id: str):
             record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP)
             order["website_url"] = website_url
             order["stripe_connect_account_id"] = connect_account_id
-            send_website_live_email(order, order_id)
-            send_admin_sms(f"🌐 Site live! {business_name}")
+            if not order.get("early_assets_done"):
+                # Only send website-live email when we didn't already send the
+                # early-assets email (which already told the customer about the site).
+                send_website_live_email(order, order_id)
+                send_admin_sms(f"🌐 Site live! {business_name}")
             send_everything_complete_email(order, order_id)
             send_admin_sms(f"🎉 Done! {business_name} fully onboarded")
     except Exception as e:
@@ -1856,12 +1943,15 @@ async def dashboard_complete_intake(
     # Kick off the pipeline only once both intake and SSN (if needed) are done.
     if not updated_order.get("awaiting_ssn"):
         if updated_order.get("skip_llc_formation"):
-            background_tasks.add_task(run_document_generation, order_id)
+            background_tasks.add_task(run_early_assets, order_id)
             trigger_assets = advance_past_filing_confirmed(order_ref, updated_order)
             if trigger_assets:
                 background_tasks.add_task(run_asset_generation, order_id)
         else:
+            # run_name_check handles state advancement; run_early_assets generates
+            # all deliverables in parallel — both are idempotent so they can overlap.
             background_tasks.add_task(run_name_check, order_id)
+            background_tasks.add_task(run_early_assets, order_id)
 
     return RedirectResponse(url=f"/dashboard/orders/{order_id}?ga_event=intake_complete", status_code=303)
 
