@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 520" width="840" height="520">
+  <defs>
+    <style>
+      .label { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11px; fill: #9CA3AF; letter-spacing: 0.08em; text-transform: uppercase; }
+      .value { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; fill: #374151; font-weight: 600; }
+      .tagline-text { font-family: Georgia, 'Times New Roman', serif; font-size: 15px; fill: #4B5563; font-style: italic; }
+      .company { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 22px; fill: #1A3A5C; font-weight: 800; letter-spacing: -0.5px; }
+      .company-sub { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11px; fill: #6B7280; letter-spacing: 2px; text-transform: uppercase; }
+      .section-head { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 10px; fill: #9CA3AF; letter-spacing: 1.5px; text-transform: uppercase; }
+      .hex { font-family: 'Courier New', monospace; font-size: 11px; fill: #6B7280; }
+      .color-name { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11px; fill: #374151; font-weight: 600; }
+      .font-display { font-family: Georgia, serif; font-size: 17px; fill: #1A3A5C; }
+      .font-body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; fill: #374151; }
+    </style>
+  </defs>
+
+  <!-- Card background -->
+  <rect width="840" height="520" rx="16" fill="#FAFAF8"/>
+  <rect x="1" y="1" width="838" height="518" rx="15" fill="none" stroke="#E5E7EB" stroke-width="1.5"/>
+
+  <!-- Header band -->
+  <rect width="840" height="80" rx="16" fill="#1A3A5C"/>
+  <rect y="64" width="840" height="16" fill="#1A3A5C"/>
+
+  <!-- Header label -->
+  <text x="40" y="35" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="rgba(255,255,255,0.5)" letter-spacing="2" text-anchor="start" text-transform="uppercase">BRAND IDENTITY KIT</text>
+  <text x="800" y="35" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="rgba(255,255,255,0.4)" letter-spacing="1" text-anchor="end">Prepared by Launch Bridge LLC</text>
+  <text x="40" y="58" font-family="'Segoe UI', system-ui, sans-serif" font-size="14" fill="rgba(255,255,255,0.9)" font-weight="600">Blue Ridge Consulting LLC</text>
+
+  <!-- ── LOGO AREA ── -->
+  <!-- Mountain logo -->
+  <g transform="translate(40, 108)">
+    <!-- Mountain shape -->
+    <path d="M0 54 L18 20 L30 34 L46 8 L66 34 L80 20 L100 54 Z" fill="#1A3A5C" opacity="0.12"/>
+    <path d="M4 54 L18 24 L30 36 L46 12 L66 36 L80 24 L96 54 Z" fill="#1B4332" opacity="0.9"/>
+    <path d="M46 12 L56 28 L46 24 Z" fill="#C8973A" opacity="0.85"/>
+    <!-- Reflection line -->
+    <line x1="0" y1="56" x2="100" y2="56" stroke="#E5E7EB" stroke-width="1"/>
+    <!-- Company name -->
+    <text x="116" y="26" class="company">Blue Ridge</text>
+    <text x="116" y="48" class="company">Consulting LLC</text>
+    <text x="118" y="64" class="company-sub">Roanoke · Virginia</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="40" y1="188" x2="800" y2="188" stroke="#E5E7EB" stroke-width="1"/>
+
+  <!-- Tagline -->
+  <text x="40" y="210" class="section-head">Tagline</text>
+  <text x="40" y="234" class="tagline-text">"Strategy that moves mountains"</text>
+  <text x="40" y="252" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#9CA3AF">Primary · Professional · Virginia-rooted</text>
+
+  <!-- Divider -->
+  <line x1="40" y1="272" x2="800" y2="272" stroke="#E5E7EB" stroke-width="1"/>
+
+  <!-- ── COLOR PALETTE ── -->
+  <text x="40" y="295" class="section-head">Color Palette</text>
+
+  <!-- Swatch 1: Forest Green -->
+  <rect x="40" y="308" width="120" height="76" rx="10" fill="#1B4332"/>
+  <text x="100" y="400" class="color-name" text-anchor="middle">Forest Green</text>
+  <text x="100" y="415" class="hex" text-anchor="middle">#1B4332</text>
+  <text x="100" y="428" font-family="'Segoe UI', system-ui, sans-serif" font-size="9.5" fill="#9CA3AF" text-anchor="middle">Primary</text>
+
+  <!-- Swatch 2: Navy Blue -->
+  <rect x="176" y="308" width="120" height="76" rx="10" fill="#1A3A5C"/>
+  <text x="236" y="400" class="color-name" text-anchor="middle">Navy Blue</text>
+  <text x="236" y="415" class="hex" text-anchor="middle">#1A3A5C</text>
+  <text x="236" y="428" font-family="'Segoe UI', system-ui, sans-serif" font-size="9.5" fill="#9CA3AF" text-anchor="middle">Secondary</text>
+
+  <!-- Swatch 3: Warm Gold -->
+  <rect x="312" y="308" width="120" height="76" rx="10" fill="#C8973A"/>
+  <text x="372" y="400" class="color-name" text-anchor="middle">Warm Gold</text>
+  <text x="372" y="415" class="hex" text-anchor="middle">#C8973A</text>
+  <text x="372" y="428" font-family="'Segoe UI', system-ui, sans-serif" font-size="9.5" fill="#9CA3AF" text-anchor="middle">Accent</text>
+
+  <!-- Swatch 4: Stone Light -->
+  <rect x="448" y="308" width="120" height="76" rx="10" fill="#F8F6F1" stroke="#E5E7EB" stroke-width="1"/>
+  <text x="508" y="400" class="color-name" text-anchor="middle">Stone Light</text>
+  <text x="508" y="415" class="hex" text-anchor="middle">#F8F6F1</text>
+  <text x="508" y="428" font-family="'Segoe UI', system-ui, sans-serif" font-size="9.5" fill="#9CA3AF" text-anchor="middle">Background</text>
+
+  <!-- Swatch 5: Charcoal -->
+  <rect x="584" y="308" width="120" height="76" rx="10" fill="#2D3748"/>
+  <text x="644" y="400" class="color-name" text-anchor="middle">Charcoal</text>
+  <text x="644" y="415" class="hex" text-anchor="middle">#2D3748</text>
+  <text x="644" y="428" font-family="'Segoe UI', system-ui, sans-serif" font-size="9.5" fill="#9CA3AF" text-anchor="middle">Text / Dark</text>
+
+  <!-- Divider -->
+  <line x1="40" y1="444" x2="800" y2="444" stroke="#E5E7EB" stroke-width="1"/>
+
+  <!-- ── TYPOGRAPHY ── -->
+  <text x="40" y="464" class="section-head">Typography</text>
+
+  <!-- Heading font -->
+  <text x="40" y="490" font-family="Georgia, 'Times New Roman', serif" font-size="20" fill="#1A3A5C" font-weight="700">Playfair Display</text>
+  <text x="310" y="490" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#9CA3AF">— Headlines &amp; Display</text>
+
+  <!-- Body font -->
+  <text x="500" y="490" font-family="'Segoe UI', system-ui, sans-serif" font-size="16" fill="#374151" font-weight="600">Inter / System</text>
+  <text x="680" y="490" font-family="'Segoe UI', system-ui, sans-serif" font-size="11" fill="#9CA3AF">— Body Text</text>
+
+  <!-- Footer watermark -->
+  <text x="800" y="508" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" fill="#D1D5DB" text-anchor="end">Generated by Launch Bridge LLC · launchbridge.ai</text>
+</svg>

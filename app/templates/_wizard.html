@@ -1,0 +1,426 @@
+<style>
+    .step-card { transition: opacity 0.2s; }
+    .step-done { opacity: 0.6; }
+    .htmx-request .htmx-indicator { display: block !important; }
+    .htmx-indicator { display: none; }
+    @media (max-width: 640px) {
+        #pay-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+            padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
+            border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
+        #step2-spacer { height: 5rem; }
+    }
+</style>
+
+<!-- ── WIZARD ── -->
+<div id="form-top-errors"></div>
+
+<!-- STEP 1 -->
+<div id="step1" class="step-card mb-6">
+    <div class="flex items-center gap-3 mb-5">
+        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm shrink-0">1</div>
+        <div>
+            <p class="font-bold text-lg">What's your business idea?</p>
+            <p class="text-gray-400 text-xs">Describe it and pick a name — we'll check Virginia SCC instantly.</p>
+        </div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
+
+        <!-- Business idea -->
+        <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Business idea (2–3 sentences) *</label>
+            <textarea id="business_idea_step1" rows="3"
+                placeholder="e.g. A mobile dog grooming service for busy professionals in Northern Virginia — I come to them with a self-contained grooming van."
+                class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm resize-none"></textarea>
+        </div>
+
+        <!-- AI name ideas expander -->
+        <div>
+            <button type="button" onclick="toggleNameIdeas()"
+                class="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2 transition">
+                Not sure what to name it? Get AI suggestions →
+            </button>
+            <div id="name-ideas-section" class="hidden mt-3">
+                <form id="screen-name-form" hx-post="/screen-name" hx-target="#ai-name-ideas" hx-swap="innerHTML" hx-indicator="#screen-spinner">
+                    <input type="hidden" id="idea-for-screening" name="business_idea">
+                    <button type="submit" onclick="syncIdeaForScreening()"
+                        class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition">
+                        Generate Name Ideas
+                    </button>
+                </form>
+                <div id="screen-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">✨ AI is thinking...</div>
+                <div id="ai-name-ideas" class="mt-3 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></div>
+            </div>
+        </div>
+
+        <!-- Desired name -->
+        <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Desired business name (must end in LLC) *</label>
+            <input id="desired_name_step1" type="text" placeholder="e.g. Executive Paws LLC"
+                class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+            <span id="step1-name-error" class="text-red-400 text-xs mt-1 block hidden"></span>
+            <span id="error-desired_name" class="text-red-400 text-xs mt-1 block"></span>
+        </div>
+
+        <!-- Existing LLC option -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="skip_llc_step1" onchange="toggleExistingLLC()"
+                class="mt-1 w-4 h-4 accent-yellow-500 shrink-0"/>
+            <span class="text-xs text-gray-400 group-hover:text-gray-300 transition">I already have a Virginia LLC — skip formation</span>
+        </label>
+        <div id="existing-llc-section" class="hidden">
+            <label class="block text-xs text-gray-400 mb-1.5">Existing LLC name *</label>
+            <input id="existing_llc_step1" name="existing_llc_name" type="text" placeholder="e.g. Executive Paws LLC"
+                hx-post="/verify-existing-llc" hx-trigger="blur changed delay:500ms" hx-target="#existing-llc-verify" hx-swap="innerHTML" hx-indicator="#existing-llc-spinner"
+                class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-yellow-500 focus:outline-none text-sm"/>
+            <span id="error-existing_llc_name" class="text-red-400 text-xs mt-1 block"></span>
+            <div id="existing-llc-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">Checking Virginia SCC...</div>
+            <div id="existing-llc-verify" class="mt-2"></div>
+        </div>
+
+        <p id="step1-error" class="text-red-400 text-sm hidden"></p>
+
+        <!-- Name check result (appears after button click) -->
+        <div id="name-check-wrapper" class="hidden">
+            <div id="name-check-spinner" class="htmx-indicator text-xs text-gray-400">
+                <span class="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-1"></span>
+                Checking Virginia SCC availability...
+            </div>
+            <div id="name-check-inline"></div>
+        </div>
+
+        <!-- Hidden name check form (triggered programmatically) -->
+        <form id="name-check-form" class="hidden"
+            hx-post="/check-name" hx-target="#name-check-inline" hx-swap="innerHTML" hx-indicator="#name-check-spinner">
+            <input type="hidden" id="desired-name-for-check" name="desired_name">
+        </form>
+
+        <!-- CTA button -->
+        <button type="button" id="step1-btn" onclick="checkNameAndContinue()"
+            class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-4 rounded-xl text-base transition shadow-lg shadow-blue-900/30">
+            Check Name &amp; Continue →
+        </button>
+    </div>
+</div>
+
+<!-- STEP 2 (hidden until step 1 done) -->
+<div id="step2" class="hidden step-card mb-6">
+    <div class="flex items-center gap-3 mb-5">
+        <div class="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center font-bold text-sm shrink-0">2</div>
+        <div>
+            <p class="font-bold text-lg">Almost there</p>
+            <p class="text-gray-400 text-xs">One last step before we launch your business.</p>
+        </div>
+    </div>
+
+    <!-- Name check summary badge -->
+    <div id="step2-name-badge" class="mb-4"></div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+
+        <form id="payment-form"
+            hx-post="/launch"
+            hx-target="#result"
+            hx-swap="innerHTML"
+            hx-indicator="#spinner"
+            class="space-y-4">
+
+            <!-- Carry over Step 1 data as hidden fields -->
+            <input type="hidden" id="hidden_business_idea" name="business_idea">
+            <input type="hidden" id="hidden_desired_name" name="desired_name">
+            <input type="hidden" id="hidden_existing_llc_name" name="existing_llc_name">
+            <input type="hidden" id="hidden_skip_llc" name="skip_llc_formation">
+            <input type="hidden" name="landing_page" value="{{ landing_page | default('home') }}">
+
+            <!-- Full name -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">First Name *</label>
+                    <input name="first_name" type="text" placeholder="Jane" required autocomplete="given-name"
+                        class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                    <span id="error-first_name" class="text-red-400 text-xs mt-1 block"></span>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Last Name *</label>
+                    <input name="last_name" type="text" placeholder="Smith" required autocomplete="family-name"
+                        class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                    <span id="error-last_name" class="text-red-400 text-xs mt-1 block"></span>
+                </div>
+            </div>
+
+            <!-- Email -->
+            <div>
+                <label class="block text-xs text-gray-400 mb-1.5">Email Address *</label>
+                <input name="email" type="email" placeholder="jane@example.com" required autocomplete="email"
+                    inputmode="email"
+                    onblur="captureLeadEmail()"
+                    class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                <span id="error-email" class="text-red-400 text-xs mt-1 block"></span>
+            </div>
+
+            <!-- Phone -->
+            <div>
+                <label class="block text-xs text-gray-400 mb-1.5">Phone Number *</label>
+                <input name="phone" type="tel" placeholder="(703) 555-0100" required autocomplete="tel"
+                    inputmode="tel"
+                    class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
+                <span id="error-phone" class="text-red-400 text-xs mt-1 block"></span>
+            </div>
+
+            <!-- Terms -->
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="agree_terms" required
+                    class="mt-1 w-4 h-4 accent-green-500 shrink-0"/>
+                <span class="text-xs text-gray-400 leading-relaxed">
+                    I agree to the <a href="/terms" target="_blank" class="text-blue-400 underline">Terms of Service</a>
+                    and <a href="/privacy" target="_blank" class="text-blue-400 underline">Privacy Policy</a>.
+                    I authorize Launch Bridge LLC to file my Virginia LLC and apply for my EIN on my behalf.
+                </span>
+            </label>
+
+        </form>
+
+        <!-- Trust badges -->
+        <div class="mt-5 pt-4 border-t border-gray-800 space-y-3">
+            <div class="grid grid-cols-3 gap-2 text-xs text-gray-400">
+                <div class="bg-gray-800/50 rounded-lg p-2 text-center">🔒 256-bit TLS</div>
+                <div class="bg-gray-800/50 rounded-lg p-2 text-center">☁️ Google Cloud</div>
+                <div class="bg-gray-800/50 rounded-lg p-2 text-center">🏛️ VA Registered</div>
+            </div>
+            <p class="text-xs text-gray-600">Launch Bridge LLC is a document preparation service, not a law firm.</p>
+        </div>
+
+    </div>
+
+    <!-- Mobile spacer to prevent content hiding under sticky button -->
+    <div id="step2-spacer"></div>
+
+</div>
+
+<!-- Sticky pay button (shown when step 2 is visible) -->
+<div id="pay-sticky" class="hidden">
+    <button type="submit" form="payment-form"
+        class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 rounded-xl text-lg shadow-2xl shadow-green-900/40 transition">
+        💳 Pay $350 &amp; Launch My LLC →
+    </button>
+    <p class="text-center text-xs text-gray-500 mt-1.5">$350 flat · Secure payment via Stripe · Apple Pay &amp; Google Pay accepted</p>
+</div>
+
+<div id="spinner" class="htmx-indicator text-center py-8 text-gray-400">
+    <p class="text-base">🔒 Redirecting to secure payment...</p>
+</div>
+
+<div id="result" class="mb-8"></div>
+
+<!-- Confirmation Modal (for skip_llc confirmation) -->
+<div id="confirm-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-gray-900 border border-yellow-700 rounded-xl p-6 max-w-md w-full">
+        <div id="confirm-modal-body" class="text-sm text-gray-200 space-y-3 mb-5 whitespace-pre-line"></div>
+        <div class="flex gap-3">
+            <button type="button" onclick="confirmModalNo()"
+                class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-lg transition">
+                No, go back
+            </button>
+            <button type="button" onclick="confirmModalYes()"
+                class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 rounded-lg transition">
+                Yes, continue
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+
+    // ── GA4 + lead capture helpers ────────────────────────────────────────
+
+    function trackEvent(name, params) {
+        try { if (typeof gtag !== 'undefined') gtag('event', name, params || {}); } catch(e) {}
+    }
+
+    async function captureLead(data) {
+        try {
+            const leadId = localStorage.getItem('lb_lead_id');
+            if (leadId) data.lead_id = leadId;
+            const res = await fetch('/api/capture-lead', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await res.json();
+            if (json.lead_id) localStorage.setItem('lb_lead_id', json.lead_id);
+        } catch(e) {}
+    }
+
+    function captureLeadEmail() {
+        const email = document.querySelector('[name="email"]')?.value?.trim();
+        if (!email || !email.includes('@')) return;
+        captureLead({
+            email: email,
+            first_name: document.querySelector('[name="first_name"]')?.value?.trim() || '',
+            last_name: document.querySelector('[name="last_name"]')?.value?.trim() || '',
+            phone: document.querySelector('[name="phone"]')?.value?.trim() || '',
+            step: 'step2'
+        });
+    }
+
+    // ── Step 1 → Step 2 transition ──────────────────────────────────────
+
+    function checkNameAndContinue() {
+        const idea = document.getElementById('business_idea_step1').value.trim();
+        const isSkipLLC = document.getElementById('skip_llc_step1').checked;
+        const nameInput = isSkipLLC
+            ? document.getElementById('existing_llc_step1')
+            : document.getElementById('desired_name_step1');
+        const name = nameInput.value.trim();
+
+        const errEl = document.getElementById('step1-error');
+        const nameErrEl = document.getElementById('step1-name-error');
+        errEl.classList.add('hidden');
+        nameErrEl.classList.add('hidden');
+
+        if (!idea) {
+            errEl.textContent = 'Please describe your business idea.';
+            errEl.classList.remove('hidden');
+            document.getElementById('business_idea_step1').focus();
+            return;
+        }
+        if (!name) {
+            nameErrEl.textContent = 'Please enter a business name.';
+            nameErrEl.classList.remove('hidden');
+            nameInput.focus();
+            return;
+        }
+        if (!isSkipLLC && !/LLC\.?$/i.test(name)) {
+            nameErrEl.textContent = 'Business name must end with "LLC".';
+            nameErrEl.classList.remove('hidden');
+            nameInput.focus();
+            return;
+        }
+
+        // Copy step 1 data into hidden fields for the payment form
+        document.getElementById('hidden_business_idea').value = idea;
+        if (isSkipLLC) {
+            document.getElementById('hidden_existing_llc_name').value = name;
+            document.getElementById('hidden_skip_llc').value = 'on';
+            document.getElementById('hidden_desired_name').value = '';
+        } else {
+            document.getElementById('hidden_desired_name').value = name;
+            document.getElementById('hidden_existing_llc_name').value = '';
+            document.getElementById('hidden_skip_llc').value = '';
+        }
+
+        // GA4 event + lead capture
+        const landingPage = document.querySelector('[name="landing_page"]')?.value || 'home';
+        trackEvent('wizard_step1_complete', {landing_page: landingPage});
+        captureLead({business_idea: idea, desired_name: name, landing_page: landingPage, step: 'step1'});
+
+        // Show name check
+        document.getElementById('name-check-wrapper').classList.remove('hidden');
+        document.getElementById('desired-name-for-check').value = name;
+        htmx.trigger('#name-check-form', 'submit');
+
+        // Collapse step 1 visually
+        document.getElementById('step1').classList.add('step-done');
+
+        // Show step 2
+        const step2 = document.getElementById('step2');
+        step2.classList.remove('hidden');
+
+        // Show sticky pay button
+        document.getElementById('pay-sticky').classList.remove('hidden');
+
+        // Set name badge in step 2
+        document.getElementById('step2-name-badge').innerHTML =
+            `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
+                <span class="text-green-400">✓</span>
+                <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
+                <span class="text-gray-500 text-xs ml-auto">Name check in progress...</span>
+            </div>`;
+
+        // Wait for name check then update badge
+        document.getElementById('name-check-form').addEventListener('htmx:afterRequest', function updateBadge() {
+            const result = document.getElementById('name-check-inline');
+            const isAvailable = result.querySelector('.bg-green-900') !== null;
+            const isTaken = result.querySelector('.bg-red-900') !== null;
+            const badge = document.getElementById('step2-name-badge');
+            const status = isAvailable
+                ? '<span class="text-green-400">✅ Available on Virginia SCC</span>'
+                : isTaken
+                    ? '<span class="text-yellow-400">⚠️ May be taken — we\'ll verify before filing</span>'
+                    : '<span class="text-gray-400">SCC check complete</span>';
+            badge.innerHTML =
+                `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm flex-wrap gap-y-1">
+                    <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
+                    <span class="ml-auto">${status}</span>
+                </div>`;
+            this.removeEventListener('htmx:afterRequest', updateBadge);
+        });
+
+        step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Name ideas ───────────────────────────────────────────────────────
+
+    function toggleNameIdeas() {
+        const sec = document.getElementById('name-ideas-section');
+        sec.classList.toggle('hidden');
+    }
+
+    function syncIdeaForScreening() {
+        document.getElementById('idea-for-screening').value =
+            document.getElementById('business_idea_step1').value;
+    }
+
+    // ── Existing LLC toggle ──────────────────────────────────────────────
+
+    function toggleExistingLLC() {
+        const skip = document.getElementById('skip_llc_step1').checked;
+        document.getElementById('existing-llc-section').classList.toggle('hidden', !skip);
+        document.getElementById('desired_name_step1').closest('div').classList.toggle('hidden', skip);
+    }
+
+    // ── GA4 checkout_start on form submit ────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('payment-form');
+        if (!form) return;
+
+        form.addEventListener('htmx:beforeRequest', function() {
+            trackEvent('begin_checkout', {currency: 'USD', value: 350});
+        });
+
+        // ── Confirmation modal for skip_llc ──────────────────────────────
+        form.addEventListener('htmx:confirm', function(evt) {
+            if (evt.detail.elt !== evt.currentTarget) return;
+            const skipLLC = document.getElementById('hidden_skip_llc').value === 'on';
+            if (!skipLLC) return;
+            evt.preventDefault();
+            const msg =
+                "⚠️ You indicated you already have a Virginia LLC.\n" +
+                "- Your existing LLC will NOT be re-filed with the SCC\n" +
+                "- You'll still receive: brand kit, website, Stripe setup, marketing plan\n" +
+                "- The $350 fee still applies\n\n" +
+                "Are you sure you want to skip LLC formation?";
+            document.getElementById('confirm-modal-body').textContent = msg;
+            document.getElementById('confirm-modal').classList.remove('hidden');
+            pendingIssueRequest = evt.detail.issueRequest;
+        });
+    });
+
+    let pendingIssueRequest = null;
+
+    function confirmModalYes() {
+        document.getElementById('confirm-modal').classList.add('hidden');
+        if (pendingIssueRequest) pendingIssueRequest(true);
+        pendingIssueRequest = null;
+    }
+    function confirmModalNo() {
+        document.getElementById('confirm-modal').classList.add('hidden');
+        pendingIssueRequest = null;
+    }
+
+</script>

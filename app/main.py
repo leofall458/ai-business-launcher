@@ -7,11 +7,11 @@ import datetime
 from urllib.parse import quote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
@@ -39,7 +39,10 @@ from app.ssn_vault import (
     encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours, is_ssn_stored,
 )
 from app.log_scrub import scrub_ssn
-from app.validators import validate_intake_form, validate_ssn, ALL_VALIDATED_FIELDS
+from app.validators import (
+    validate_intake_form, validate_pre_payment_form, validate_post_payment_intake,
+    validate_ssn, ALL_VALIDATED_FIELDS, PRE_PAYMENT_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
+)
 from app.email_service import (
     send_order_received_email,
     send_documents_ready_email,
@@ -52,6 +55,8 @@ from app.email_service import (
     send_ssn_expired_email,
     send_magic_link_email,
     send_visitor_message_email,
+    send_abandoned_cart_email_1h,
+    send_abandoned_cart_email_24h,
 )
 from app.document_store import upload_document, generate_signed_url
 from app.sms import send_admin_sms
@@ -65,10 +70,13 @@ app = FastAPI(title="Launch Bridge LLC")
 app.add_middleware(SecurityHeadersMiddleware)
 
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["google_analytics_id"] = GOOGLE_ANALYTICS_ID
+templates.env.globals["sample_website_url"] = SAMPLE_WEBSITE_URL
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
 ORDERS = db.collection(ORDERS_COLLECTION)
+LEADS = db.collection("leads")
 DOCUMENT_ACCESS_LOG = db.collection("document_access_log")
 
 @app.on_event("startup")
@@ -84,6 +92,7 @@ async def on_startup():
     # Pure Firestore/KMS work, no Playwright/CDP involved - safe to run
     # everywhere (Cloud Run included), unlike the scheduler above.
     asyncio.create_task(ssn_expiry_scheduler())
+    asyncio.create_task(abandoned_cart_scheduler())
 
 # Canonical order of the order state machine. An order's "state" field is
 # always one of these. Progression is mostly linear, but filing_confirmed
@@ -364,6 +373,26 @@ async def home(request: Request):
         "cancelled": request.query_params.get("cancelled") == "1"
     })
 
+@app.get("/examples", response_class=HTMLResponse)
+async def examples_page(request: Request):
+    return templates.TemplateResponse(request, "examples.html", {})
+
+@app.get("/examples/demo-site")
+async def examples_demo_site():
+    return FileResponse("app/static/examples/demo_site.html", media_type="text/html")
+
+@app.get("/virginia-llc/contractors", response_class=HTMLResponse)
+async def landing_contractors(request: Request):
+    return templates.TemplateResponse(request, "virginia_llc_contractors.html", {})
+
+@app.get("/virginia-llc/done-for-you", response_class=HTMLResponse)
+async def landing_done_for_you(request: Request):
+    return templates.TemplateResponse(request, "virginia_llc_done_for_you.html", {})
+
+@app.get("/virginia-llc/pricing", response_class=HTMLResponse)
+async def landing_pricing(request: Request):
+    return templates.TemplateResponse(request, "virginia_llc_pricing.html", {})
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy(request: Request):
     return templates.TemplateResponse(request, "privacy.html")
@@ -371,6 +400,51 @@ async def privacy(request: Request):
 @app.get("/terms", response_class=HTMLResponse)
 async def terms(request: Request):
     return templates.TemplateResponse(request, "terms.html")
+
+@app.post("/api/capture-lead")
+async def api_capture_lead(request: Request):
+    """Stores Step 1 / Step 2 wizard data for abandoned cart recovery.
+    No auth required — anyone can create/update a lead. Inputs are
+    length-capped and email-validated before writing to Firestore."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False}
+    step = data.get("step", "step1")
+    lead_id = (data.get("lead_id") or "").strip()
+    update: dict = {}
+    if step == "step1":
+        update = {
+            "business_idea": (data.get("business_idea") or "")[:500],
+            "desired_name": (data.get("desired_name") or "")[:100],
+            "landing_page": (data.get("landing_page") or "home")[:50],
+            "step1_at": firestore.SERVER_TIMESTAMP,
+            "converted": False,
+        }
+    elif step == "step2":
+        email = (data.get("email") or "").strip().lower()
+        if not email or "@" not in email:
+            return {"ok": False}
+        update = {
+            "email": email,
+            "first_name": (data.get("first_name") or "")[:50],
+            "last_name": (data.get("last_name") or "")[:50],
+            "phone": (data.get("phone") or "")[:20],
+            "step2_at": firestore.SERVER_TIMESTAMP,
+        }
+    if not update:
+        return {"ok": False}
+    if lead_id:
+        ref = LEADS.document(lead_id)
+        ref.set(update, merge=True)
+    else:
+        ref = LEADS.document()
+        if "converted" not in update:
+            update["converted"] = False
+        ref.set(update)
+        lead_id = ref.id
+    return {"ok": True, "lead_id": lead_id}
+
 
 @app.post("/screen-name", response_class=HTMLResponse)
 async def screen_name(request: Request):
@@ -425,16 +499,17 @@ async def verify_existing_llc(request: Request):
     })
 
 def parse_intake_form(form: dict) -> dict:
-    """Pulls every derived field the agents need out of the raw intake
-    form dict. Used both right after submission (to size the Checkout
-    description) and again whenever a background step re-reads the same
-    fields back out of the Firestore order document."""
+    """Pulls derived fields out of the raw intake form dict. Handles both the
+    new minimal pre-payment form (no address/sig yet) and old full-form
+    submissions — missing address/sig fields default to empty strings."""
     first_name = form.get("first_name", "")
     middle_name = form.get("middle_name", "")
     last_name = form.get("last_name", "")
-    sig_first = form.get("sig_first", "")
-    sig_middle = form.get("sig_middle", "")
-    sig_last = form.get("sig_last", "")
+    # In the new wizard, sigs are not collected pre-payment — default to the
+    # owner's own name (single-member LLC), confirmed/changed in the dashboard.
+    sig_first = form.get("sig_first", first_name)
+    sig_middle = form.get("sig_middle", middle_name)
+    sig_last = form.get("sig_last", last_name)
     address = form.get("address", "")
     city = form.get("city", "")
     zipcode = form.get("zipcode", "")
@@ -444,7 +519,7 @@ def parse_intake_form(form: dict) -> dict:
 
     full_name = f"{first_name} {middle_name} {last_name}".replace("  ", " ").strip()
     primary_sig = f"{sig_first} {sig_middle} {sig_last}".replace("  ", " ").strip()
-    principal_address = f"{address}, {city}, VA {zipcode}"
+    principal_address = f"{address}, {city}, VA {zipcode}" if address else ""
 
     additional_members = []
     i = 2
@@ -469,6 +544,38 @@ def parse_intake_form(form: dict) -> dict:
         "principal_address": principal_address,
         "all_signatures": all_signatures,
         "business_name": business_name,
+    }
+
+
+def parse_post_payment_intake(form: dict) -> dict:
+    """Derives the same structural fields as parse_intake_form but only from
+    the post-payment dashboard intake fields (address, sig, members)."""
+    sig_first = form.get("sig_first", "")
+    sig_middle = form.get("sig_middle", "")
+    sig_last = form.get("sig_last", "")
+    address = form.get("address", "")
+    city = form.get("city", "")
+    zipcode = form.get("zipcode", "")
+
+    primary_sig = f"{sig_first} {sig_middle} {sig_last}".replace("  ", " ").strip()
+    principal_address = f"{address}, {city}, VA {zipcode}"
+
+    additional_members = []
+    i = 2
+    while True:
+        first = form.get(f"extra_sig_first_{i}")
+        if not first:
+            break
+        middle = form.get(f"extra_sig_middle_{i}", "")
+        last = form.get(f"extra_sig_last_{i}", "")
+        additional_members.append(f"{first} {middle} {last}".replace("  ", " ").strip())
+        i += 1
+
+    all_signatures = [primary_sig] + additional_members
+    return {
+        "primary_sig": primary_sig,
+        "principal_address": principal_address,
+        "all_signatures": all_signatures,
     }
 
 def run_name_check(order_id: str):
@@ -521,7 +628,10 @@ def run_document_generation(order_id: str):
 
     business_name = order.get("business_name", "")
     full_name = order.get("full_name", "")
-    business_purpose = order.get("business_purpose", "")
+    # business_purpose may not exist on new orders that only filled 5 fields
+    # pre-payment - fall back to business_idea (same intent, slightly different
+    # phrasing) so the LLC PDF and agents have something useful to work with.
+    business_purpose = order.get("business_purpose") or order.get("business_idea", "")
     principal_address = order.get("principal_address", "")
     primary_sig = order.get("primary_sig", "")
     business_idea = order.get("business_idea", "")
@@ -565,7 +675,9 @@ def run_document_generation(order_id: str):
             print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
             errors["marketing_result"] = f"Marketing plan: {e}"
 
-    if not existing_documents.get("articles"):
+    # LLC PDF requires a real address and signature — skip until the customer
+    # completes the post-payment intake form in the dashboard.
+    if not existing_documents.get("articles") and not order.get("awaiting_intake"):
         try:
             pdf_bytes = generate_llc_pdf(business_name, full_name, business_purpose, full_name, principal_address, primary_sig)
             object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
@@ -917,6 +1029,45 @@ async def ssn_expiry_scheduler():
             print(f"⚠️ SSN expiry sweep tick failed: {e}")
         await asyncio.sleep(3600)
 
+async def abandoned_cart_scheduler():
+    """Runs every 30 minutes. Sends a recovery email to leads that captured
+    an email address but never converted to a paid order. Two touchpoints:
+    1-hour and 24-hour after step1_at. Marks converted=True when a paid
+    order exists for that email so we never send to a paying customer."""
+    await asyncio.sleep(60)  # brief startup delay
+    while True:
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            one_hour_ago = now - datetime.timedelta(hours=1)
+            twenty_four_hours_ago = now - datetime.timedelta(hours=24)
+            for doc in LEADS.where("converted", "==", False).stream():
+                lead = doc.to_dict()
+                lead_id = doc.id
+                email = lead.get("email", "").strip()
+                if not email:
+                    continue
+                # Detect conversion: any non-draft order for this email
+                paid = next(
+                    (d for d in ORDERS.where("email", "==", email).limit(5).stream()
+                     if d.to_dict().get("state", "draft") != "draft"),
+                    None,
+                )
+                if paid:
+                    LEADS.document(lead_id).set({"converted": True}, merge=True)
+                    continue
+                step1_at = lead.get("step1_at")
+                if not step1_at:
+                    continue
+                if not lead.get("recovery_1h_sent") and step1_at <= one_hour_ago:
+                    send_abandoned_cart_email_1h(lead)
+                    LEADS.document(lead_id).set({"recovery_1h_sent": True}, merge=True)
+                if not lead.get("recovery_24h_sent") and step1_at <= twenty_four_hours_ago:
+                    send_abandoned_cart_email_24h(lead)
+                    LEADS.document(lead_id).set({"recovery_24h_sent": True}, merge=True)
+        except Exception as e:
+            print(f"⚠️ abandoned_cart_scheduler error: {e}")
+        await asyncio.sleep(1800)
+
 def run_asset_generation(order_id: str):
     """Triggered once the admin records the real EIN (or immediately for
     skip_ein orders). Documents (brand kit, marketing plan, signed LLC PDF)
@@ -1024,7 +1175,7 @@ def run_asset_generation(order_id: str):
         # Stripe or website failure must never be masked by a state that
         # tells the customer everything is ready.
         if website_url:
-            record_state(order_ref, "complete")
+            record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP)
             order["website_url"] = website_url
             order["stripe_connect_account_id"] = connect_account_id
             send_website_live_email(order, order_id)
@@ -1110,12 +1261,12 @@ async def launch(request: Request):
     form = {k: v for k, v in form_raw.items() if not (k.startswith("photo_") and hasattr(v, "filename"))}
     form.setdefault("registered_agent_choice", "launchbridge")
 
-    errors = validate_intake_form(form)
+    errors = validate_pre_payment_form(form)
     errors.update(photo_errors)
     if errors:
         return templates.TemplateResponse(request, "form_errors.html", {
             "errors": errors,
-            "all_fields": ALL_VALIDATED_FIELDS,
+            "all_fields": PRE_PAYMENT_VALIDATED_FIELDS,
         })
 
     parsed = parse_intake_form(form)
@@ -1126,7 +1277,10 @@ async def launch(request: Request):
     # data is never lost even if checkout-session creation fails or their
     # browser closes before the redirect, only the (re-creatable) Stripe
     # session would be missing, not their submitted information.
-    record_state(order_ref, "draft", **form, **parsed, **photo_data, created_at=firestore.SERVER_TIMESTAMP)
+    # awaiting_intake: address/DOB/sig collected post-payment in dashboard.
+    record_state(order_ref, "draft", **form, **parsed, **photo_data,
+                 created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
+                 awaiting_intake=True)
 
     base_url = str(request.base_url)
     try:
@@ -1209,25 +1363,30 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     send_order_received_email(order, order_id)
     send_admin_sms(f"🚀 New order! {order.get('business_name', '')} - {order.get('full_name', '')} paid $350")
 
+    # awaiting_intake orders collected only 5 fields pre-payment. The rest
+    # (address, DOB, sig) is gathered in the dashboard before the pipeline
+    # can advance. Name check only needs business_name so it runs right
+    # away regardless; document generation waits (see run_document_generation).
+    awaiting_intake = bool(order.get("awaiting_intake"))
+
     if needs_ssn(order):
         record_state(order_ref, "paid", awaiting_ssn=True)
+        if not awaiting_intake:
+            # Old full-intake flow: kick off name check immediately.
+            background_tasks.add_task(run_name_check, order_id)
+        # New wizard flow: name check waits for complete-intake submission
+        # so we have a consistent pipeline trigger point.
         return True
 
     if order.get("skip_llc_formation"):
-        # Already verified to exist on SCC at intake time (see
-        # /verify-existing-llc) - nothing left to file or check the
-        # name of, so jump straight past filing_confirmed.
-        # advance_past_filing_confirmed (below) does the actual state
-        # transition (to filing_confirmed, or straight to ein_issued for
-        # skip_ein too) - run_document_generation doesn't read order.state
-        # so it's safe to fire before that lands.
         background_tasks.add_task(run_document_generation, order_id)
         trigger_assets = advance_past_filing_confirmed(order_ref, order)
         if trigger_assets:
             background_tasks.add_task(run_asset_generation, order_id)
     else:
         record_state(order_ref, "paid")
-        background_tasks.add_task(run_name_check, order_id)
+        if not awaiting_intake:
+            background_tasks.add_task(run_name_check, order_id)
 
     return True
 
@@ -1236,13 +1395,20 @@ def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
     that was waiting on an SSN - clears awaiting_ssn and kicks off the
     same pipeline process_paid_order would have started immediately had
     the SSN not been needed. ssn_collected_at is set by encrypt_ssn
-    itself, not here."""
+    itself, not here.
+
+    For new wizard orders (awaiting_intake=True), the post-payment intake
+    (address, DOB, sig) hasn't been collected yet - the pipeline stays
+    paused until complete-intake clears that flag."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
 
     order_ref.set({"awaiting_ssn": False}, merge=True)
+
+    if order.get("awaiting_intake"):
+        return
 
     if order.get("skip_llc_formation"):
         background_tasks.add_task(run_document_generation, order_id)
@@ -1306,6 +1472,8 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
     # above.
     return templates.TemplateResponse(request, "success_interstitial.html", {
         "email": order.get("email", ""),
+        "order_id": resolved_order_id,
+        "business_name": order.get("business_name", ""),
     })
 
 @app.post("/webhook")
@@ -1538,11 +1706,13 @@ async def dashboard_orders(request: Request):
         "orders": [{"order_id": doc.id, "business_name": doc.to_dict().get("business_name")} for doc in orders],
     })
 
-def _dashboard_order_context(request: Request, order_ref, order: dict, ssn_error: str = None) -> dict:
-    """Shared between the order page and the SSN-submit route (which
-    re-renders the same page with an error instead of redirecting, so the
-    customer doesn't lose their place) - keeps both in sync rather than
-    risking the two contexts drifting apart."""
+def _dashboard_order_context(
+    request: Request, order_ref, order: dict,
+    ssn_error: str = None,
+    intake_errors: dict = None,
+    intake_form_data: dict = None,
+) -> dict:
+    """Shared between the order page, SSN-submit, and complete-intake routes."""
     order_id = order_ref.id
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
     ssn_expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
@@ -1555,9 +1725,13 @@ def _dashboard_order_context(request: Request, order_ref, order: dict, ssn_error
         "ein": order.get("ein"),
         "website_url": order.get("website_url"),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
-        "needs_ssn_entry": bool(order.get("awaiting_ssn")) or ssn_expired,
+        "awaiting_intake": bool(order.get("awaiting_intake")),
+        "google_places_api_key": GOOGLE_PLACES_API_KEY,
+        "needs_ssn_entry": (bool(order.get("awaiting_ssn")) or ssn_expired) and not order.get("awaiting_intake"),
         "ssn_expired": ssn_expired,
         "ssn_error": ssn_error,
+        "intake_errors": intake_errors or {},
+        "intake_form_data": intake_form_data or {},
         "csrf_token": make_csrf_token(session_id),
         "document_labels": DOCUMENT_LABELS,
         "available_documents": {
@@ -1602,6 +1776,95 @@ async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTas
         start_pipeline_after_ssn(order_id, background_tasks)
 
     return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
+
+_POST_PAYMENT_INTAKE_SIMPLE_FIELDS = [
+    "dob", "address", "city", "zipcode", "county",
+    "business_purpose", "target_customer",
+    "registered_agent_choice",
+    "skip_ein", "existing_ein",
+    "sig_first", "sig_middle", "sig_last",
+    "website_template", "website_tagline", "website_description",
+    "service_1_name", "service_1_desc", "service_2_name", "service_2_desc",
+    "service_3_name", "service_3_desc",
+    "business_hours", "instagram_url", "facebook_url", "tiktok_url",
+    "color_preference", "custom_primary_color",
+    "industry_code", "duration",
+]
+
+@app.post("/dashboard/orders/{order_id}/complete-intake", response_class=HTMLResponse)
+async def dashboard_complete_intake(
+    request: Request, background_tasks: BackgroundTasks,
+    owned: tuple = Depends(get_owned_order),
+):
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    if not order.get("awaiting_intake"):
+        return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
+
+    form_raw = await request.form()
+
+    photo_errors = {}
+    photo_data = {}
+    for i in (1, 2, 3):
+        upload = form_raw.get(f"photo_{i}")
+        if upload is not None and getattr(upload, "filename", ""):
+            raw = await upload.read()
+            if len(raw) > MAX_UPLOAD_BYTES:
+                photo_errors[f"photo_{i}"] = f"Photo {i} is over 5MB - please upload a smaller file."
+            else:
+                try:
+                    photo_data[f"photo_{i}_data"] = process_photo(raw)
+                except Exception:
+                    photo_errors[f"photo_{i}"] = f"Could not process photo {i} - try a different file."
+
+    form = {k: v for k, v in form_raw.items() if not (k.startswith("photo_") and hasattr(v, "filename"))}
+
+    if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+
+    errors = validate_post_payment_intake(form)
+    errors.update(photo_errors)
+    if errors:
+        order = ensure_payment_link(order_ref, order)
+        return templates.TemplateResponse(request, "dashboard_order.html",
+            _dashboard_order_context(request, order_ref, order, intake_errors=errors, intake_form_data=dict(form)),
+            status_code=400)
+
+    parsed = parse_post_payment_intake(form)
+    safe_fields = {k: form[k] for k in _POST_PAYMENT_INTAKE_SIMPLE_FIELDS if form.get(k)}
+
+    # Also collect extra member signatures
+    i = 2
+    while True:
+        first = form.get(f"extra_sig_first_{i}")
+        if not first:
+            break
+        for suffix in ("first", "middle", "last"):
+            v = form.get(f"extra_sig_{suffix}_{i}", "")
+            if v:
+                safe_fields[f"extra_sig_{suffix}_{i}"] = v
+        i += 1
+
+    order_ref.set({**safe_fields, **parsed, **photo_data,
+                   "awaiting_intake": False,
+                   "intake_complete_at": firestore.SERVER_TIMESTAMP}, merge=True)
+
+    updated_order = order_ref.get().to_dict()
+
+    # Kick off the pipeline only once both intake and SSN (if needed) are done.
+    if not updated_order.get("awaiting_ssn"):
+        if updated_order.get("skip_llc_formation"):
+            background_tasks.add_task(run_document_generation, order_id)
+            trigger_assets = advance_past_filing_confirmed(order_ref, updated_order)
+            if trigger_assets:
+                background_tasks.add_task(run_asset_generation, order_id)
+        else:
+            background_tasks.add_task(run_name_check, order_id)
+
+    return RedirectResponse(url=f"/dashboard/orders/{order_id}?ga_event=intake_complete", status_code=303)
+
 
 @app.get("/dashboard/orders/{order_id}/timeline", response_class=HTMLResponse)
 async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_owned_order)):

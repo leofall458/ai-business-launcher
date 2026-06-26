@@ -60,3 +60,13 @@ STATUS_SESSION_SECRET = get_secret("STATUS_SESSION_SECRET")
 # a short-lived V4 signed URL (see app/document_store.py and
 # /orders/{order_id}/documents/{doc_id} in app/main.py).
 STORAGE_BUCKET = os.getenv("STORAGE_BUCKET", "ai-biz-launcher-llc-certificates")
+
+# Optional: enables Google Places address autocomplete on the dashboard intake form.
+# Set GOOGLE_PLACES_API_KEY in .env (or Cloud Run env vars). Leave empty to disable.
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+
+# Optional: GA4 measurement ID (e.g. "G-XXXXXXXXXX"). Leave empty to disable tracking.
+GOOGLE_ANALYTICS_ID = os.getenv("GOOGLE_ANALYTICS_ID", "")
+
+# Optional: URL of a deployed sample site for the deliverables gallery iframe preview.
+SAMPLE_WEBSITE_URL = os.getenv("SAMPLE_WEBSITE_URL", "")

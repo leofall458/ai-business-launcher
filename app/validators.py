@@ -35,6 +35,19 @@ ALL_VALIDATED_FIELDS = [
     "photo_1", "photo_2", "photo_3",
 ]
 
+# Used by the new payment-first wizard (/launch only collects these).
+PRE_PAYMENT_VALIDATED_FIELDS = [
+    "first_name", "last_name", "email", "phone",
+    "desired_name", "existing_llc_name",
+]
+
+# Used by the post-payment dashboard intake form.
+POST_PAYMENT_VALIDATED_FIELDS = [
+    "dob", "address", "city", "zipcode", "county",
+    "sig_first", "sig_last", "existing_ein",
+    "photo_1", "photo_2", "photo_3",
+]
+
 def validate_name(value: str, label: str) -> str | None:
     value = (value or "").strip()
     if not value:
@@ -152,6 +165,55 @@ def validate_ein(ein: str) -> str | None:
     if prefix in EIN_INVALID_PREFIXES:
         return f"Invalid EIN - the first 2 digits cannot be {prefix}."
     return None
+
+def validate_pre_payment_form(form: dict) -> dict:
+    """Validates only the 5 fields collected before payment in the wizard."""
+    errors = {}
+
+    def check(field, fn, *args):
+        err = fn(*args)
+        if err:
+            errors[field] = err
+
+    skip_llc = form.get("skip_llc_formation") == "on"
+    check("first_name", validate_name, form.get("first_name"), "First name")
+    check("last_name", validate_name, form.get("last_name"), "Last name")
+    check("email", validate_email, form.get("email"))
+    check("phone", validate_phone, form.get("phone"))
+
+    if skip_llc:
+        check("existing_llc_name", validate_business_name, form.get("existing_llc_name"))
+    else:
+        check("desired_name", validate_business_name, form.get("desired_name"))
+
+    return errors
+
+
+def validate_post_payment_intake(form: dict) -> dict:
+    """Validates the address/DOB/signature fields collected in the dashboard
+    after payment. Missing EIN validation only fires when skip_ein is checked."""
+    errors = {}
+
+    def check(field, fn, *args):
+        err = fn(*args)
+        if err:
+            errors[field] = err
+
+    check("dob", validate_dob, form.get("dob"))
+    check("address", validate_address, form.get("address"))
+    check("city", validate_city, form.get("city"))
+    check("zipcode", validate_zip, form.get("zipcode"))
+    check("sig_first", validate_name, form.get("sig_first"), "First name (signature)")
+    check("sig_last", validate_name, form.get("sig_last"), "Last name (signature)")
+
+    if not (form.get("county") or "").strip():
+        errors["county"] = "County is required for your EIN application."
+
+    if form.get("skip_ein") == "on":
+        check("existing_ein", validate_ein, form.get("existing_ein"))
+
+    return errors
+
 
 def validate_intake_form(form: dict) -> dict:
     """Returns a dict of field_name -> error message for every field that

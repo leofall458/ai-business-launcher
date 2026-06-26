@@ -441,6 +441,71 @@ def send_ssn_expired_email(order: dict, order_id: str):
     html = _wrap_html(html_inner, cta_text="Re-enter Your SSN", cta_url=url)
     _send(email, "Action Required - Re-enter SSN for EIN Application", body, html_body=html)
 
+def send_abandoned_cart_email_1h(lead: dict) -> bool:
+    email = lead.get("email", "")
+    if not email:
+        return False
+    name = lead.get("first_name") or "there"
+    business_name = lead.get("desired_name") or "your LLC"
+    url = "https://launchbridge.ai"
+    body = (
+        f"Hi {name},\n\n"
+        "You started forming your Virginia LLC but didn't complete your order.\n\n"
+        f"Your business name ({business_name}) is still available to check.\n\n"
+        "Finish your order — $350 covers everything:\n"
+        "• Virginia SCC filing\n• EIN with the IRS\n• Brand kit\n• Business website\n• Stripe setup\n\n"
+        f"Continue here: {url}\n\n"
+        "Questions? Just reply to this email.\n\n- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        "<p>You started forming your Virginia LLC but didn't complete your order.</p>"
+        f"<p>Your business name <strong>{business_name}</strong> is still waiting — "
+        "finish before someone else takes the name.</p>"
+        "<p><strong>$350 flat — everything included:</strong></p>"
+        "<ul style='margin:0 0 16px;padding-left:20px;'>"
+        "<li>Virginia SCC filing</li><li>EIN with the IRS</li>"
+        "<li>AI-generated brand kit</li><li>Business website, live in days</li>"
+        "<li>Stripe payment account setup</li>"
+        "</ul>"
+    )
+    html = _wrap_html(html_inner, cta_text="Continue My LLC Setup →", cta_url=url)
+    return _send(email, f"Don't lose your business name — {business_name}", body, html_body=html)
+
+
+def send_abandoned_cart_email_24h(lead: dict) -> bool:
+    email = lead.get("email", "")
+    if not email:
+        return False
+    name = lead.get("first_name") or "there"
+    business_name = lead.get("desired_name") or "your LLC"
+    url = "https://launchbridge.ai"
+    body = (
+        f"Hi {name},\n\n"
+        f"Your Virginia LLC ({business_name}) is still unfinished.\n\n"
+        "Most people spend weeks figuring out LLC formation on their own. "
+        "Launch Bridge does it in days, for $350 flat — no subscriptions, no upsells.\n\n"
+        f"Start here: {url}\n\n"
+        "Questions? Just reply.\n\n- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>Your Virginia LLC setup for <strong>{business_name}</strong> is still unfinished.</p>"
+        "<p>Most people spend weeks figuring this out on their own. "
+        "Launch Bridge handles everything in days — for one flat fee.</p>"
+        + _info_table([
+            ("LLC filing", "Virginia SCC — we file it"),
+            ("EIN", "IRS application — we handle it"),
+            ("Brand kit", "Logo, colors, fonts, tagline"),
+            ("Website", "Live within days of LLC approval"),
+            ("Stripe", "Ready to accept payments"),
+            ("Total", "$350 flat — no subscriptions"),
+        ])
+    )
+    html = _wrap_html(html_inner, cta_text="Finish My LLC Setup →", cta_url=url)
+    return _send(email, f"Still interested in forming {business_name}?", body, html_body=html)
+
+
 def send_everything_complete_email(order: dict, order_id: str):
     """Email 7 (Part 4): the final milestone email, sent once the order
     reaches the "complete" state - the full business package summary.

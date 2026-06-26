@@ -6,6 +6,12 @@
     <title>Your Dashboard - Launch Bridge LLC</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    {% if google_places_api_key and awaiting_intake %}
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key={{ google_places_api_key }}&libraries=places&callback=initPlacesAutocomplete">
+    </script>
+    {% endif %}
+    {% include "_ga4.html" %}
 </head>
 <body class="bg-gray-950 text-white min-h-screen py-8 sm:py-12">
     <div class="max-w-2xl mx-auto px-4 sm:px-8 space-y-6">
@@ -29,6 +35,295 @@
             <h2 class="text-lg sm:text-xl font-bold mb-2">{{ state.replace("_", " ").title() }}</h2>
             <p class="text-blue-200 text-sm leading-relaxed">{{ state_message }}</p>
         </div>
+
+        {% if awaiting_intake %}
+        <div class="bg-blue-950 border border-blue-700 rounded-xl p-5 sm:p-6">
+            <h2 class="text-base font-semibold text-blue-300 mb-1">🚀 Complete Your Order</h2>
+            <p class="text-sm text-blue-200/80 leading-relaxed mb-4">
+                Great — payment received! Fill in the remaining details below so we can form your LLC and file your EIN.
+                Your documents, brand kit, and website will be generated right after.
+            </p>
+
+            {% if intake_errors %}
+            <div class="bg-red-950 border border-red-700 rounded-lg p-3 mb-4">
+                <p class="text-xs font-semibold text-red-300 mb-2">⚠️ Please fix the following:</p>
+                <ul class="text-xs text-red-300 list-disc list-inside space-y-1">
+                    {% for field, msg in intake_errors.items() %}
+                    <li>{{ msg }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/dashboard/orders/{{ order_id }}/complete-intake" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+                <!-- Date of Birth -->
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-1">Date of Birth *</label>
+                    <input name="dob" type="date" required
+                        value="{{ intake_form_data.get('dob', '') }}"
+                        class="w-full bg-gray-900 border {% if intake_errors.get('dob') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white text-sm"/>
+                    {% if intake_errors.get('dob') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.dob }}</p>{% endif %}
+                </div>
+
+                <!-- Address -->
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-1">Virginia Street Address *</label>
+                    <input name="address" type="text" id="address-autocomplete" required
+                        value="{{ intake_form_data.get('address', '') }}"
+                        placeholder="123 Main Street"
+                        autocomplete="street-address"
+                        class="w-full bg-gray-900 border {% if intake_errors.get('address') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                    {% if intake_errors.get('address') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.address }}</p>{% endif %}
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-blue-200/70 mb-1">City/Town *</label>
+                        <input name="city" type="text" id="address-city" required
+                            value="{{ intake_form_data.get('city', '') }}"
+                            placeholder="Arlington"
+                            autocomplete="address-level2"
+                            class="w-full bg-gray-900 border {% if intake_errors.get('city') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                        {% if intake_errors.get('city') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.city }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label class="block text-xs text-blue-200/70 mb-1">ZIP Code *</label>
+                        <input name="zipcode" type="text" id="address-zip" required
+                            value="{{ intake_form_data.get('zipcode', '') }}"
+                            placeholder="22201" inputmode="numeric" maxlength="5"
+                            autocomplete="postal-code"
+                            class="w-full bg-gray-900 border {% if intake_errors.get('zipcode') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                        {% if intake_errors.get('zipcode') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.zipcode }}</p>{% endif %}
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-1">County *
+                        <span class="font-normal text-gray-500">(for EIN — if in an independent city like Arlington or Alexandria, re-enter the city name)</span>
+                    </label>
+                    <input name="county" type="text" id="address-county" required
+                        value="{{ intake_form_data.get('county', '') }}"
+                        placeholder="Arlington"
+                        class="w-full bg-gray-900 border {% if intake_errors.get('county') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                    {% if intake_errors.get('county') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.county }}</p>{% endif %}
+                </div>
+
+                <!-- Business Purpose -->
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-1">Business Purpose (one sentence)</label>
+                    <input name="business_purpose" type="text"
+                        value="{{ intake_form_data.get('business_purpose', '') }}"
+                        placeholder="e.g. Mobile pet grooming services for residential customers"
+                        class="w-full bg-gray-900 border border-blue-800 rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                    <p class="text-xs text-gray-500 mt-1">Leave blank to use your original business description.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-1">Target Customer</label>
+                    <input name="target_customer" type="text"
+                        value="{{ intake_form_data.get('target_customer', '') }}"
+                        placeholder="e.g. Busy professionals in Northern Virginia with dogs"
+                        class="w-full bg-gray-900 border border-blue-800 rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                </div>
+
+                <!-- Registered Agent -->
+                <div>
+                    <label class="block text-xs text-blue-200/70 mb-2">Registered Agent</label>
+                    <label class="flex items-start gap-3 bg-gray-900 border border-purple-700 rounded-lg p-3 mb-2 cursor-pointer">
+                        <input type="radio" name="registered_agent_choice" value="launchbridge" checked
+                            onchange="toggleSelfRA()"
+                            class="mt-1 w-4 h-4 accent-purple-500 shrink-0"/>
+                        <span>
+                            <span class="block text-sm font-semibold text-white">Use Launch Bridge (Recommended)</span>
+                            <span class="block text-xs text-gray-400 mt-0.5">Included in your $350 fee. We handle all legal correspondence.</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 bg-gray-900 border border-gray-700 rounded-lg p-3 cursor-pointer">
+                        <input type="radio" name="registered_agent_choice" value="self"
+                            onchange="toggleSelfRA()"
+                            class="mt-1 w-4 h-4 accent-purple-500 shrink-0"/>
+                        <span>
+                            <span class="block text-sm font-semibold text-white">I'll be my own Registered Agent</span>
+                            <span class="block text-xs text-gray-400 mt-0.5">Must be a Virginia resident available during business hours.</span>
+                        </span>
+                    </label>
+                    <div id="self-ra-notice" class="hidden mt-2 bg-yellow-950 border border-yellow-700 rounded-lg p-3">
+                        <p class="text-xs text-yellow-300">You confirm you are a Virginia resident and will be available at your address during business hours to receive legal documents.</p>
+                    </div>
+                </div>
+
+                <!-- Member Signature (Primary) -->
+                <div class="bg-gray-900 border border-yellow-700/60 rounded-lg p-4">
+                    <p class="text-xs text-yellow-400 font-semibold mb-3">Member 1 — Primary Signer *</p>
+                    <p class="text-xs text-gray-500 mb-3">Electronic signatures are valid under the E-SIGN Act.</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">First *</label>
+                            <input name="sig_first" type="text" required
+                                value="{{ intake_form_data.get('sig_first', '') }}"
+                                placeholder="Jane"
+                                class="w-full bg-gray-800 border {% if intake_errors.get('sig_first') %}border-red-700{% else %}border-yellow-700/50{% endif %} rounded-lg p-2 text-white text-sm font-serif italic"/>
+                            {% if intake_errors.get('sig_first') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.sig_first }}</p>{% endif %}
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Middle</label>
+                            <input name="sig_middle" type="text"
+                                value="{{ intake_form_data.get('sig_middle', '') }}"
+                                placeholder="Optional"
+                                class="w-full bg-gray-800 border border-yellow-700/50 rounded-lg p-2 text-white placeholder-gray-500 text-sm font-serif italic"/>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Last *</label>
+                            <input name="sig_last" type="text" required
+                                value="{{ intake_form_data.get('sig_last', '') }}"
+                                placeholder="Smith"
+                                class="w-full bg-gray-800 border {% if intake_errors.get('sig_last') %}border-red-700{% else %}border-yellow-700/50{% endif %} rounded-lg p-2 text-white text-sm font-serif italic"/>
+                            {% if intake_errors.get('sig_last') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.sig_last }}</p>{% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div id="additional-intake-members"></div>
+                <button type="button" onclick="addIntakeMember()"
+                    class="w-full border border-dashed border-gray-600 hover:border-yellow-500 text-gray-500 hover:text-yellow-400 py-2.5 rounded-lg transition text-sm">
+                    + Add Another LLC Member
+                </button>
+
+                <!-- EIN section -->
+                <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="skip-ein-intake" name="skip_ein"
+                            onchange="toggleSkipEINIntake()"
+                            class="mt-1 w-4 h-4 accent-yellow-500 shrink-0"/>
+                        <span class="text-sm font-semibold text-white">I already have an EIN — skip EIN application</span>
+                    </label>
+                    <div id="ssn-note-intake" class="mt-2">
+                        <p class="text-xs text-gray-500 leading-relaxed">
+                            🔒 You'll enter your SSN on the next screen — encrypted, used only for your EIN application, and deleted within 72 hours.
+                        </p>
+                    </div>
+                    <div id="existing-ein-intake" class="hidden mt-3">
+                        <label class="block text-xs text-yellow-400 font-semibold mb-1">Your existing EIN *</label>
+                        <input name="existing_ein" type="text" id="existing-ein-input" placeholder="XX-XXXXXXX"
+                            class="w-full bg-gray-800 border border-yellow-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm tracking-widest"/>
+                        {% if intake_errors.get('existing_ein') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.existing_ein }}</p>{% endif %}
+                    </div>
+                </div>
+
+                <!-- Website Customization (collapsible) -->
+                <div>
+                    <button type="button" onclick="toggleWebsiteCustomization()"
+                        class="w-full flex items-center justify-between text-sm font-semibold text-cyan-400 py-2 border-b border-gray-700">
+                        <span>🌐 Customize Your Website (Optional)</span>
+                        <span id="website-chevron">▾</span>
+                    </button>
+                    <div id="website-customization" class="hidden pt-4 space-y-3">
+                        <p class="text-xs text-gray-500">Everything here is optional — leave blank and AI fills it in.</p>
+
+                        <!-- Template -->
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-2">Template</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                {% for tmpl, label, desc, gradient in [
+                                    ('professional','Professional','Clean corporate look','from-slate-700 to-slate-400'),
+                                    ('local','Local Business','Warm friendly feel','from-orange-400 to-amber-200'),
+                                    ('modern','Modern','Bold startup feel','from-gray-900 to-fuchsia-500')
+                                ] %}
+                                <label class="template-card cursor-pointer rounded-lg border-2 {% if loop.first %}border-cyan-500{% else %}border-gray-700{% endif %} bg-gray-900 p-2 text-center" data-value="{{ tmpl }}">
+                                    <input type="radio" name="website_template" value="{{ tmpl }}" {% if loop.first %}checked{% endif %} onchange="updateTemplateCards()" class="hidden"/>
+                                    <div class="h-8 w-full rounded mb-1.5 bg-gradient-to-r {{ gradient }}"></div>
+                                    <p class="text-xs font-semibold text-white">{{ label }}</p>
+                                    <p class="text-[10px] text-gray-500 mt-0.5">{{ desc }}</p>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Tagline</label>
+                            <input name="website_tagline" type="text" placeholder="Premium grooming for busy pet owners"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm"/>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Business Description</label>
+                            <textarea name="website_description" rows="2" placeholder="What do you do, who do you serve, what makes you special?"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1.5">Services (up to 3)</label>
+                            {% for i in [1,2,3] %}
+                            <div class="grid grid-cols-2 gap-2 mb-1.5">
+                                <input name="service_{{ i }}_name" type="text" placeholder="Service {{ i }} name"
+                                    class="bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                <input name="service_{{ i }}_desc" type="text" placeholder="Short description"
+                                    class="bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Business Hours</label>
+                            <input name="business_hours" type="text" placeholder="Monday–Friday 9am–5pm"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm"/>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Photos (up to 3, max 5MB each)</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                {% for i in [1,2,3] %}
+                                <input name="photo_{{ i }}" type="file" accept="image/jpeg,image/png,image/webp"
+                                    class="w-full text-xs text-gray-400 bg-gray-900 border border-gray-700 rounded-lg p-1.5"/>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="block text-xs text-gray-400">Social Media (optional)</label>
+                            <input name="instagram_url" type="url" placeholder="Instagram URL"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                            <input name="facebook_url" type="url" placeholder="Facebook URL"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                            <input name="tiktok_url" type="url" placeholder="TikTok URL"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LLC Details (collapsible) -->
+                <div>
+                    <button type="button" onclick="toggleLLCDetails()"
+                        class="w-full flex items-center justify-between text-sm font-semibold text-gray-400 py-2 border-b border-gray-700">
+                        <span>⚙️ LLC Details (Optional)</span>
+                        <span id="llc-details-chevron">▾</span>
+                    </button>
+                    <div id="llc-details" class="hidden pt-3 space-y-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Industry Code</label>
+                            <select name="industry_code"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white text-sm">
+                                <option value="0">0 – General (most businesses)</option>
+                                <option value="35">35 – Insurance Agencies</option>
+                                <option value="36">36 – Mortgage Companies</option>
+                                <option value="65">65 – Churches / Religious Organizations</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">LLC Duration</label>
+                            <select name="duration"
+                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white text-sm">
+                                <option value="Perpetual">Perpetual (recommended — no end date)</option>
+                                <option value="Fixed">Fixed Term</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-base transition">
+                    Complete My Order →
+                </button>
+            </form>
+        </div>
+        {% endif %}
 
         {% if needs_ssn_entry %}
         <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-5 sm:p-6">
@@ -189,6 +484,114 @@
     </div>
 
     <script>
+        // ── Dashboard intake form helpers ─────────────────────────────────────
+
+        function toggleSelfRA() {
+            const isSelf = document.querySelector('input[name="registered_agent_choice"]:checked')?.value === 'self';
+            const notice = document.getElementById('self-ra-notice');
+            if (notice) notice.classList.toggle('hidden', !isSelf);
+        }
+
+        function toggleSkipEINIntake() {
+            const skip = document.getElementById('skip-ein-intake')?.checked;
+            document.getElementById('ssn-note-intake')?.classList.toggle('hidden', skip);
+            document.getElementById('existing-ein-intake')?.classList.toggle('hidden', !skip);
+            const einInput = document.getElementById('existing-ein-input');
+            if (einInput) einInput.required = !!skip;
+        }
+
+        function toggleWebsiteCustomization() {
+            const content = document.getElementById('website-customization');
+            const chevron = document.getElementById('website-chevron');
+            if (!content) return;
+            content.classList.toggle('hidden');
+            chevron.textContent = content.classList.contains('hidden') ? '▾' : '▴';
+        }
+
+        function toggleLLCDetails() {
+            const content = document.getElementById('llc-details');
+            const chevron = document.getElementById('llc-details-chevron');
+            if (!content) return;
+            content.classList.toggle('hidden');
+            chevron.textContent = content.classList.contains('hidden') ? '▾' : '▴';
+        }
+
+        function updateTemplateCards() {
+            document.querySelectorAll('.template-card').forEach(card => {
+                const selected = card.querySelector('input[type="radio"]').checked;
+                card.classList.toggle('border-cyan-500', selected);
+                card.classList.toggle('border-gray-700', !selected);
+            });
+        }
+
+        let intakeMemberCount = 1;
+        function addIntakeMember() {
+            intakeMemberCount++;
+            const n = intakeMemberCount;
+            const container = document.getElementById('additional-intake-members');
+            const div = document.createElement('div');
+            div.id = `intake-member-${n}`;
+            div.className = 'bg-gray-900 border border-gray-700 rounded-lg p-4 mb-2';
+            div.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-xs text-gray-400 font-semibold">Member ${n}</p>
+                    <button type="button" onclick="document.getElementById('intake-member-${n}').remove()"
+                        class="text-xs text-red-400 hover:text-red-300 transition">− Remove</button>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">First *</label>
+                        <input name="extra_sig_first_${n}" type="text" required placeholder="Jane"
+                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white text-sm font-serif italic"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Middle</label>
+                        <input name="extra_sig_middle_${n}" type="text" placeholder="Optional"
+                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white placeholder-gray-500 text-sm font-serif italic"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Last *</label>
+                        <input name="extra_sig_last_${n}" type="text" required placeholder="Doe"
+                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white text-sm font-serif italic"/>
+                    </div>
+                </div>`;
+            container.appendChild(div);
+        }
+
+        // ── Google Places address autocomplete (loaded conditionally) ──────────
+
+        function initPlacesAutocomplete() {
+            const input = document.getElementById('address-autocomplete');
+            if (!input || !window.google?.maps?.places) return;
+            const ac = new google.maps.places.Autocomplete(input, {
+                componentRestrictions: { country: 'us' },
+                fields: ['address_components'],
+                types: ['address'],
+            });
+            ac.addListener('place_changed', () => {
+                const place = ac.getPlace();
+                if (!place.address_components) return;
+                let streetNumber = '', route = '', city = '', zip = '', county = '';
+                for (const c of place.address_components) {
+                    if (c.types.includes('street_number')) streetNumber = c.long_name;
+                    if (c.types.includes('route')) route = c.long_name;
+                    if (c.types.includes('locality')) city = c.long_name;
+                    if (c.types.includes('administrative_area_level_3')) city = city || c.long_name;
+                    if (c.types.includes('postal_code')) zip = c.long_name;
+                    if (c.types.includes('administrative_area_level_2')) county = c.long_name.replace(/ County$/, '');
+                }
+                if (streetNumber && route) input.value = `${streetNumber} ${route}`;
+                const cityEl = document.getElementById('address-city');
+                const zipEl = document.getElementById('address-zip');
+                const countyEl = document.getElementById('address-county');
+                if (cityEl && city) cityEl.value = city;
+                if (zipEl && zip) zipEl.value = zip;
+                if (countyEl && county) countyEl.value = county;
+            });
+        }
+
+        // ── EIN mask / copy ────────────────────────────────────────────────────
+
         let einMasked = true;
         function maskEin(value) {
             const digits = value.replace(/[^0-9]/g, '');
@@ -222,5 +625,23 @@
             });
         }
     </script>
+    {% if google_analytics_id %}
+    <script>
+        (function() {
+            function ga(name, params) {
+                try { gtag('event', name, params || {}); } catch(e) {}
+            }
+            var params = new URLSearchParams(window.location.search);
+            if (params.get('ga_event') === 'intake_complete') {
+                ga('intake_complete', {});
+                // Clean URL without triggering a reload
+                history.replaceState(null, '', window.location.pathname);
+            }
+            {% if state == "complete" %}
+            ga('order_fulfilled', {});
+            {% endif %}
+        })();
+    </script>
+    {% endif %}
 </body>
 </html>

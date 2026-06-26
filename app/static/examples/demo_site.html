@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blue Ridge Consulting LLC — Strategy that moves mountains</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green:  #1B4332;
+    --blue:   #1A3A5C;
+    --gold:   #C8973A;
+    --light:  #F8F6F1;
+    --mid:    #EAE7E0;
+    --text:   #1C2B2B;
+    --muted:  #6B7280;
+  }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text); background: #fff; }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--blue); padding: 0 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px; box-shadow: 0 2px 12px rgba(0,0,0,.25);
+  }
+  .nav-logo { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; }
+  .nav-logo svg { width: 36px; height: 36px; }
+  .nav-logo-text { line-height: 1.1; }
+  .nav-logo-text strong { display: block; font-size: 15px; letter-spacing: 0.5px; color: #fff; }
+  .nav-logo-text span { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #93C5FD; opacity: .85; }
+  .nav-links { display: flex; gap: 2rem; }
+  .nav-links a { color: rgba(255,255,255,.8); text-decoration: none; font-size: 14px; font-weight: 500; transition: color .2s; }
+  .nav-links a:hover { color: #fff; }
+  .nav-cta {
+    background: var(--gold); color: #fff; text-decoration: none;
+    padding: 9px 22px; border-radius: 6px; font-size: 14px; font-weight: 600;
+    transition: background .2s;
+  }
+  .nav-cta:hover { background: #B07D2A; }
+
+  /* ── HERO ── */
+  .hero {
+    background: linear-gradient(160deg, var(--blue) 0%, #0F2A3F 60%, var(--green) 100%);
+    min-height: 88vh; display: flex; align-items: center;
+    position: relative; overflow: hidden; padding: 80px 2rem;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%231B4332' fill-opacity='0.3' d='M0 224l48-21.3C96 181 192 139 288 133.3 384 128 480 160 576 176s192 16 288-5.3c96-21.3 192-53.3 288-37.4C1248 149 1344 213 1392 245.3L1440 277V320H0z'/%3E%3Cpath fill='%230F2A3F' fill-opacity='0.25' d='M0 256l48-32c48-32 144-96 240-96s192 64 288 80 192 0 288-32 192-80 288-64c96 16 192 96 240 128l48 32V320H0z'/%3E%3C/svg%3E") no-repeat bottom center / cover;
+  }
+  .hero-inner { max-width: 780px; margin: 0 auto; position: relative; z-index: 1; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(200,151,58,.15); border: 1px solid rgba(200,151,58,.4);
+    color: #F4C55A; font-size: 12px; font-weight: 600; letter-spacing: 1.2px;
+    text-transform: uppercase; padding: 6px 14px; border-radius: 20px; margin-bottom: 24px;
+  }
+  .hero-badge::before { content: ''; width: 6px; height: 6px; background: #F4C55A; border-radius: 50%; }
+  .hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 800; line-height: 1.1;
+    color: #fff; letter-spacing: -1px; margin-bottom: 20px;
+  }
+  .hero h1 span { color: var(--gold); }
+  .hero p {
+    font-size: 18px; color: rgba(255,255,255,.75); max-width: 560px;
+    line-height: 1.7; margin-bottom: 36px;
+  }
+  .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--gold); color: #fff; text-decoration: none;
+    padding: 15px 32px; border-radius: 8px; font-weight: 700; font-size: 15px;
+    transition: background .2s, transform .1s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary:hover { background: #B07D2A; transform: translateY(-1px); }
+  .btn-outline {
+    background: transparent; color: #fff; text-decoration: none;
+    padding: 15px 32px; border-radius: 8px; font-weight: 600; font-size: 15px;
+    border: 1.5px solid rgba(255,255,255,.4); transition: border-color .2s, background .2s;
+  }
+  .btn-outline:hover { border-color: rgba(255,255,255,.8); background: rgba(255,255,255,.06); }
+  .hero-stats {
+    display: flex; gap: 40px; margin-top: 56px; padding-top: 36px;
+    border-top: 1px solid rgba(255,255,255,.12); flex-wrap: wrap;
+  }
+  .hero-stat strong { display: block; font-size: 28px; font-weight: 800; color: #fff; }
+  .hero-stat span { font-size: 13px; color: rgba(255,255,255,.5); letter-spacing: .3px; }
+
+  /* ── SECTION COMMONS ── */
+  section { padding: 88px 2rem; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .section-label {
+    font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 12px;
+  }
+  h2 {
+    font-size: clamp(1.7rem, 3.5vw, 2.5rem); font-weight: 800;
+    line-height: 1.15; letter-spacing: -0.5px; color: var(--text);
+  }
+  .section-subtitle { font-size: 17px; color: var(--muted); line-height: 1.7; max-width: 560px; margin-top: 12px; }
+
+  /* ── SERVICES ── */
+  .services { background: var(--light); }
+  .services-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px; margin-top: 48px;
+  }
+  .service-card {
+    background: #fff; border-radius: 16px; padding: 36px 32px;
+    border: 1px solid var(--mid); transition: box-shadow .2s, transform .2s;
+  }
+  .service-card:hover { box-shadow: 0 16px 48px rgba(27,67,50,.1); transform: translateY(-2px); }
+  .service-icon {
+    width: 52px; height: 52px; border-radius: 14px; margin-bottom: 20px;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .service-card h3 { font-size: 19px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+  .service-card p { font-size: 14px; color: var(--muted); line-height: 1.7; }
+  .service-link {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 18px;
+    font-size: 13px; font-weight: 600; color: var(--green); text-decoration: none;
+  }
+  .service-link:hover { color: var(--gold); }
+
+  /* ── ABOUT ── */
+  .about-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 64px;
+    align-items: center; margin-top: 16px;
+  }
+  .about-image {
+    border-radius: 20px; overflow: hidden; position: relative;
+    aspect-ratio: 4/3;
+    background: linear-gradient(135deg, var(--blue) 0%, var(--green) 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .about-image svg { width: 140px; height: 140px; opacity: .35; }
+  .about-image-badge {
+    position: absolute; bottom: 24px; left: 24px; right: 24px;
+    background: rgba(255,255,255,.95); backdrop-filter: blur(8px);
+    border-radius: 12px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .about-image-badge-icon {
+    width: 40px; height: 40px; background: var(--green); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; shrink: 0;
+  }
+  .about-image-badge strong { display: block; font-size: 14px; font-weight: 700; color: var(--text); }
+  .about-image-badge span { font-size: 12px; color: var(--muted); }
+  .about-content p { font-size: 16px; color: var(--muted); line-height: 1.8; margin-top: 16px; }
+  .about-content p + p { margin-top: 14px; }
+  .value-list { list-style: none; margin-top: 28px; space-y: 12px; }
+  .value-list li {
+    display: flex; align-items: flex-start; gap: 12px;
+    font-size: 15px; color: var(--text); padding: 12px 0;
+    border-bottom: 1px solid var(--mid);
+  }
+  .value-list li:last-child { border-bottom: none; }
+  .value-list li::before {
+    content: ''; width: 6px; height: 6px; background: var(--gold);
+    border-radius: 50%; margin-top: 8px; flex-shrink: 0;
+  }
+
+  /* ── TESTIMONIALS ── */
+  .testimonials { background: var(--blue); }
+  .testimonials h2 { color: #fff; }
+  .testimonials .section-subtitle { color: rgba(255,255,255,.6); }
+  .testimonials-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px; margin-top: 48px;
+  }
+  .testimonial-card {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px; padding: 28px;
+  }
+  .stars { color: var(--gold); font-size: 16px; margin-bottom: 14px; letter-spacing: 2px; }
+  .testimonial-card blockquote {
+    font-size: 15px; color: rgba(255,255,255,.85); line-height: 1.7; font-style: italic;
+  }
+  .testimonial-author { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
+  .testimonial-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: #fff;
+  }
+  .testimonial-author-info strong { display: block; font-size: 13px; font-weight: 700; color: #fff; }
+  .testimonial-author-info span { font-size: 12px; color: rgba(255,255,255,.5); }
+
+  /* ── CONTACT ── */
+  .contact { background: var(--light); }
+  .contact-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 64px; margin-top: 40px; align-items: start; }
+  .contact-info h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .contact-info p { font-size: 15px; color: var(--muted); line-height: 1.7; }
+  .contact-detail {
+    display: flex; align-items: center; gap: 12px; margin-top: 20px;
+    font-size: 14px; color: var(--text);
+  }
+  .contact-detail-icon {
+    width: 36px; height: 36px; background: rgba(27,67,50,.1); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0;
+  }
+  .contact-form { background: #fff; border-radius: 16px; padding: 36px; border: 1px solid var(--mid); }
+  .form-group { margin-bottom: 20px; }
+  .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .form-group input, .form-group textarea, .form-group select {
+    width: 100%; padding: 11px 14px; border: 1.5px solid var(--mid); border-radius: 8px;
+    font-size: 14px; color: var(--text); background: #fff; transition: border-color .2s;
+    font-family: inherit;
+  }
+  .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+    outline: none; border-color: var(--green);
+  }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group textarea { resize: vertical; min-height: 120px; }
+  .form-submit {
+    width: 100%; background: var(--green); color: #fff; border: none; cursor: pointer;
+    padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 700;
+    font-family: inherit; transition: background .2s;
+  }
+  .form-submit:hover { background: #163828; }
+
+  /* ── FOOTER ── */
+  footer {
+    background: #0D1B2A; color: rgba(255,255,255,.6);
+    padding: 48px 2rem 24px;
+  }
+  .footer-inner { max-width: 1100px; margin: 0 auto; }
+  .footer-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 32px; margin-bottom: 40px; }
+  .footer-brand p { font-size: 13px; max-width: 280px; line-height: 1.7; margin-top: 10px; }
+  .footer-links h4 { color: #fff; font-size: 13px; font-weight: 700; letter-spacing: .5px; margin-bottom: 12px; }
+  .footer-links ul { list-style: none; }
+  .footer-links ul li { margin-bottom: 8px; }
+  .footer-links ul li a { color: rgba(255,255,255,.5); text-decoration: none; font-size: 13px; transition: color .2s; }
+  .footer-links ul li a:hover { color: rgba(255,255,255,.9); }
+  .footer-bottom {
+    border-top: 1px solid rgba(255,255,255,.08); padding-top: 20px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    font-size: 12px; color: rgba(255,255,255,.3);
+  }
+  .footer-bottom a { color: rgba(255,255,255,.4); text-decoration: none; }
+  .footer-bottom a:hover { color: rgba(255,255,255,.8); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    nav { padding: 0 1rem; }
+    .nav-links { display: none; }
+    .about-grid, .contact-grid { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">
+    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="36" height="36" rx="8" fill="rgba(255,255,255,0.1)"/>
+      <path d="M4 28 L10 18 L16 22 L22 12 L28 18 L32 14 L32 28 Z" fill="#C8973A" opacity=".9"/>
+      <path d="M4 28 L10 20 L16 24 L22 14 L28 20 L32 16 L32 28 Z" fill="white" opacity=".15"/>
+    </svg>
+    <div class="nav-logo-text">
+      <strong>Blue Ridge Consulting</strong>
+      <span>LLC · Roanoke, VA</span>
+    </div>
+  </a>
+  <div class="nav-links">
+    <a href="#services">Services</a>
+    <a href="#about">About</a>
+    <a href="#contact">Contact</a>
+  </div>
+  <a href="#contact" class="nav-cta">Get a Consultation</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">Virginia Management Consulting</div>
+    <h1>Strategy that<br><span>moves mountains</span></h1>
+    <p>We help Virginia businesses and government contractors build sustainable growth, streamline operations, and navigate complex markets — from the Blue Ridge to the Beltway.</p>
+    <div class="hero-btns">
+      <a href="#contact" class="btn-primary">Schedule a Free Call →</a>
+      <a href="#services" class="btn-outline">Our Services</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><strong>$47M+</strong><span>Client revenue influenced</span></div>
+      <div class="hero-stat"><strong>84</strong><span>Engagements completed</span></div>
+      <div class="hero-stat"><strong>12 yrs</strong><span>Virginia market experience</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section class="services" id="services">
+  <div class="container">
+    <p class="section-label">What we do</p>
+    <h2>Built for Virginia businesses</h2>
+    <p class="section-subtitle">From early-stage strategy to mature operations optimization — we meet you where you are.</p>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon" style="background: rgba(27,67,50,.1);">🏔️</div>
+        <h3>Strategic Planning</h3>
+        <p>Market analysis, competitive positioning, and 3-year growth roadmaps tailored to Virginia's business environment and regulatory landscape.</p>
+        <a href="#contact" class="service-link">Learn more →</a>
+      </div>
+      <div class="service-card">
+        <div class="service-icon" style="background: rgba(26,58,92,.1);">⚙️</div>
+        <h3>Operations Consulting</h3>
+        <p>Process optimization, team structure redesign, and technology implementation to eliminate bottlenecks and reduce overhead by 15–40%.</p>
+        <a href="#contact" class="service-link">Learn more →</a>
+      </div>
+      <div class="service-card">
+        <div class="service-icon" style="background: rgba(200,151,58,.12);">🏛️</div>
+        <h3>Government Contracting Advisory</h3>
+        <p>SAM.gov registration, CAGE code acquisition, past performance building, and bid strategy for federal and Virginia state contracts.</p>
+        <a href="#contact" class="service-link">Learn more →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about">
+  <div class="container">
+    <div class="about-grid">
+      <div class="about-image">
+        <svg viewBox="0 0 200 160" fill="none">
+          <path d="M10 140 L50 80 L80 100 L110 50 L150 90 L180 60 L200 80 L200 160 L0 160 Z" fill="rgba(255,255,255,0.08)"/>
+          <path d="M0 160 L40 100 L70 115 L100 65 L140 95 L170 70 L200 90 L200 160 Z" fill="rgba(255,255,255,0.05)"/>
+        </svg>
+        <div class="about-image-badge">
+          <div class="about-image-badge-icon">🎖️</div>
+          <div>
+            <strong>BBB Accredited Business</strong>
+            <span>Roanoke, Virginia · Est. 2014</span>
+          </div>
+        </div>
+      </div>
+      <div class="about-content">
+        <p class="section-label">Our story</p>
+        <h2>Rooted in Virginia,<br>built for growth</h2>
+        <p>Blue Ridge Consulting was founded in Roanoke by a team of former state agency directors and Fortune 500 operations leaders who saw a gap: Virginia's small and mid-size businesses needed serious strategic guidance, not generic advice from out-of-state firms.</p>
+        <p>We bring the same rigor we learned in government and enterprise to businesses of every size — because the Blue Ridge taught us that strategy, like a mountain, has to be built on solid ground.</p>
+        <ul class="value-list">
+          <li>Virginia-specific regulatory expertise and government relationships</li>
+          <li>Fixed-scope engagements with clear deliverables — no billable-hour ambiguity</li>
+          <li>Senior-level consultants on every project, never outsourced to juniors</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="testimonials">
+  <div class="container">
+    <p class="section-label" style="color: rgba(200,151,58,.9);">Client results</p>
+    <h2>What our clients say</h2>
+    <p class="section-subtitle">Across industries — from defense sub-contractors to regional hospitality groups.</p>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"Blue Ridge built us a SAM registration strategy from scratch. Within 8 months we had our first SBIR contract. The ROI on the engagement was 30x."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar" style="background: #1B4332;">MJ</div>
+          <div class="testimonial-author-info">
+            <strong>Marcus J.</strong>
+            <span>CEO, Shenandoah Defense Systems LLC</span>
+          </div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"We were losing 18 hours a week to a broken scheduling process. Their operations audit found it in day one. That fix alone paid for the entire engagement."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar" style="background: #1A3A5C;">KT</div>
+          <div class="testimonial-author-info">
+            <strong>Karen T.</strong>
+            <span>Owner, Valley Home Health Services LLC</span>
+          </div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"They don't just hand you a slide deck. Every recommendation had a clear implementation path and a named person responsible. Rare for consultants."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar" style="background: #5B3A29;">DP</div>
+          <div class="testimonial-author-info">
+            <strong>David P.</strong>
+            <span>COO, Blue Ridge Logistics LLC</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section class="contact" id="contact">
+  <div class="container">
+    <p class="section-label">Get in touch</p>
+    <h2>Start your engagement</h2>
+    <div class="contact-grid">
+      <div class="contact-info">
+        <h3>Free 30-minute discovery call</h3>
+        <p>Tell us where your business is and where you want it to go. We'll tell you exactly how we can help — and whether we're the right fit.</p>
+        <div class="contact-detail">
+          <div class="contact-detail-icon">📍</div>
+          <span>110 Franklin Rd SE, Suite 400, Roanoke, VA 24011</span>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-detail-icon">📞</div>
+          <span>(540) 555-0182</span>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-detail-icon">✉️</div>
+          <span>hello@blueridgeconsulting.com</span>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-detail-icon">🕐</div>
+          <span>Mon–Fri 8:00 AM – 6:00 PM ET</span>
+        </div>
+      </div>
+      <div class="contact-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>First Name</label>
+            <input type="text" placeholder="Sarah">
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input type="text" placeholder="Johnson">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Business Email</label>
+          <input type="email" placeholder="sarah@yourbusiness.com">
+        </div>
+        <div class="form-group">
+          <label>Company Name</label>
+          <input type="text" placeholder="Your Business LLC">
+        </div>
+        <div class="form-group">
+          <label>What do you need help with?</label>
+          <select>
+            <option>Strategic planning</option>
+            <option>Operations consulting</option>
+            <option>Government contracting</option>
+            <option>Something else</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tell us about your situation</label>
+          <textarea placeholder="Brief description of your business and the challenge you're facing..."></textarea>
+        </div>
+        <button type="submit" class="form-submit">Request Free Consultation →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div style="color:#fff;font-size:18px;font-weight:800;letter-spacing:-.3px;">Blue Ridge Consulting LLC</div>
+        <p>Virginia management consulting for businesses that are serious about growth. Strategy that moves mountains.</p>
+      </div>
+      <div class="footer-links">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="#services">Strategic Planning</a></li>
+          <li><a href="#services">Operations Consulting</a></li>
+          <li><a href="#services">Gov. Contracting</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#about">About</a></li>
+          <li><a href="#contact">Contact</a></li>
+          <li><a href="#">Privacy Policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Blue Ridge Consulting LLC · Roanoke, Virginia · EIN 47-8293104</span>
+      <span>Virginia LLC · <a href="#">Terms</a> · <a href="#">Privacy</a></span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
