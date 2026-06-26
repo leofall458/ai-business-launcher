@@ -4,10 +4,14 @@
     .htmx-request .htmx-indicator { display: block !important; }
     .htmx-indicator { display: none; }
     @media (max-width: 640px) {
-        #pay-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+        #pay-sticky, #step1-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
             padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
             border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
-        #step2-spacer { height: 5rem; }
+        #step2-spacer, #step1-spacer { height: 5rem; }
+        input, textarea, select { font-size: 16px !important; }
+    }
+    @media (min-width: 641px) {
+        #step1-sticky { display: none; }
     }
 </style>
 
@@ -103,6 +107,15 @@
     </div>
 </div>
 
+<!-- Mobile spacer + sticky CTA for step 1 -->
+<div id="step1-spacer"></div>
+<div id="step1-sticky">
+    <button type="button" onclick="checkNameAndContinue()"
+        class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-4 rounded-xl text-base transition">
+        Check Name &amp; Continue →
+    </button>
+</div>
+
 <!-- STEP 2 (hidden until step 1 done) -->
 <div id="step2" class="hidden step-card mb-6">
     <div class="flex items-center gap-3 mb-5">
@@ -133,7 +146,7 @@
             <input type="hidden" name="landing_page" value="{{ landing_page | default('home') }}">
 
             <!-- Full name -->
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs text-gray-400 mb-1.5">First Name *</label>
                     <input name="first_name" type="text" placeholder="Jane" required autocomplete="given-name"
@@ -326,8 +339,12 @@
         const step2 = document.getElementById('step2');
         step2.classList.remove('hidden');
 
-        // Show sticky pay button
+        // Show sticky pay button, hide step1/landing stickies
         document.getElementById('pay-sticky').classList.remove('hidden');
+        const s1Sticky = document.getElementById('step1-sticky');
+        if (s1Sticky) s1Sticky.style.display = 'none';
+        const lSticky = document.getElementById('landing-sticky');
+        if (lSticky) lSticky.style.display = 'none';
 
         // Set name badge in step 2
         document.getElementById('step2-name-badge').innerHTML =

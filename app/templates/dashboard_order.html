@@ -12,6 +12,11 @@
     </script>
     {% endif %}
     {% include "_ga4.html" %}
+    <style>
+        @media (max-width: 640px) {
+            input, textarea, select { font-size: 16px !important; }
+        }
+    </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen py-8 sm:py-12">
     <div class="max-w-2xl mx-auto px-4 sm:px-8 space-y-6">
@@ -78,7 +83,7 @@
                     {% if intake_errors.get('address') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.address }}</p>{% endif %}
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs text-blue-200/70 mb-1">City/Town *</label>
                         <input name="city" type="text" id="address-city" required
@@ -158,7 +163,7 @@
                 <div class="bg-gray-900 border border-yellow-700/60 rounded-lg p-4">
                     <p class="text-xs text-yellow-400 font-semibold mb-3">Member 1 — Primary Signer *</p>
                     <p class="text-xs text-gray-500 mb-3">Electronic signatures are valid under the E-SIGN Act.</p>
-                    <div class="grid grid-cols-3 gap-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
                             <label class="block text-xs text-gray-400 mb-1">First *</label>
                             <input name="sig_first" type="text" required
@@ -254,7 +259,7 @@
                         <div>
                             <label class="block text-xs text-gray-400 mb-1.5">Services (up to 3)</label>
                             {% for i in [1,2,3] %}
-                            <div class="grid grid-cols-2 gap-2 mb-1.5">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-1.5">
                                 <input name="service_{{ i }}_name" type="text" placeholder="Service {{ i }} name"
                                     class="bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
                                 <input name="service_{{ i }}_desc" type="text" placeholder="Short description"
@@ -269,7 +274,7 @@
                         </div>
                         <div>
                             <label class="block text-xs text-gray-400 mb-1">Photos (up to 3, max 5MB each)</label>
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 {% for i in [1,2,3] %}
                                 <input name="photo_{{ i }}" type="file" accept="image/jpeg,image/png,image/webp"
                                     class="w-full text-xs text-gray-400 bg-gray-900 border border-gray-700 rounded-lg p-1.5"/>
@@ -538,7 +543,7 @@
                     <button type="button" onclick="document.getElementById('intake-member-${n}').remove()"
                         class="text-xs text-red-400 hover:text-red-300 transition">− Remove</button>
                 </div>
-                <div class="grid grid-cols-3 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                         <label class="block text-xs text-gray-400 mb-1">First *</label>
                         <input name="extra_sig_first_${n}" type="text" required placeholder="Jane"

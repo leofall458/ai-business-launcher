@@ -8,6 +8,16 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "_ga4.html" %}
+    <style>
+        @media (max-width: 640px) {
+            #landing-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+                padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
+                border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
+            #landing-spacer { height: 5rem; }
+            #step1-sticky { display: none !important; }
+        }
+        @media (min-width: 641px) { #landing-sticky { display: none; } }
+    </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
 
@@ -144,6 +154,14 @@
     {% include "_wizard.html" %}
 
     <!-- Footer -->
+    <div id="landing-spacer"></div>
+    <div id="landing-sticky">
+        <button type="button"
+            onclick="document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'}); setTimeout(function(){ var el=document.getElementById('business_idea_step1'); if(el)el.focus(); },500);"
+            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl text-base transition">
+            Launch My Virginia LLC →
+        </button>
+    </div>
     <footer class="text-center py-10 border-t border-gray-900 mt-8">
         <p class="text-xs text-gray-600">
             © 2026 Launch Bridge LLC ·

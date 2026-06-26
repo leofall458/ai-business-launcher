@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Launch Bridge LLC</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media (max-width: 640px) {
+            input, textarea, select { font-size: 16px !important; }
+        }
+    </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen py-10">
     <div class="max-w-4xl mx-auto p-6">
@@ -63,7 +68,7 @@
                     </span>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2 text-sm text-gray-300 mb-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-300 mb-4">
                     <p>Name: <span class="text-white">{{ order.full_name }}</span></p>
                     <p>Email: <span class="text-white">{{ order.email }}</span></p>
                     <p>Phone: <span class="text-white">{{ order.phone }}</span></p>
@@ -150,14 +155,14 @@
                     </form>
 
                     {% if order.state == "filing_submitted" %}
-                    <div class="w-full bg-gray-800/50 border border-dashed border-gray-700 rounded-lg p-2 flex items-center gap-2 flex-wrap">
+                    <div class="w-full bg-gray-800/50 border border-dashed border-gray-700 rounded-lg p-2 flex items-start gap-2 flex-wrap">
                         <span class="text-xs text-gray-500 whitespace-nowrap">Manual fallback (normally automatic via Gmail poller):</span>
-                        <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2">
+                        <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2 flex-wrap w-full">
                             <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
                                 value="{{ order.scc_confirmation_number or '' }}" required
-                                class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-48"/>
+                                class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 flex-1 min-w-0"/>
                             <button type="submit"
-                                class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
+                                class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap w-full sm:w-auto">
                                 Mark Approved by SCC
                             </button>
                         </form>
@@ -181,11 +186,11 @@
                         {% endif %}
                     {% endif %}
 
-                    <form method="post" action="/admin/{{ order.id }}/mark-ein" class="flex gap-2">
+                    <form method="post" action="/admin/{{ order.id }}/mark-ein" class="flex gap-2 flex-wrap">
                         <input name="ein" type="text" placeholder="XX-XXXXXXX" value="{{ order.ein or '' }}"
-                            class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-32"/>
+                            class="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 flex-1 min-w-0"/>
                         <button type="submit"
-                            class="bg-yellow-700 hover:bg-yellow-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap">
+                            class="bg-yellow-700 hover:bg-yellow-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap w-full sm:w-auto">
                             Mark EIN Received
                         </button>
                     </form>
