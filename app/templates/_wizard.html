@@ -7,13 +7,25 @@
         #pay-sticky, #step1-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
             padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
             border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
-        #step2-spacer, #step1-spacer { height: 5rem; }
+        #step2-spacer, #step1-spacer { height: 6.5rem; }
         input, textarea, select { font-size: 16px !important; }
     }
     @media (min-width: 641px) {
         #step1-sticky { display: none; }
     }
+    .name-chip {
+        display: inline-block; cursor: pointer; background: rgba(59,130,246,0.15);
+        border: 1px solid rgba(59,130,246,0.4); color: #93c5fd;
+        padding: 4px 10px; border-radius: 9999px; font-size: 12px; margin: 3px 2px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .name-chip:hover { background: rgba(59,130,246,0.3); border-color: #3b82f6; color: #fff; }
+    .name-chip.selected { background: #2563eb; border-color: #2563eb; color: #fff; }
 </style>
+
+{% if stripe_publishable_key %}
+<script src="https://js.stripe.com/v3/"></script>
+{% endif %}
 
 <!-- ── WIZARD ── -->
 <div id="form-top-errors"></div>
@@ -23,8 +35,8 @@
     <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm shrink-0">1</div>
         <div>
-            <p class="font-bold text-lg">What's your business idea?</p>
-            <p class="text-gray-400 text-xs">Describe it and pick a name — we'll check Virginia SCC instantly.</p>
+            <p class="font-bold text-lg">Describe your business idea</p>
+            <p class="text-gray-400 text-xs">We'll generate name ideas and check Virginia SCC availability.</p>
         </div>
     </div>
 
@@ -32,28 +44,36 @@
 
         <!-- Business idea -->
         <div>
-            <label class="block text-xs text-gray-400 mb-1.5">Business idea (2–3 sentences) *</label>
+            <label class="block text-xs text-gray-400 mb-1.5">What's your business idea? *</label>
             <textarea id="business_idea_step1" rows="3"
                 placeholder="e.g. A mobile dog grooming service for busy professionals in Northern Virginia — I come to them with a self-contained grooming van."
-                class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm resize-none"></textarea>
+                class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm resize-none"
+                oninput="resetNameIdeas()"></textarea>
         </div>
 
-        <!-- AI name ideas expander -->
+        <!-- AI name generator — open by default -->
         <div>
-            <button type="button" onclick="toggleNameIdeas()"
-                class="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2 transition">
-                Not sure what to name it? Get AI suggestions →
-            </button>
-            <div id="name-ideas-section" class="hidden mt-3">
-                <form id="screen-name-form" hx-post="/screen-name" hx-target="#ai-name-ideas" hx-swap="innerHTML" hx-indicator="#screen-spinner">
-                    <input type="hidden" id="idea-for-screening" name="business_idea">
-                    <button type="submit" onclick="syncIdeaForScreening()"
-                        class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition">
-                        Generate Name Ideas
-                    </button>
-                </form>
-                <div id="screen-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">✨ AI is thinking...</div>
-                <div id="ai-name-ideas" class="mt-3 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></div>
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-xs text-gray-400 font-medium">✨ Get AI name ideas</p>
+                <span id="name-ideas-toggle-hint" class="text-xs text-gray-600">Describe your idea above first</span>
+            </div>
+            <form id="screen-name-form" hx-post="/screen-name" hx-target="#ai-name-ideas" hx-swap="innerHTML" hx-indicator="#screen-spinner">
+                <input type="hidden" id="idea-for-screening" name="business_idea">
+                <button type="submit" id="generate-names-btn" onclick="syncIdeaForScreening()"
+                    class="w-full bg-blue-800 hover:bg-blue-700 text-white font-semibold px-4 py-3 rounded-xl text-sm transition flex items-center justify-center gap-2">
+                    <span>✨ Generate name ideas</span>
+                    <span id="screen-spinner" class="htmx-indicator text-xs">thinking…</span>
+                </button>
+            </form>
+            <div id="ai-name-ideas" class="mt-3"></div>
+            <div id="name-chips" class="mt-2 hidden">
+                <p class="text-xs text-gray-500 mb-1">Tap a name to use it:</p>
+                <div id="chip-list"></div>
+                <button type="button" id="use-name-btn"
+                    onclick="continueWithSelectedName()"
+                    class="hidden mt-3 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl text-sm transition">
+                    Like this name? Continue →
+                </button>
             </div>
         </div>
 
@@ -131,6 +151,16 @@
 
     <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
 
+        <!-- Apple Pay / Google Pay button (shown only when supported) -->
+        <div id="pr-button-container" class="hidden mb-4">
+            <div id="pr-button" style="min-height:48px;"></div>
+            <div class="flex items-center gap-3 my-4">
+                <div class="flex-1 h-px bg-gray-700"></div>
+                <span class="text-xs text-gray-500">or pay with card</span>
+                <div class="flex-1 h-px bg-gray-700"></div>
+            </div>
+        </div>
+
         <form id="payment-form"
             hx-post="/launch"
             hx-target="#result"
@@ -191,6 +221,17 @@
                 </span>
             </label>
 
+            <!-- Pay button (inline / desktop) -->
+            <button type="submit" id="inline-pay-btn"
+                class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 rounded-xl text-lg shadow-lg shadow-green-900/30 transition">
+                💳 Pay $350 &amp; Launch My LLC →
+            </button>
+
+            <!-- Refund guarantee -->
+            <p class="text-center text-xs text-gray-400">
+                ↩️ 100% refund until we file &nbsp;·&nbsp; 🔒 Secure payment via Stripe &nbsp;·&nbsp; ⏱️ Filed within 24 hours
+            </p>
+
         </form>
 
         <!-- Trust badges -->
@@ -210,13 +251,15 @@
 
 </div>
 
-<!-- Sticky pay button (shown when step 2 is visible) -->
+<!-- Sticky pay button (shown when step 2 is visible, mobile only) -->
 <div id="pay-sticky" class="hidden">
     <button type="submit" form="payment-form"
         class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 rounded-xl text-lg shadow-2xl shadow-green-900/40 transition">
         💳 Pay $350 &amp; Launch My LLC →
     </button>
-    <p class="text-center text-xs text-gray-500 mt-1.5">$350 flat · Secure payment via Stripe · Apple Pay &amp; Google Pay accepted</p>
+    <p class="text-center text-[11px] text-gray-400 mt-1">
+        ↩️ 100% refund until we file &nbsp;·&nbsp; 🔒 Secure via Stripe &nbsp;·&nbsp; ⏱️ Filed within 24h
+    </p>
 </div>
 
 <div id="spinner" class="htmx-indicator text-center py-8 text-gray-400">
@@ -346,6 +389,9 @@
         const lSticky = document.getElementById('landing-sticky');
         if (lSticky) lSticky.style.display = 'none';
 
+        // Initialise Payment Request Button now that step 2 is visible
+        initPaymentRequest();
+
         // Set name badge in step 2
         document.getElementById('step2-name-badge').innerHTML =
             `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
@@ -380,16 +426,48 @@
         return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    // ── Name ideas ───────────────────────────────────────────────────────
-
-    function toggleNameIdeas() {
-        const sec = document.getElementById('name-ideas-section');
-        sec.classList.toggle('hidden');
-    }
+    // ── AI name ideas ────────────────────────────────────────────────────
 
     function syncIdeaForScreening() {
         document.getElementById('idea-for-screening').value =
             document.getElementById('business_idea_step1').value;
+    }
+
+    function resetNameIdeas() {
+        document.getElementById('ai-name-ideas').innerHTML = '';
+        document.getElementById('name-chips').classList.add('hidden');
+        document.getElementById('chip-list').innerHTML = '';
+        document.getElementById('use-name-btn').classList.add('hidden');
+        document.querySelectorAll('.name-chip').forEach(c => c.classList.remove('selected'));
+    }
+
+    // Extract "XYZ LLC" names from freeform AI text and build clickable chips
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id !== 'ai-name-ideas') return;
+        const text = evt.detail.target.innerText || '';
+        const matches = [...text.matchAll(/\b([A-Z][A-Za-z0-9 &'.\-]{1,40} LLC)\b/g)]
+            .map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).slice(0, 8);
+        if (!matches.length) return;
+        const chipsEl = document.getElementById('name-chips');
+        const chipList = document.getElementById('chip-list');
+        chipList.innerHTML = '';
+        matches.forEach(name => {
+            const chip = document.createElement('span');
+            chip.className = 'name-chip';
+            chip.textContent = name;
+            chip.onclick = () => {
+                document.querySelectorAll('.name-chip').forEach(c => c.classList.remove('selected'));
+                chip.classList.add('selected');
+                document.getElementById('desired_name_step1').value = name;
+                document.getElementById('use-name-btn').classList.remove('hidden');
+            };
+            chipList.appendChild(chip);
+        });
+        chipsEl.classList.remove('hidden');
+    });
+
+    function continueWithSelectedName() {
+        checkNameAndContinue();
     }
 
     // ── Existing LLC toggle ──────────────────────────────────────────────
@@ -398,6 +476,98 @@
         const skip = document.getElementById('skip_llc_step1').checked;
         document.getElementById('existing-llc-section').classList.toggle('hidden', !skip);
         document.getElementById('desired_name_step1').closest('div').classList.toggle('hidden', skip);
+    }
+
+    // ── Stripe Payment Request Button (Apple Pay / Google Pay) ───────────
+
+    let _prInitDone = false;
+    function initPaymentRequest() {
+        const key = '{{ stripe_publishable_key | default("") }}';
+        if (!key || _prInitDone || typeof Stripe === 'undefined') return;
+        _prInitDone = true;
+
+        const stripe = Stripe(key);
+        const pr = stripe.paymentRequest({
+            country: 'US',
+            currency: 'usd',
+            total: { label: 'Launch Bridge — Virginia LLC', amount: 35000 },
+            requestPayerName: true,
+            requestPayerEmail: true,
+            requestPayerPhone: true,
+        });
+
+        const elements = stripe.elements();
+        const prBtn = elements.create('paymentRequestButton', {
+            paymentRequest: pr,
+            style: { paymentRequestButton: { type: 'default', theme: 'dark', height: '52px' } },
+        });
+
+        pr.canMakePayment().then(result => {
+            if (!result) return;
+            document.getElementById('pr-button-container').classList.remove('hidden');
+            prBtn.mount('#pr-button');
+        });
+
+        pr.on('paymentmethod', async ev => {
+            // Collect form data before sending to server
+            const idea = document.getElementById('hidden_business_idea').value;
+            const desiredName = document.getElementById('hidden_desired_name').value;
+            const existingLLC = document.getElementById('hidden_existing_llc_name').value;
+            const skipLLC = document.getElementById('hidden_skip_llc').value;
+            const data = {
+                business_idea: idea,
+                desired_name: desiredName,
+                existing_llc_name: existingLLC,
+                skip_llc_formation: skipLLC,
+                first_name: document.querySelector('[name="first_name"]')?.value?.trim() || ev.payerName?.split(' ')[0] || '',
+                last_name: document.querySelector('[name="last_name"]')?.value?.trim() || ev.payerName?.split(' ').slice(1).join(' ') || '',
+                email: document.querySelector('[name="email"]')?.value?.trim() || ev.payerEmail || '',
+                phone: document.querySelector('[name="phone"]')?.value?.trim() || ev.payerPhone || '',
+                landing_page: document.querySelector('[name="landing_page"]')?.value || 'home',
+            };
+
+            if (!data.business_idea || (!data.desired_name && !data.existing_llc_name)) {
+                ev.complete('fail');
+                return;
+            }
+
+            let clientSecret, orderId;
+            try {
+                const res = await fetch('/launch-pr', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const json = await res.json();
+                clientSecret = json.client_secret;
+                orderId = json.order_id;
+            } catch(e) {
+                console.error('launch-pr failed:', e);
+                ev.complete('fail');
+                return;
+            }
+
+            const {paymentIntent, error} = await stripe.confirmCardPayment(
+                clientSecret,
+                {payment_method: ev.paymentMethod.id},
+                {handleActions: false}
+            );
+
+            if (error) {
+                ev.complete('fail');
+                return;
+            }
+
+            if (paymentIntent.status === 'requires_action') {
+                const {error: e2} = await stripe.confirmCardPayment(clientSecret);
+                if (e2) { ev.complete('fail'); return; }
+            }
+
+            ev.complete('success');
+            trackEvent('begin_checkout', {currency: 'USD', value: 350, method: 'payment_request'});
+            window.location.href = `/success?order_id=${orderId}&payment_intent_id=${paymentIntent.id}`;
+        });
     }
 
     // ── GA4 checkout_start on form submit ────────────────────────────────

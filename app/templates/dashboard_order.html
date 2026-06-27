@@ -63,15 +63,6 @@
             <form method="post" action="/dashboard/orders/{{ order_id }}/complete-intake" enctype="multipart/form-data" class="space-y-4">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
 
-                <!-- Date of Birth -->
-                <div>
-                    <label class="block text-xs text-blue-200/70 mb-1">Date of Birth *</label>
-                    <input name="dob" type="date" required
-                        value="{{ intake_form_data.get('dob', '') }}"
-                        class="w-full bg-gray-900 border {% if intake_errors.get('dob') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white text-sm"/>
-                    {% if intake_errors.get('dob') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.dob }}</p>{% endif %}
-                </div>
-
                 <!-- Address -->
                 <div>
                     <label class="block text-xs text-blue-200/70 mb-1">Virginia Street Address *</label>
@@ -346,6 +337,13 @@
             </p>
             <form method="post" action="/dashboard/orders/{{ order_id }}/ssn" class="space-y-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+                {% if not order.get('dob') %}
+                <div>
+                    <label class="block text-xs text-yellow-200/70 mb-1">Date of Birth *</label>
+                    <input name="dob" type="date" required
+                        class="w-full bg-gray-900 border border-yellow-800 rounded-lg p-3 text-white text-sm"/>
+                </div>
+                {% endif %}
                 <div>
                     <label class="block text-xs text-yellow-200/70 mb-1">Social Security Number</label>
                     <input name="ssn" type="text" inputmode="numeric" autocomplete="off" required placeholder="XXX-XX-XXXX"

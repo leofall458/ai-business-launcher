@@ -40,10 +40,12 @@
 
     <!-- Already have an order? -->
     <a href="/dashboard"
-        class="flex items-center justify-between bg-gray-900 border border-gray-700 hover:border-blue-600 rounded-xl p-4 mb-8 text-sm font-semibold text-blue-400 transition">
+        class="flex items-center justify-between bg-gray-900 border border-gray-700 hover:border-blue-600 rounded-xl p-4 mb-6 text-sm font-semibold text-blue-400 transition">
         <span>📦 Already have an order?</span>
         <span>Sign in to your dashboard →</span>
     </a>
+
+    {% include "_wizard.html" %}
 
     <!-- ── DELIVERABLES GALLERY ── -->
     <section class="mb-10">
@@ -172,8 +174,6 @@
             <p class="text-xs text-gray-600 mt-2">We pay Virginia directly — you never pay separately.</p>
         </div>
     </section>
-
-    {% include "_wizard.html" %}
 
     <!-- ── FOOTER ── -->
     <footer class="text-center py-10 border-t border-gray-900 mt-8">
