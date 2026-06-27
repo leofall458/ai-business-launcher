@@ -37,6 +37,21 @@ def create_checkout_session(order_id: str, business_name: str, success_url: str,
 def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id)
 
+def create_payment_intent(amount: int, order_id: str, business_name: str, email: str):
+    """PaymentIntent for the Stripe.js Payment Request Button (Apple Pay / Google Pay).
+    Unlike CheckoutSession, this stays on-page — the native payment sheet handles
+    the entire flow, and the webhook payment_intent.succeeded advances the order."""
+    return stripe.PaymentIntent.create(
+        amount=amount,
+        currency="usd",
+        metadata={"order_id": order_id},
+        description=f"Launch Bridge LLC — {business_name}",
+        receipt_email=email or None,
+    )
+
+def retrieve_payment_intent(pi_id: str):
+    return stripe.PaymentIntent.retrieve(pi_id)
+
 def create_connect_account(email: str, business_name: str, multi_member: bool):
     """Standard account for the customer, pre-filled as an LLC. Stripe's
     company.structure enum is what actually encodes "LLC" (there's no

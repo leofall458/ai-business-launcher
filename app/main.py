@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResp
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL
+from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL, STRIPE_PUBLISHABLE_KEY
 from app.agents.name_agent import screen_business_name
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
@@ -29,12 +29,15 @@ from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
     create_checkout_session,
     retrieve_checkout_session,
+    create_payment_intent,
+    retrieve_payment_intent,
     create_connect_account,
     create_account_link,
     create_pay_what_you_want_payment_link,
     is_account_active,
     construct_webhook_event,
 )
+from app.config import LLC_FORMATION_PRICE_CENTS
 from app.ssn_vault import (
     encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours, is_ssn_stored,
 )
@@ -367,10 +370,14 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Incorrect password", headers={"WWW-Authenticate": "Basic"})
     return True
 
+def _wizard_context() -> dict:
+    return {"stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or ""}
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse(request, "index.html", {
-        "cancelled": request.query_params.get("cancelled") == "1"
+        "cancelled": request.query_params.get("cancelled") == "1",
+        **_wizard_context(),
     })
 
 @app.get("/examples", response_class=HTMLResponse)
@@ -383,15 +390,15 @@ async def examples_demo_site():
 
 @app.get("/virginia-llc/contractors", response_class=HTMLResponse)
 async def landing_contractors(request: Request):
-    return templates.TemplateResponse(request, "virginia_llc_contractors.html", {})
+    return templates.TemplateResponse(request, "virginia_llc_contractors.html", {**_wizard_context()})
 
 @app.get("/virginia-llc/done-for-you", response_class=HTMLResponse)
 async def landing_done_for_you(request: Request):
-    return templates.TemplateResponse(request, "virginia_llc_done_for_you.html", {})
+    return templates.TemplateResponse(request, "virginia_llc_done_for_you.html", {**_wizard_context()})
 
 @app.get("/virginia-llc/pricing", response_class=HTMLResponse)
 async def landing_pricing(request: Request):
-    return templates.TemplateResponse(request, "virginia_llc_pricing.html", {})
+    return templates.TemplateResponse(request, "virginia_llc_pricing.html", {**_wizard_context()})
 
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy(request: Request):
@@ -1391,6 +1398,43 @@ async def launch(request: Request):
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
 
+@app.post("/launch-pr")
+async def launch_pr(request: Request):
+    """Express checkout via Stripe.js Payment Request Button (Apple Pay / Google Pay).
+    Returns a PaymentIntent client_secret so the native payment sheet can confirm
+    the charge on-page, without redirecting to Stripe Checkout."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body")
+
+    errors = validate_pre_payment_form(data)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    parsed = parse_intake_form(data)
+
+    order_ref = ORDERS.document()
+    order_id = order_ref.id
+    safe = {k: data[k] for k in PRE_PAYMENT_VALIDATED_FIELDS if data.get(k)}
+    record_state(order_ref, "draft", **safe, **parsed,
+                 created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
+                 awaiting_intake=True, payment_method="payment_request")
+
+    try:
+        pi = create_payment_intent(
+            amount=LLC_FORMATION_PRICE_CENTS,
+            order_id=order_id,
+            business_name=parsed["business_name"],
+            email=data.get("email", ""),
+        )
+        order_ref.set({"stripe_payment_intent_id": pi.id}, merge=True)
+    except Exception as e:
+        print(f"⚠️ Could not create PaymentIntent for order {order_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not start checkout — please use the card form below.")
+
+    return {"client_secret": pi.client_secret, "order_id": order_id}
+
 def needs_ssn(order: dict) -> bool:
     """True if this order still needs an EIN application filed with the
     IRS - the only step that actually requires an SSN. skip_ein customers
@@ -1530,7 +1574,8 @@ def resume_ein_after_ssn_reentry(order_id: str):
         notify_ein_ready(order, order_id)
 
 @app.get("/success")
-async def success(request: Request, background_tasks: BackgroundTasks, session_id: str = None, order_id: str = None):
+async def success(request: Request, background_tasks: BackgroundTasks,
+                  session_id: str = None, order_id: str = None, payment_intent_id: str = None):
     resolved_order_id = order_id
 
     if session_id:
@@ -1544,6 +1589,17 @@ async def success(request: Request, background_tasks: BackgroundTasks, session_i
             return RedirectResponse(url="/")
 
         process_paid_order(resolved_order_id, session.payment_status, background_tasks)
+
+    elif payment_intent_id and resolved_order_id:
+        # Payment Request Button (Apple Pay / Google Pay) express checkout path.
+        # Verify the PaymentIntent actually succeeded before advancing the order,
+        # so a tampered URL can't advance an unpaid order.
+        try:
+            pi = retrieve_payment_intent(payment_intent_id)
+            if pi.status == "succeeded" and (pi.metadata or {}).get("order_id") == resolved_order_id:
+                process_paid_order(resolved_order_id, "paid", background_tasks)
+        except Exception as e:
+            print(f"⚠️ Could not verify PaymentIntent {payment_intent_id}: {e}")
 
     if not resolved_order_id:
         return RedirectResponse(url="/")
@@ -1596,6 +1652,14 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
         log_entry["order_id"] = order_id
         if order_id:
             advanced = process_paid_order(order_id, session.payment_status, background_tasks)
+            log_entry["advanced_order"] = advanced
+
+    elif event.type == "payment_intent.succeeded":
+        pi = event.data.object
+        order_id = (pi.metadata or {}).get("order_id")
+        log_entry["order_id"] = order_id
+        if order_id:
+            advanced = process_paid_order(order_id, "paid", background_tasks)
             log_entry["advanced_order"] = advanced
 
     db.collection("webhook_events").add(log_entry)
@@ -1857,6 +1921,10 @@ async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTas
         return templates.TemplateResponse(request, "dashboard_order.html",
             _dashboard_order_context(request, order_ref, order, ssn_error=error), status_code=400)
 
+    dob = (form.get("dob") or "").strip()
+    if dob and not order.get("dob"):
+        order_ref.set({"dob": dob}, merge=True)
+
     if expired:
         resume_ein_after_ssn_reentry(order_id)
     else:
@@ -1865,7 +1933,7 @@ async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTas
     return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
 
 _POST_PAYMENT_INTAKE_SIMPLE_FIELDS = [
-    "dob", "address", "city", "zipcode", "county",
+    "address", "city", "zipcode", "county",
     "business_purpose", "target_customer",
     "registered_agent_choice",
     "skip_ein", "existing_ein",

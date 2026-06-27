@@ -43,7 +43,7 @@ PRE_PAYMENT_VALIDATED_FIELDS = [
 
 # Used by the post-payment dashboard intake form.
 POST_PAYMENT_VALIDATED_FIELDS = [
-    "dob", "address", "city", "zipcode", "county",
+    "address", "city", "zipcode", "county",
     "sig_first", "sig_last", "existing_ein",
     "photo_1", "photo_2", "photo_3",
 ]
@@ -190,8 +190,8 @@ def validate_pre_payment_form(form: dict) -> dict:
 
 
 def validate_post_payment_intake(form: dict) -> dict:
-    """Validates the address/DOB/signature fields collected in the dashboard
-    after payment. Missing EIN validation only fires when skip_ein is checked."""
+    """Validates the address/signature fields collected in the dashboard after payment.
+    DOB is now collected at the SSN step, not here."""
     errors = {}
 
     def check(field, fn, *args):
@@ -199,7 +199,6 @@ def validate_post_payment_intake(form: dict) -> dict:
         if err:
             errors[field] = err
 
-    check("dob", validate_dob, form.get("dob"))
     check("address", validate_address, form.get("address"))
     check("city", validate_city, form.get("city"))
     check("zipcode", validate_zip, form.get("zipcode"))
