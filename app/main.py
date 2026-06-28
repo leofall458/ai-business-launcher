@@ -12,9 +12,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL, STRIPE_PUBLISHABLE_KEY
-from app.agents.name_agent import screen_business_name
+from app.agents.name_agent import screen_business_name, suggest_alternative_names
 from app.agents.name_check_agent import check_business_name
-from app.agents.scc_name_check import check_name_on_scc, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
+from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
@@ -488,6 +488,20 @@ async def check_name(request: Request):
         "scc": scc_result,
         "desired_name": desired_name
     })
+
+@app.post("/suggest-names", response_class=HTMLResponse)
+async def suggest_names(request: Request):
+    """Returns AI-generated alternative LLC names when the customer's chosen
+    name is already taken on Virginia SCC. Called automatically by the wizard
+    when a TAKEN result comes back."""
+    form = await request.form()
+    desired_name = form.get("desired_name", "").strip()
+    business_idea = form.get("business_idea", "").strip()
+    if not desired_name:
+        return HTMLResponse("")
+    loop = asyncio.get_event_loop()
+    names = await loop.run_in_executor(None, suggest_alternative_names, desired_name, business_idea)
+    return templates.TemplateResponse(request, "name_suggestions.html", {"names": names})
 
 @app.post("/verify-existing-llc", response_class=HTMLResponse)
 async def verify_existing_llc(request: Request):
@@ -1381,6 +1395,25 @@ async def launch(request: Request):
             "all_fields": PRE_PAYMENT_VALIDATED_FIELDS,
         })
 
+    # Server-side guard: block definitively-taken names before reaching Stripe.
+    # Only runs for new LLC formation; allow through if the check times out so
+    # a slow SCC response never strands a customer at checkout.
+    desired_name_check = form.get("desired_name", "").strip()
+    if desired_name_check and not form.get("skip_llc_formation"):
+        try:
+            loop = asyncio.get_event_loop()
+            scc_check = await asyncio.wait_for(
+                loop.run_in_executor(None, check_name_public, desired_name_check),
+                timeout=5.0,
+            )
+            if scc_check.get("status") == "TAKEN":
+                return templates.TemplateResponse(request, "form_errors.html", {
+                    "errors": {"desired_name": "This business name is already registered in Virginia. Please choose a different name."},
+                    "all_fields": PRE_PAYMENT_VALIDATED_FIELDS,
+                })
+        except asyncio.TimeoutError:
+            pass  # SCC check timed out — allow through, admin will verify
+
     parsed = parse_intake_form(form)
 
     order_ref = ORDERS.document()
@@ -1429,6 +1462,22 @@ async def launch_pr(request: Request):
     errors = validate_pre_payment_form(data)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
+
+    desired_name_pr = (data.get("desired_name") or "").strip()
+    if desired_name_pr and not data.get("skip_llc_formation"):
+        try:
+            loop = asyncio.get_event_loop()
+            scc_check_pr = await asyncio.wait_for(
+                loop.run_in_executor(None, check_name_public, desired_name_pr),
+                timeout=5.0,
+            )
+            if scc_check_pr.get("status") == "TAKEN":
+                raise HTTPException(
+                    status_code=422,
+                    detail={"desired_name": "This business name is already registered in Virginia. Please choose a different name."},
+                )
+        except asyncio.TimeoutError:
+            pass
 
     parsed = parse_intake_form(data)
 

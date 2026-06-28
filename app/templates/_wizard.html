@@ -84,6 +84,12 @@
                 class="w-full bg-gray-800 rounded-xl p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-green-500 focus:outline-none text-sm"/>
             <span id="step1-name-error" class="text-red-400 text-xs mt-1 block hidden"></span>
             <span id="error-desired_name" class="text-red-400 text-xs mt-1 block"></span>
+            <!-- Alternative name suggestions injected here when name is TAKEN -->
+            <div id="alt-name-suggestions" class="mt-2"></div>
+            <div id="suggest-spinner" class="htmx-indicator text-xs text-gray-400 mt-2">
+                <span class="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-1"></span>
+                Finding alternative names…
+            </div>
         </div>
 
         <!-- Existing LLC option -->
@@ -119,8 +125,15 @@
             <input type="hidden" id="desired-name-for-check" name="desired_name">
         </form>
 
+        <!-- Hidden form to fetch alternative name suggestions when name is TAKEN -->
+        <form id="suggest-names-form" class="hidden"
+            hx-post="/suggest-names" hx-target="#alt-name-suggestions" hx-swap="innerHTML" hx-indicator="#suggest-spinner">
+            <input type="hidden" id="taken-name-for-suggest" name="desired_name">
+            <input type="hidden" id="idea-for-suggest" name="business_idea">
+        </form>
+
         <!-- CTA button -->
-        <button type="button" id="step1-btn" onclick="checkNameAndContinue()"
+        <button type="button" id="step1-btn" data-check-btn onclick="checkNameAndContinue()"
             class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-4 rounded-xl text-base transition shadow-lg shadow-blue-900/30">
             Check Name &amp; Continue →
         </button>
@@ -130,7 +143,7 @@
 <!-- Mobile spacer + sticky CTA for step 1 -->
 <div id="step1-spacer"></div>
 <div id="step1-sticky">
-    <button type="button" onclick="checkNameAndContinue()"
+    <button type="button" data-check-btn onclick="checkNameAndContinue()"
         class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-4 rounded-xl text-base transition">
         Check Name &amp; Continue →
     </button>
@@ -321,7 +334,68 @@
 
     // ── Step 1 → Step 2 transition ──────────────────────────────────────
 
+    let _nameCheckPending = false;
+
+    function _setCheckingState(on) {
+        _nameCheckPending = on;
+        document.querySelectorAll('[data-check-btn]').forEach(btn => {
+            btn.disabled = on;
+            btn.textContent = on ? 'Checking availability…' : 'Check Name & Continue →';
+            btn.style.opacity = on ? '0.6' : '';
+        });
+    }
+
+    function _advanceToStep2(name) {
+        // Read result from already-populated #name-check-inline
+        const resultEl = document.getElementById('name-check-inline');
+        const isAvailable = resultEl.querySelector('.bg-green-900') !== null;
+        const isUnknown = resultEl.querySelector('.bg-yellow-900') !== null;
+        const statusHtml = isAvailable
+            ? '<span class="text-green-400">✅ Available on Virginia SCC</span>'
+            : isUnknown
+                ? '<span class="text-yellow-400">⚠️ Couldn\'t auto-verify — our team will check before filing</span>'
+                : '<span class="text-gray-400">Check complete</span>';
+
+        document.getElementById('step2-name-badge').innerHTML =
+            `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm flex-wrap gap-y-1">
+                <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
+                <span class="ml-auto">${statusHtml}</span>
+            </div>`;
+
+        document.getElementById('step1').classList.add('step-done');
+        const step2 = document.getElementById('step2');
+        step2.classList.remove('hidden');
+        document.getElementById('pay-sticky').classList.remove('hidden');
+        const s1Sticky = document.getElementById('step1-sticky');
+        if (s1Sticky) s1Sticky.style.display = 'none';
+        const lSticky = document.getElementById('landing-sticky');
+        if (lSticky) lSticky.style.display = 'none';
+        initPaymentRequest();
+        step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function _advanceDirectly(name) {
+        // Used for skip_llc path — no name check needed, advance straight to step 2
+        document.getElementById('step2-name-badge').innerHTML =
+            `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
+                <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
+                <span class="ml-auto text-gray-400">Existing LLC</span>
+            </div>`;
+        document.getElementById('step1').classList.add('step-done');
+        const step2 = document.getElementById('step2');
+        step2.classList.remove('hidden');
+        document.getElementById('pay-sticky').classList.remove('hidden');
+        const s1Sticky = document.getElementById('step1-sticky');
+        if (s1Sticky) s1Sticky.style.display = 'none';
+        const lSticky = document.getElementById('landing-sticky');
+        if (lSticky) lSticky.style.display = 'none';
+        initPaymentRequest();
+        step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     function checkNameAndContinue() {
+        if (_nameCheckPending) return;
+
         const idea = document.getElementById('business_idea_step1').value.trim();
         const isSkipLLC = document.getElementById('skip_llc_step1').checked;
         const nameInput = isSkipLLC
@@ -353,7 +427,7 @@
             return;
         }
 
-        // Copy step 1 data into hidden fields for the payment form
+        // Copy step 1 data into the payment form hidden fields
         document.getElementById('hidden_business_idea').value = idea;
         if (isSkipLLC) {
             document.getElementById('hidden_existing_llc_name').value = name;
@@ -365,64 +439,55 @@
             document.getElementById('hidden_skip_llc').value = '';
         }
 
-        // GA4 event + lead capture
-        const landingPage = document.querySelector('[name="landing_page"]')?.value || 'home';
-        trackEvent('wizard_step1_complete', {landing_page: landingPage});
-        captureLead({business_idea: idea, desired_name: name, landing_page: landingPage, step: 'step1'});
+        // Existing LLC path — no SCC availability check needed, advance directly
+        if (isSkipLLC) {
+            const landingPage = document.querySelector('[name="landing_page"]')?.value || 'home';
+            trackEvent('wizard_step1_complete', {landing_page: landingPage});
+            captureLead({business_idea: idea, desired_name: name, landing_page: landingPage, step: 'step1'});
+            _advanceDirectly(name);
+            return;
+        }
 
-        // Show name check
+        // New LLC — run availability check first, advance only when result is not TAKEN
+        _setCheckingState(true);
         document.getElementById('name-check-wrapper').classList.remove('hidden');
+        document.getElementById('name-check-inline').innerHTML = '';
+        document.getElementById('alt-name-suggestions').innerHTML = '';
         document.getElementById('desired-name-for-check').value = name;
         htmx.trigger('#name-check-form', 'submit');
 
-        // Collapse step 1 visually
-        document.getElementById('step1').classList.add('step-done');
+        function onResult() {
+            document.getElementById('name-check-form').removeEventListener('htmx:afterRequest', onResult);
+            _setCheckingState(false);
 
-        // Show step 2
-        const step2 = document.getElementById('step2');
-        step2.classList.remove('hidden');
+            const resultEl = document.getElementById('name-check-inline');
+            const isTaken = resultEl.querySelector('.bg-red-900') !== null;
 
-        // Show sticky pay button, hide step1/landing stickies
-        document.getElementById('pay-sticky').classList.remove('hidden');
-        const s1Sticky = document.getElementById('step1-sticky');
-        if (s1Sticky) s1Sticky.style.display = 'none';
-        const lSticky = document.getElementById('landing-sticky');
-        if (lSticky) lSticky.style.display = 'none';
+            if (isTaken) {
+                nameErrEl.textContent = 'This name is already taken in Virginia. Please choose a different name before continuing.';
+                nameErrEl.classList.remove('hidden');
+                document.getElementById('taken-name-for-suggest').value = name;
+                document.getElementById('idea-for-suggest').value = idea;
+                htmx.trigger('#suggest-names-form', 'submit');
+            } else {
+                nameErrEl.classList.add('hidden');
+                document.getElementById('alt-name-suggestions').innerHTML = '';
+                const landingPage = document.querySelector('[name="landing_page"]')?.value || 'home';
+                trackEvent('wizard_step1_complete', {landing_page: landingPage});
+                captureLead({business_idea: idea, desired_name: name, landing_page: landingPage, step: 'step1'});
+                _advanceToStep2(name);
+            }
+        }
+        document.getElementById('name-check-form').addEventListener('htmx:afterRequest', onResult);
+    }
 
-        // Initialise Payment Request Button now that step 2 is visible
-        initPaymentRequest();
-
-        // Set name badge in step 2
-        document.getElementById('step2-name-badge').innerHTML =
-            `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm">
-                <span class="text-green-400">✓</span>
-                <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
-                <span class="text-gray-500 text-xs ml-auto">Name check in progress...</span>
-            </div>`;
-
-        // Wait for name check then update badge
-        document.getElementById('name-check-form').addEventListener('htmx:afterRequest', function updateBadge() {
-            const result = document.getElementById('name-check-inline');
-            const isAvailable = result.querySelector('.bg-green-900') !== null;
-            const isTaken = result.querySelector('.bg-red-900') !== null;
-            const isUnknown = result.querySelector('.bg-yellow-900') !== null;
-            const badge = document.getElementById('step2-name-badge');
-            const status = isAvailable
-                ? '<span class="text-green-400">✅ Available on Virginia SCC</span>'
-                : isTaken
-                    ? '<span class="text-yellow-400">⚠️ May be taken — we\'ll verify before filing</span>'
-                    : isUnknown
-                        ? '<span class="text-yellow-400">⚠️ Couldn\'t auto-verify — our team will check before filing</span>'
-                        : '<span class="text-gray-400">Check complete</span>';
-            badge.innerHTML =
-                `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm flex-wrap gap-y-1">
-                    <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>
-                    <span class="ml-auto">${status}</span>
-                </div>`;
-            this.removeEventListener('htmx:afterRequest', updateBadge);
-        });
-
-        step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    function tryAlternativeName(name) {
+        // Fill the field, clear error + old suggestions, rerun check
+        document.getElementById('desired_name_step1').value = name;
+        document.getElementById('step1-name-error').classList.add('hidden');
+        document.getElementById('alt-name-suggestions').innerHTML = '';
+        document.getElementById('name-check-inline').innerHTML = '';
+        checkNameAndContinue();
     }
 
     function escapeHtml(str) {
