@@ -124,7 +124,10 @@
                         class="w-full bg-gray-900 border border-blue-800 rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
                 </div>
 
-                <!-- Registered Agent -->
+                <!-- RA SELECTION - HIDDEN FOR NOW
+                     To re-enable: uncomment this block and remove the hidden input below.
+                     PATH A (Leo Fall as RA) is implemented in scc_llc_filer.py and works;
+                     hidden pending a commercial RA partner agreement.
                 <div>
                     <label class="block text-xs text-blue-200/70 mb-2">Registered Agent</label>
                     <label class="flex items-start gap-3 bg-gray-900 border border-purple-700 rounded-lg p-3 mb-2 cursor-pointer">
@@ -149,6 +152,9 @@
                         <p class="text-xs text-yellow-300">You confirm you are a Virginia resident and will be available at your address during business hours to receive legal documents.</p>
                     </div>
                 </div>
+                -->
+                <!-- Default "self" submitted silently while RA selection is hidden -->
+                <input type="hidden" name="registered_agent_choice" value="self">
 
                 <!-- Member Signature (Primary) -->
                 <div class="bg-gray-900 border border-yellow-700/60 rounded-lg p-4">

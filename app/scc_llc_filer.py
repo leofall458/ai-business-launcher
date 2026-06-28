@@ -198,7 +198,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
     city = customer_data["city"]
     zipcode = customer_data["zipcode"]
     industry_code = customer_data.get("industry_code", "0")
-    registered_agent_choice = customer_data.get("registered_agent_choice", "launchbridge")
+    registered_agent_choice = customer_data.get("registered_agent_choice", "self")
 
     if not business_name.upper().endswith(" LLC"):
         business_name = business_name + " LLC"
@@ -381,7 +381,8 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
                     print("Press ENTER once resolved in the browser to continue...")
                     input()
         else:
-            # PATH A (default): Launch Bridge (Leo Fall) serves as RA. He's
+            # PATH A (Leo Fall as RA) available but hidden from UI pending RA partner setup.
+            # The search-and-select flow below is fully implemented and tested.
             # already a registered SCC agent, so this is a search-and-select
             # against the existing agent search rather than the Create
             # Individual RA flow - selecting from search results sets the

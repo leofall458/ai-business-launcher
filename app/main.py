@@ -20,6 +20,12 @@ from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc
+
+# REGISTERED AGENT PARTNER - FUTURE FEATURE
+# Code for RA partner (Leo Fall) is implemented in scc_llc_filer.py PATH A
+# Hidden from UI until a commercial RA partner agreement is in place.
+# To re-enable: uncomment the RA selection section in dashboard_order.html
+# and restore the "launchbridge" default in form.setdefault below.
 from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
@@ -940,7 +946,7 @@ def run_scc_filing(order_id: str):
             "zipcode": order["zipcode"],
             "industry_code": order.get("industry_code", "0"),
             "duration": order.get("duration", "Perpetual"),
-            "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
+            "registered_agent_choice": order.get("registered_agent_choice", "self"),
         }
         llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
         if not llc_filed:
@@ -1385,7 +1391,7 @@ async def launch(request: Request):
                     photo_errors[f"photo_{i}"] = f"Could not process photo {i} - try a different file."
 
     form = {k: v for k, v in form_raw.items() if not (k.startswith("photo_") and hasattr(v, "filename"))}
-    form.setdefault("registered_agent_choice", "launchbridge")
+    form.setdefault("registered_agent_choice", "self")  # RA selection hidden from UI — default is self
 
     errors = validate_pre_payment_form(form)
     errors.update(photo_errors)
