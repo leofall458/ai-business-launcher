@@ -405,12 +405,15 @@
             const result = document.getElementById('name-check-inline');
             const isAvailable = result.querySelector('.bg-green-900') !== null;
             const isTaken = result.querySelector('.bg-red-900') !== null;
+            const isUnknown = result.querySelector('.bg-yellow-900') !== null;
             const badge = document.getElementById('step2-name-badge');
             const status = isAvailable
                 ? '<span class="text-green-400">✅ Available on Virginia SCC</span>'
                 : isTaken
                     ? '<span class="text-yellow-400">⚠️ May be taken — we\'ll verify before filing</span>'
-                    : '<span class="text-gray-400">SCC check complete</span>';
+                    : isUnknown
+                        ? '<span class="text-yellow-400">⚠️ Couldn\'t auto-verify — our team will check before filing</span>'
+                        : '<span class="text-gray-400">Check complete</span>';
             badge.innerHTML =
                 `<div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm flex-wrap gap-y-1">
                     <span class="text-gray-300 font-medium">${escapeHtml(name)}</span>

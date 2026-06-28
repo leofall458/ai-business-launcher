@@ -20,23 +20,32 @@
         </div>
         {% endif %}
     </div>
-    {% elif scc.status == "UNAVAILABLE" %}
+    {% elif scc.status == "UNKNOWN" %}
+    <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
+        <p class="font-semibold text-yellow-300">⚠️ Similar names exist on Virginia SCC</p>
+        <p class="text-xs text-yellow-400 mt-1">{{ scc.message }}</p>
+        {% if scc.conflicts %}
+        <div class="mt-2">
+            <p class="text-xs text-yellow-400 font-semibold">Similar names found:</p>
+            {% for conflict in scc.conflicts %}
+            <p class="text-xs text-yellow-300 ml-2">• {{ conflict }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <p class="text-xs text-yellow-400 mt-2">You can still continue — we'll confirm this before filing.</p>
+    </div>
+    {% elif scc.status in ("UNAVAILABLE", "ERROR") %}
     <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
         <p class="font-semibold text-yellow-300">⚠️ SCC name check temporarily unavailable</p>
         <p class="text-xs text-yellow-400 mt-1">
-            Please verify your name yourself at
-            <a href="{{ scc.link }}" target="_blank" rel="noopener" class="underline text-yellow-300">Virginia SCC Name Check</a>.
+            You can still continue — our team will manually verify your name's availability before filing your LLC.
+            Or check yourself at <a href="{{ scc.link }}" target="_blank" rel="noopener" class="underline text-yellow-300">Virginia SCC Entity Search</a>.
         </p>
     </div>
-    {% elif scc.status == "ERROR" %}
-    <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
-        <p class="font-semibold text-yellow-300">⚠️ Virginia SCC — Could not check</p>
-        <p class="text-xs text-yellow-400 mt-1">{{ scc.message }}</p>
-    </div>
     {% else %}
-    <div class="mb-4 p-4 rounded-lg bg-gray-700 border border-gray-600">
-        <p class="font-semibold text-gray-300">⚠️ Virginia SCC — Unknown result</p>
-        <p class="text-xs text-gray-400 mt-1">Please check the SCC website directly.</p>
+    <div class="mb-4 p-4 rounded-lg bg-yellow-900 border border-yellow-700">
+        <p class="font-semibold text-yellow-300">⚠️ Virginia SCC — Could not verify</p>
+        <p class="text-xs text-yellow-400 mt-1">Our team will verify your name before filing.</p>
     </div>
     {% endif %}
 

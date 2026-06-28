@@ -105,10 +105,16 @@
                     </span>
                 </div>
 
-                {% if order.name_check and not order.name_check.available %}
-                <div class="bg-yellow-950 border border-yellow-800 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-yellow-300">⚠️ Name check: {{ order.name_check.message }}</p>
-                </div>
+                {% if order.name_check %}
+                    {% if order.name_check.status == "TAKEN" %}
+                    <div class="bg-red-950 border border-red-800 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-red-300">🚫 Name conflict: {{ order.name_check.message }}</p>
+                    </div>
+                    {% elif order.name_check.status in ("UNAVAILABLE", "UNKNOWN", "ERROR") %}
+                    <div class="bg-yellow-950 border border-yellow-800 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-yellow-300">⚠️ Name unverified — manually check before approving. {{ order.name_check.message }}</p>
+                    </div>
+                    {% endif %}
                 {% endif %}
 
                 {% if order.documents_error %}

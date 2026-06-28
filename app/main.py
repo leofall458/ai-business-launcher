@@ -454,6 +454,17 @@ async def screen_name(request: Request):
 async def check_name(request: Request):
     form = await request.form()
     desired_name = form.get("desired_name", "")
+
+    ip = get_client_ip(request)
+    if _rate_limited("name_check_rate_limit", "ip", ip, datetime.timedelta(minutes=1), 5):
+        return HTMLResponse(
+            '<div class="p-4 rounded-lg bg-yellow-900 border border-yellow-700">'
+            '<p class="font-semibold text-yellow-300">⚠️ Too many requests</p>'
+            '<p class="text-xs text-yellow-400 mt-1">Please wait a moment before checking another name.</p>'
+            '</div>',
+            status_code=429,
+        )
+
     loop = asyncio.get_event_loop()
 
     scc_result, gemini_result = await asyncio.gather(
@@ -598,7 +609,10 @@ def run_name_check(order_id: str):
     try:
         result = check_name_on_scc(order["business_name"])
         order_ref.set({"name_check": result}, merge=True)
-        if result.get("available") or result.get("status") == "UNAVAILABLE":
+        # UNAVAILABLE/UNKNOWN = couldn't determine definitively; advance the order
+        # so it isn't stranded, and flag it for manual admin verification.
+        auto_clear = result.get("available") or result.get("status") in ("UNAVAILABLE", "UNKNOWN")
+        if auto_clear:
             record_state(order_ref, "name_cleared", name_cleared_at=firestore.SERVER_TIMESTAMP)
             run_document_generation(order_id)
         else:
