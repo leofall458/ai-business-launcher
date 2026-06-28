@@ -62,10 +62,24 @@
                     <div>
                         <h2 class="text-lg font-semibold text-white">{{ order.business_name or "(no business name)" }}</h2>
                         <p class="text-xs text-gray-500 font-mono">{{ order.id }}</p>
+                        {% if order.website_url %}
+                        <a href="{{ order.website_url }}" target="_blank" class="text-xs text-blue-400 hover:underline">🌐 {{ order.website_url }}</a>
+                        {% endif %}
                     </div>
-                    <span class="shrink-0 bg-blue-900 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
-                        {{ order.state|default("draft") }}
-                    </span>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span class="bg-blue-900 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
+                            {{ order.state|default("draft") }}
+                        </span>
+                        {% if order.assets_status == "complete" or order.early_assets_done %}
+                        <span class="bg-green-900 text-green-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ✅ Ready</span>
+                        {% elif order.assets_status == "generating" %}
+                        <span class="bg-blue-900 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ⏳ Generating</span>
+                        {% elif order.assets_status == "failed" or order.asset_generation_error %}
+                        <span class="bg-red-900 text-red-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ❌ Failed</span>
+                        {% elif not order.awaiting_intake %}
+                        <span class="bg-gray-800 text-gray-400 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ⏳ Pending</span>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-300 mb-4">
@@ -195,11 +209,11 @@
                         </button>
                     </form>
 
-                    {% if order.documents_error or order.asset_generation_error %}
+                    {% if order.documents_error or order.asset_generation_error or order.assets_status == "failed" %}
                     <form method="post" action="/admin/{{ order.id }}/retry-agents">
                         <button type="submit"
                             class="bg-orange-700 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                            🔁 Retry Failed Agents
+                            🔁 Retry Assets
                         </button>
                     </form>
                     {% endif %}

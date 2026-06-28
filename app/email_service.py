@@ -425,7 +425,7 @@ def send_early_assets_email(order: dict, order_id: str):
         f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
     )
     html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
-    _send(email, f"Your Business Package is Ready — {business_name}", body, html_body=html)
+    _send(email, f"Your Launch Bridge package is ready! 🎉 — {business_name}", body, html_body=html)
 
 def send_website_live_email(order: dict, order_id: str):
     """Email 6 (Part 4): sent once run_asset_generation finishes the

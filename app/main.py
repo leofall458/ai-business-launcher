@@ -132,15 +132,15 @@ def record_state(order_ref, new_state: str, **extra_fields):
 
 STATE_MESSAGES = {
     "draft": "We're waiting for your payment to go through.",
-    "paid": "Payment received. We're checking your business name's availability with the Virginia State Corporation Commission.",
-    "name_cleared": "Your business name is available. Your order is queued for review before we file.",
-    "review_approved": "Your order has been approved and we're preparing your filing.",
-    "filing_submitted": "Your LLC paperwork has been submitted to the Virginia SCC. SCC approval typically takes several business days - we don't control their timeline and can't promise an exact date. Your EIN application will be filed with the IRS once that approval comes through.",
+    "paid": "Payment received! Complete your setup form to get your brand kit, website, and documents started.",
+    "name_cleared": "Business name verified! We're generating your brand kit, website, and documents now.",
+    "review_approved": "Your brand kit and documents are generating and we're preparing to file your LLC.",
+    "filing_submitted": "Your brand kit, website, and documents are ready! Your LLC has been filed with Virginia SCC — approval typically takes 1-3 business days.",
     # filing_confirmed, ein_requested, and ein_issued have dynamic wording -
     # see compute_state_message() below - since they depend on ein_status/
     # next_available_window or the actual EIN value, not just the state name.
     "assets_generated": "Your brand kit, marketing plan, and business website are ready.",
-    "complete": "Everything is ready - here's your full business package.",
+    "complete": "Everything is ready — here's your full business package.",
 }
 
 def compute_state_message(order: dict, state: str) -> str:
@@ -152,15 +152,15 @@ def compute_state_message(order: dict, state: str) -> str:
         if order.get("ein_status") == "queued" and order.get("next_available_window"):
             window = datetime.datetime.fromisoformat(order["next_available_window"])
             return (
-                f"Your LLC has been approved! Your EIN application will be submitted on "
+                f"Your LLC is approved and your website is live! Your EIN application will be submitted on "
                 f"{window.strftime('%A, %B %d')} at {window.strftime('%I:%M %p').lstrip('0')} Eastern "
                 f"when the IRS system opens."
             )
-        return "Your Virginia LLC has been officially approved by the SCC. We're now preparing your EIN application."
+        return "Your LLC is officially approved! Your website and brand kit are already live. We're now applying for your EIN."
     if state == "ein_requested":
         return "Your EIN application has been submitted to the IRS. You will receive your EIN shortly."
     if state == "ein_issued":
-        return f"Your EIN is: {order.get('ein', '')}. Your business is ready to operate!"
+        return f"Your EIN is: {order.get('ein', '')}. Your business is fully ready to operate!"
     return STATE_MESSAGES.get(state, "")
 
 def fmt_date(ts) -> str:
@@ -180,15 +180,16 @@ def on_date(ts) -> str:
     return f" on {formatted}" if formatted else ""
 
 def compute_timeline(order: dict, state: str) -> list:
-    """Derives the 10-step customer-facing timeline from the order's raw
-    state machine fields. skip_llc_formation/skip_ein customers bypass
-    whole steps (filing, SCC approval) rather than just completing them
-    instantly, so those get their own "skipped" wording instead of acting
-    like the step still happened the normal way."""
+    """Derives the 9-step customer-facing timeline. Assets (brand kit,
+    website, Stripe) are shown first because they complete immediately
+    after intake — independent of LLC filing and EIN, which come after.
+    skip_llc_formation/skip_ein customers bypass whole government steps."""
     skip_llc = bool(order.get("skip_llc_formation"))
     skip_ein = bool(order.get("skip_ein"))
     business_name = order.get("business_name", "your business")
     email = order.get("email", "")
+    assets_status = order.get("assets_status", "")
+    intake_done = not order.get("awaiting_intake")
     steps = []
 
     # 1. Payment Received
@@ -197,52 +198,69 @@ def compute_timeline(order: dict, state: str) -> list:
             "description": f"Payment of $350 confirmed{on_date(order.get('paid_at'))}"})
     else:
         steps.append({"key": "payment", "name": "Payment Received", "status": "pending",
-            "description": "We're waiting for your payment to go through."})
+            "description": "Waiting for payment to go through."})
 
-    # 2. Name Verification
-    name_check = order.get("name_check")
-    if skip_llc:
-        steps.append({"key": "name", "name": "Name Verification", "status": "complete",
-            "description": "Using your existing LLC - already verified on Virginia SCC records"})
-    elif name_check and name_check.get("available"):
-        steps.append({"key": "name", "name": "Name Verification", "status": "complete",
-            "description": f"{business_name} verified as available on Virginia SCC{on_date(order.get('name_cleared_at'))}"})
-    elif name_check and not name_check.get("available"):
-        steps.append({"key": "name", "name": "Name Verification", "status": "on_hold",
-            "description": f"Your filing is on hold - we will contact you at {email} about choosing a different name."})
+    # 2. Setup Complete (intake form)
+    if state == "draft":
+        steps.append({"key": "setup", "name": "Setup Complete", "status": "pending",
+            "description": "You'll fill out your address, website preferences, and documents after payment."})
+    elif intake_done:
+        steps.append({"key": "setup", "name": "Setup Complete", "status": "complete",
+            "description": f"Business details collected{on_date(order.get('intake_complete_at'))}"})
     else:
-        steps.append({"key": "name", "name": "Name Verification",
-            "status": "current" if state == "paid" else "pending",
-            "description": "Verifying your business name with Virginia SCC..."})
+        steps.append({"key": "setup", "name": "Setup Complete", "status": "current",
+            "description": "Check your email for a link to complete your setup form."})
 
-    # 3. Documents Generated
-    if order.get("documents_generated"):
-        steps.append({"key": "documents", "name": "Documents Generated", "status": "complete",
-            "description": f"Articles of Organization, Operating Agreement, and brand kit created{on_date(order.get('documents_generated_at'))}"})
+    # 3. Brand Kit & Documents Ready (generated immediately after intake)
+    if order.get("documents_generated") or assets_status == "complete":
+        steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "complete",
+            "description": f"Articles of Organization, Operating Agreement, brand kit, and marketing plan created{on_date(order.get('documents_generated_at'))}"})
     elif order.get("documents_error"):
-        steps.append({"key": "documents", "name": "Documents Generated", "status": "on_hold",
+        steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "on_hold",
             "description": order["documents_error"]})
+    elif intake_done:
+        steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "current",
+            "description": "AI is generating your brand kit, documents, and marketing plan — usually 2-3 minutes..."})
     else:
-        steps.append({"key": "documents", "name": "Documents Generated",
-            "status": "current" if steps[1]["status"] == "complete" else "pending",
-            "description": "AI is generating your business documents..."})
+        steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "pending",
+            "description": "Generated immediately when you complete setup."})
 
-    # 4. Internal Review
-    if skip_llc:
-        steps.append({"key": "review", "name": "Internal Review", "status": "complete",
-            "description": "Skipped - no internal review needed for an existing LLC"})
-    elif reached(state, "review_approved"):
-        steps.append({"key": "review", "name": "Internal Review", "status": "complete",
-            "description": f"Your filing has been approved for submission{on_date(order.get('review_approved_at'))}"})
+    # 4. Website Live (generated immediately after intake)
+    website_url = order.get("website_url")
+    if website_url:
+        steps.append({"key": "website", "name": "Business Website Live", "status": "complete",
+            "description": f"Your website is live at {website_url}", "url": website_url})
+    elif order.get("asset_generation_error") and intake_done:
+        steps.append({"key": "website", "name": "Business Website Live", "status": "on_hold",
+            "description": order["asset_generation_error"]})
+    elif intake_done:
+        steps.append({"key": "website", "name": "Business Website Live", "status": "current",
+            "description": "Building and deploying your business website..."})
     else:
-        steps.append({"key": "review", "name": "Internal Review",
-            "status": "current" if state == "name_cleared" else "pending",
-            "description": "Our team is reviewing your filing - usually within 2 hours during business hours."})
+        steps.append({"key": "website", "name": "Business Website Live", "status": "pending",
+            "description": "Website will be generated immediately when you complete setup."})
 
-    # 5. LLC Filed with Virginia SCC
+    # 5. Stripe Payment Account (created immediately after intake)
+    connect_id = order.get("stripe_connect_account_id")
+    if connect_id:
+        if is_account_active(connect_id):
+            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "complete",
+                "description": "✅ Your payment account is active — you can accept payments"})
+        else:
+            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
+                "description": "Your Stripe account is ready — finish setup to start accepting payments",
+                "onboarding": True})
+    elif intake_done:
+        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
+            "description": "Creating your Stripe payment account..."})
+    else:
+        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "pending",
+            "description": "Stripe account will be created after you complete setup."})
+
+    # 6. LLC Filed with Virginia SCC
     if skip_llc:
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "complete",
-            "description": "Skipped - using your existing LLC"})
+            "description": "Skipped — using your existing LLC"})
     elif order.get("filing_error"):
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "on_hold",
             "description": order["filing_error"]})
@@ -252,14 +270,17 @@ def compute_timeline(order: dict, state: str) -> list:
     elif state == "review_approved":
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
             "description": "Your LLC is being submitted to the Virginia SCC..."})
+    elif reached(state, "name_cleared"):
+        steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
+            "description": "Our team is reviewing and will file your LLC within 24 hours."})
     else:
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "pending",
-            "description": "Waiting for internal approval before filing"})
+            "description": "Will be filed within 24 hours of setup completion."})
 
-    # 6. LLC Approved by Virginia
+    # 7. LLC Approved by Virginia
     if skip_llc:
         steps.append({"key": "approved", "name": "LLC Approved by Virginia", "status": "complete",
-            "description": "Skipped - your existing LLC is already approved"})
+            "description": "Skipped — your existing LLC is already approved"})
     elif reached(state, "filing_confirmed"):
         steps.append({"key": "approved", "name": "LLC Approved by Virginia", "status": "complete",
             "description": f"Virginia approved {business_name}{on_date(order.get('filing_confirmed_at'))}"})
@@ -268,72 +289,40 @@ def compute_timeline(order: dict, state: str) -> list:
             "status": "current" if state == "filing_submitted" else "pending",
             "description": "Waiting for Virginia SCC to process your filing (1-3 business days)"})
 
-    # 7. EIN Application
+    # 8. EIN Issued
     ein = order.get("ein")
     ein_status = order.get("ein_status")
     if ein and reached(state, "ein_issued"):
         if ein_status == "provided_by_customer":
-            desc = f"EIN {ein} - provided by you"
+            desc = f"EIN {ein} — provided by you"
         else:
             desc = f"EIN {ein} issued by IRS{on_date(order.get('ein_issued_at'))}"
-        steps.append({"key": "ein", "name": "EIN Application", "status": "complete", "description": desc})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "complete", "description": desc})
     elif order.get("ein_error"):
-        steps.append({"key": "ein", "name": "EIN Application", "status": "on_hold", "description": order["ein_error"]})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "on_hold", "description": order["ein_error"]})
     elif ein_status == "queued" and order.get("next_available_window"):
         window = order["next_available_window"]
         if isinstance(window, str):
             window = datetime.datetime.fromisoformat(window)
-        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
-            "description": f"EIN application queued - will be submitted {format_eta(window)}"})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "current",
+            "description": f"EIN application queued — will be submitted {format_eta(window)}"})
     elif state == "ein_requested":
-        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "current",
             "description": "EIN application submitted to IRS"})
     elif state == "awaiting_ein_filing":
-        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
-            "description": "Your SSN is on file - filing your EIN with the IRS shortly"})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "current",
+            "description": "Your SSN is on file — filing your EIN with the IRS shortly"})
     elif reached(state, "filing_confirmed"):
-        steps.append({"key": "ein", "name": "EIN Application", "status": "current",
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "current",
             "description": "Preparing your EIN application..."})
     else:
-        steps.append({"key": "ein", "name": "EIN Application", "status": "pending",
-            "description": "Will be submitted after LLC approval"})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "pending",
+            "description": "Will be applied for same day your LLC is approved (1-3 business days)"})
 
-    # 8. Business Website Live
-    website_url = order.get("website_url")
-    if website_url:
-        steps.append({"key": "website", "name": "Business Website Live", "status": "complete",
-            "description": f"Your website is live at {website_url}", "url": website_url})
-    elif order.get("asset_generation_error"):
-        steps.append({"key": "website", "name": "Business Website Live", "status": "on_hold",
-            "description": order["asset_generation_error"]})
-    elif reached(state, "ein_issued"):
-        steps.append({"key": "website", "name": "Business Website Live", "status": "current",
-            "description": "Generating your business website..."})
-    else:
-        steps.append({"key": "website", "name": "Business Website Live", "status": "pending",
-            "description": "Website will be generated after LLC approval"})
-
-    # 9. Stripe Payment Account
-    connect_id = order.get("stripe_connect_account_id")
-    if connect_id:
-        if is_account_active(connect_id):
-            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "complete",
-                "description": "✅ Your payment account is active - you can accept payments"})
-        else:
-            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
-                "description": "Your Stripe account is ready - finish setup to start accepting payments",
-                "onboarding": True})
-    elif reached(state, "ein_issued"):
-        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
-            "description": "Setting up your Stripe payment account..."})
-    else:
-        steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "pending",
-            "description": "Stripe account will be created after LLC approval"})
-
-    # 10. Complete
+    # 9. Complete
     if state == "complete":
         steps.append({"key": "complete", "name": "Complete", "status": "complete",
-            "description": "🎉 Your business is fully operational!"})
+            "description": "🎉 Your business is fully set up and ready to operate!"})
     else:
         steps.append({"key": "complete", "name": "Complete", "status": "pending",
             "description": "Almost there..."})
@@ -350,6 +339,8 @@ def estimate_completion(order: dict, state: str) -> str:
     today = datetime.date.today()
     if order.get("skip_llc_formation"):
         days_out = 0 if reached(state, "ein_issued") else 1
+    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["name_cleared"]:
+        days_out = 5
     elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["filing_submitted"]:
         days_out = 4
     elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["filing_confirmed"]:
@@ -720,88 +711,101 @@ def run_early_assets(order_id: str):
     Generates all deliverables that don't require SCC approval or an EIN:
     brand kit, marketing plan, LLC docs, business website, and Stripe Connect
     account. Runs concurrently with run_name_check — both are idempotent, so
-    they can safely overlap without duplicating work."""
+    they can safely overlap without duplicating work.
+
+    assets_status tracks progress: "generating" → "complete" | "failed"."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
 
-    # Brand kit, marketing plan, LLC docs — idempotent, skips already-done steps
-    run_document_generation(order_id)
-    order = order_ref.get().to_dict()
+    order_ref.set({"assets_status": "generating"}, merge=True)
 
-    business_name = order.get("business_name", "")
-    business_idea = order.get("business_idea", "")
-    target_customer = order.get("target_customer", "")
-    principal_address = order.get("principal_address", "")
-    email = order.get("email", "")
-    phone = order.get("phone", "")
-    asset_error = None
+    try:
+        # Brand kit, marketing plan, LLC docs — idempotent, skips already-done steps
+        run_document_generation(order_id)
+        order = order_ref.get().to_dict()
 
-    connect_account_id = order.get("stripe_connect_account_id")
-    if not connect_account_id:
-        try:
-            account = create_connect_account(
-                email=email,
-                business_name=business_name,
-                multi_member=len(order.get("all_signatures", [])) > 1,
-            )
-            connect_account_id = account.id
-            order_ref.set({"stripe_connect_account_id": connect_account_id}, merge=True)
-        except Exception as e:
-            print(f"⚠️ Could not create Stripe Connect for order {order_id}: {e}")
-            asset_error = f"Could not set up your Stripe payment account: {e}"
+        business_name = order.get("business_name", "")
+        business_idea = order.get("business_idea", "")
+        target_customer = order.get("target_customer", "")
+        principal_address = order.get("principal_address", "")
+        email = order.get("email", "")
+        phone = order.get("phone", "")
+        asset_error = None
 
-    website_url = order.get("website_url")
-    if not website_url:
-        try:
-            services = [
-                {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
-                for i in (1, 2, 3)
-            ]
-            photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
-            result = generate_website(
-                business_name, business_idea, target_customer, email, phone, principal_address,
-                template_name=order.get("website_template", "professional"),
-                tagline=order.get("website_tagline", ""),
-                description=order.get("website_description", ""),
-                services=services,
-                hours=order.get("business_hours", ""),
-                photos=photos,
-                instagram_url=order.get("instagram_url", ""),
-                facebook_url=order.get("facebook_url", ""),
-                tiktok_url=order.get("tiktok_url", ""),
-                color_preference=order.get("color_preference", "default"),
-                custom_primary_color=order.get("custom_primary_color", ""),
-                payment_link_url=None,  # Added after EIN + Stripe onboarding completes
-                order_id=order_id,
-            )
-            deployed = deploy_website(business_name, result["html"], order_id=order_id)
-            if deployed:
-                website_url = deployed["url"]
-                order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
-            else:
-                print(f"⚠️ Early website deploy returned no URL for order {order_id}")
-                asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
-        except Exception as e:
-            print(f"⚠️ Early website generation/deploy failed for order {order_id}: {e}")
-            asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed: {e}"
+        connect_account_id = order.get("stripe_connect_account_id")
+        if not connect_account_id:
+            try:
+                account = create_connect_account(
+                    email=email,
+                    business_name=business_name,
+                    multi_member=len(order.get("all_signatures", [])) > 1,
+                )
+                connect_account_id = account.id
+                order_ref.set({"stripe_connect_account_id": connect_account_id}, merge=True)
+            except Exception as e:
+                print(f"⚠️ Could not create Stripe Connect for order {order_id}: {e}")
+                asset_error = f"Could not set up your Stripe payment account: {e}"
 
-    flag_update: dict = {
-        "early_assets_done": True,
-        "early_assets_done_at": firestore.SERVER_TIMESTAMP,
-        "asset_generation_error": asset_error if asset_error else firestore.DELETE_FIELD,
-    }
-    if website_url:
-        flag_update["website_url"] = website_url
-    order_ref.set(flag_update, merge=True)
+        website_url = order.get("website_url")
+        if not website_url:
+            try:
+                services = [
+                    {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+                    for i in (1, 2, 3)
+                ]
+                photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+                result = generate_website(
+                    business_name, business_idea, target_customer, email, phone, principal_address,
+                    template_name=order.get("website_template", "professional"),
+                    tagline=order.get("website_tagline", ""),
+                    description=order.get("website_description", ""),
+                    services=services,
+                    hours=order.get("business_hours", ""),
+                    photos=photos,
+                    instagram_url=order.get("instagram_url", ""),
+                    facebook_url=order.get("facebook_url", ""),
+                    tiktok_url=order.get("tiktok_url", ""),
+                    color_preference=order.get("color_preference", "default"),
+                    custom_primary_color=order.get("custom_primary_color", ""),
+                    payment_link_url=None,  # Added after EIN + Stripe onboarding completes
+                    order_id=order_id,
+                )
+                deployed = deploy_website(business_name, result["html"], order_id=order_id)
+                if deployed:
+                    website_url = deployed["url"]
+                    order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
+                else:
+                    print(f"⚠️ Early website deploy returned no URL for order {order_id}")
+                    asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
+            except Exception as e:
+                print(f"⚠️ Early website generation/deploy failed for order {order_id}: {e}")
+                asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed: {e}"
 
-    order = {**order, "website_url": website_url, "stripe_connect_account_id": connect_account_id}
-    send_early_assets_email(order, order_id)
-    send_admin_sms(
-        f"🎨 Early assets done for {business_name}" +
-        (f" — site: {website_url}" if website_url else " — website failed, check logs")
-    )
+        all_succeeded = not asset_error and bool(website_url) and bool(connect_account_id)
+        flag_update: dict = {
+            "early_assets_done": True,
+            "early_assets_done_at": firestore.SERVER_TIMESTAMP,
+            "assets_status": "complete" if all_succeeded else "failed",
+            "asset_generation_error": asset_error if asset_error else firestore.DELETE_FIELD,
+        }
+        if website_url:
+            flag_update["website_url"] = website_url
+        order_ref.set(flag_update, merge=True)
+
+        order = {**order, "website_url": website_url, "stripe_connect_account_id": connect_account_id}
+        send_early_assets_email(order, order_id)
+        send_admin_sms(
+            f"🎨 Assets ready: {business_name}" +
+            (f" — {website_url}" if website_url else " — website failed, check logs")
+        )
+    except Exception as e:
+        print(f"⚠️ run_early_assets crashed for order {order_id}: {e}")
+        order_ref.set({
+            "assets_status": "failed",
+            "asset_generation_error": f"Asset generation crashed: {e}",
+        }, merge=True)
 
 SCC_FILED_STATES = {
     "filing_submitted", "filing_confirmed", "awaiting_ein_filing",
@@ -1510,7 +1514,8 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         return True
 
     if order.get("skip_llc_formation"):
-        background_tasks.add_task(run_document_generation, order_id)
+        if not awaiting_intake:
+            background_tasks.add_task(run_early_assets, order_id)
         trigger_assets = advance_past_filing_confirmed(order_ref, order)
         if trigger_assets:
             background_tasks.add_task(run_asset_generation, order_id)
@@ -1542,7 +1547,8 @@ def start_pipeline_after_ssn(order_id: str, background_tasks: BackgroundTasks):
         return
 
     if order.get("skip_llc_formation"):
-        background_tasks.add_task(run_document_generation, order_id)
+        if not order.get("early_assets_done"):
+            background_tasks.add_task(run_early_assets, order_id)
         trigger_assets = advance_past_filing_confirmed(order_ref, order)
         if trigger_assets:
             background_tasks.add_task(run_asset_generation, order_id)
@@ -2008,18 +2014,19 @@ async def dashboard_complete_intake(
 
     updated_order = order_ref.get().to_dict()
 
-    # Kick off the pipeline only once both intake and SSN (if needed) are done.
+    # Asset generation starts immediately on intake completion — brand kit,
+    # website, docs, and Stripe Connect don't require the SSN or EIN.
+    background_tasks.add_task(run_early_assets, order_id)
+
+    # Filing pipeline (name check, SCC filing) still waits for the SSN,
+    # which is needed for the EIN step that follows LLC approval.
     if not updated_order.get("awaiting_ssn"):
         if updated_order.get("skip_llc_formation"):
-            background_tasks.add_task(run_early_assets, order_id)
             trigger_assets = advance_past_filing_confirmed(order_ref, updated_order)
             if trigger_assets:
                 background_tasks.add_task(run_asset_generation, order_id)
         else:
-            # run_name_check handles state advancement; run_early_assets generates
-            # all deliverables in parallel — both are idempotent so they can overlap.
             background_tasks.add_task(run_name_check, order_id)
-            background_tasks.add_task(run_early_assets, order_id)
 
     return RedirectResponse(url=f"/dashboard/orders/{order_id}?ga_event=intake_complete", status_code=303)
 
@@ -2169,17 +2176,13 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
 
 @app.post("/admin/{order_id}/approve")
 async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    """Bug fix: this used to only kick off SCC filing - it never went
-    through run_name_check, the only other caller of
-    run_document_generation, so an order approved here would reach
-    "complete" with no brand kit, marketing plan, name-screening result,
-    or LLC PDF ever generated (silently, since run_document_generation
-    was simply never invoked - found via Govcon Ramp LLC, order
-    8coHUbXK9NrQmuqmuQNo). Document generation doesn't actually depend on
-    SCC filing succeeding, so it's safe to kick off in parallel here too."""
+    """Approves the order for SCC filing and kicks off filing + asset
+    generation in parallel. run_early_assets is idempotent — if the
+    customer's intake already triggered it, it skips whatever's already
+    done; this is a safety net for the rare case assets haven't run yet."""
     record_state(ORDERS.document(order_id), "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
     background_tasks.add_task(run_scc_filing, order_id)
-    background_tasks.add_task(run_document_generation, order_id)
+    background_tasks.add_task(run_early_assets, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/mark-filed")
@@ -2270,19 +2273,19 @@ async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: 
 
 @app.post("/admin/{order_id}/retry-agents")
 async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    """Re-runs whichever agent steps haven't actually succeeded yet for an
-    existing, already-paid order - never touches Stripe/payment, so the
-    customer is never charged again. Safe to call regardless of how far
-    the order has gotten: run_document_generation and run_asset_generation
-    both skip any piece (name/brand/marketing/PDF, Stripe Connect,
-    website) that already has a result on file and only retry what's
-    missing or previously errored."""
+    """Re-runs whichever asset steps haven't succeeded yet for an existing,
+    already-paid order. run_early_assets covers brand kit, marketing plan,
+    LLC docs, website, and Stripe Connect — all idempotent, so it skips
+    anything already done. If the EIN has already been issued, also retries
+    run_asset_generation (payment link + state advancement)."""
     order_ref = ORDERS.document(order_id)
-    if not order_ref.get().exists:
+    order_snap = order_ref.get()
+    if not order_snap.exists:
         return RedirectResponse(url="/admin", status_code=303)
 
-    background_tasks.add_task(run_document_generation, order_id)
-    background_tasks.add_task(run_asset_generation, order_id)
+    background_tasks.add_task(run_early_assets, order_id)
+    if reached(order_snap.to_dict().get("state", "draft"), "ein_issued"):
+        background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
 @app.post("/admin/{order_id}/regenerate-website")
@@ -2296,6 +2299,43 @@ async def admin_regenerate_website(order_id: str, background_tasks: BackgroundTa
 
     background_tasks.add_task(run_website_regeneration, order_id)
     return RedirectResponse(url="/admin", status_code=303)
+
+@app.get("/admin/migrate-assets", response_class=HTMLResponse)
+async def admin_migrate_assets(background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """One-time migration: finds all paid orders that haven't had early
+    asset generation run yet and triggers run_early_assets for each.
+    Safe to call multiple times — run_early_assets is fully idempotent
+    and skips any step that already has a result on file."""
+    triggered = []
+    already_done = []
+    skipped_no_intake = []
+
+    for doc in ORDERS.stream():
+        order = doc.to_dict()
+        order_id = doc.id
+        state = order.get("state", "draft")
+        if state == "draft":
+            continue
+        if order.get("early_assets_done") or order.get("assets_status") == "complete":
+            already_done.append(order_id)
+            continue
+        if order.get("awaiting_intake"):
+            skipped_no_intake.append(order_id)
+            continue
+        triggered.append(f"{order_id} ({order.get('business_name', '?')})")
+        background_tasks.add_task(run_early_assets, order_id)
+
+    html = (
+        "<html><body style='font-family:sans-serif;padding:32px;'>"
+        "<h2>Asset Migration</h2>"
+        f"<p><strong>Triggered ({len(triggered)}):</strong> {', '.join(triggered) or 'none'}</p>"
+        f"<p><strong>Already done ({len(already_done)}):</strong> {len(already_done)} orders skipped</p>"
+        f"<p><strong>Skipped — awaiting intake ({len(skipped_no_intake)}):</strong> "
+        f"{', '.join(skipped_no_intake) or 'none'}</p>"
+        "<p><a href='/admin'>← Back to Admin</a></p>"
+        "</body></html>"
+    )
+    return HTMLResponse(html)
 
 @app.post("/contact", response_class=HTMLResponse)
 async def contact(request: Request):
