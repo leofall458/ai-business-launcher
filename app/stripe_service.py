@@ -11,19 +11,37 @@ def construct_webhook_event(payload: bytes, sig_header: str):
     the exact bytes Stripe sent."""
     return stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
 
-def create_checkout_session(order_id: str, business_name: str, success_url: str, cancel_url: str):
+def create_checkout_session(
+    order_id: str, business_name: str, success_url: str, cancel_url: str,
+    amount: int = None, founding_member: bool = False,
+):
     """Stripe Checkout Session for the flat-fee LLC formation package.
     order_id travels in metadata + client_reference_id so /success can look
-    up the right Firestore order regardless of which one it reads back."""
+    up the right Firestore order regardless of which one it reads back.
+    amount defaults to LLC_FORMATION_PRICE_CENTS ($350); pass a lower value
+    for the founding-member discount."""
+    charge = amount if amount is not None else LLC_FORMATION_PRICE_CENTS
+    if founding_member:
+        description = (
+            "$100 Launch Bridge service fee (Founding Member rate — 43% off) + "
+            "$100 Virginia state filing fee = $200 total. "
+            "Full service: LLC filing, EIN, brand kit, marketing plan, website, and Stripe setup."
+        )
+    else:
+        description = (
+            "$250 Launch Bridge service fee + $100 Virginia state filing fee "
+            "(we pay this to Virginia for you) = $350 total. "
+            "Includes EIN application, brand kit, marketing plan, and business website."
+        )
     return stripe.checkout.Session.create(
         mode="payment",
         line_items=[{
             "price_data": {
                 "currency": "usd",
-                "unit_amount": LLC_FORMATION_PRICE_CENTS,
+                "unit_amount": charge,
                 "product_data": {
                     "name": f"Virginia LLC Formation - {business_name}",
-                    "description": "$250 Launch Bridge service fee + $100 Virginia state filing fee (we pay this to Virginia for you) = $350 total. Includes EIN application, brand kit, marketing plan, and business website.",
+                    "description": description,
                 },
             },
             "quantity": 1,
@@ -31,7 +49,7 @@ def create_checkout_session(order_id: str, business_name: str, success_url: str,
         success_url=success_url,
         cancel_url=cancel_url,
         client_reference_id=order_id,
-        metadata={"order_id": order_id},
+        metadata={"order_id": order_id, "founding_member": "true" if founding_member else "false"},
     )
 
 def retrieve_checkout_session(session_id: str):

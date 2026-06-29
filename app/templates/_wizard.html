@@ -1,3 +1,17 @@
+{% if founding_member_status and founding_member_status.is_active %}
+<div class="bg-amber-900/40 border border-amber-600/50 rounded-2xl p-4 mb-5">
+    <div class="flex items-start gap-3">
+        <span class="text-2xl shrink-0">🎉</span>
+        <div>
+            <p class="font-bold text-amber-300 text-sm">Founding Member Offer — {{ founding_member_status.spots_remaining }} spot{{ "s" if founding_member_status.spots_remaining != 1 else "" }} remaining</p>
+            <p class="text-amber-200 text-sm mt-0.5">First 10 customers pay <strong>${{ (founding_member_status.discount_price // 100) }}</strong> (normally ${{ (founding_member_status.original_price // 100) }})</p>
+            <p class="text-amber-300/80 text-xs mt-1">Save ${{ ((founding_member_status.original_price - founding_member_status.discount_price) // 100) }} — {{ founding_member_status.discount_percent }}% off · Full service, no limits</p>
+            <p class="text-amber-400/70 text-xs mt-0.5">We're offering this to gather early feedback</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <style>
     .step-card { transition: opacity 0.2s; }
     .step-done { opacity: 0.6; }
@@ -234,10 +248,48 @@
                 </span>
             </label>
 
+            <!-- Pricing summary -->
+            {% if founding_member_status and founding_member_status.is_active %}
+            <div class="bg-amber-950/50 border border-amber-700/40 rounded-xl p-4">
+                <div class="flex justify-between text-sm text-gray-300 mb-1.5">
+                    <span>Launch Bridge service fee</span>
+                    <span><s class="text-gray-500">$250</s> <strong class="text-amber-300">$100</strong> <span class="text-xs text-amber-500">({{ founding_member_status.discount_percent }}% off)</span></span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-300 mb-2.5">
+                    <span>Virginia state filing fee</span>
+                    <span class="text-white font-semibold">$100</span>
+                </div>
+                <div class="flex justify-between font-bold border-t border-amber-700/30 pt-2.5 mb-1.5">
+                    <span class="text-white">Total today</span>
+                    <span class="text-amber-300 text-lg">${{ (founding_member_status.discount_price // 100) }}</span>
+                </div>
+                <p class="text-xs text-amber-400/80">You save ${{ ((founding_member_status.original_price - founding_member_status.discount_price) // 100) }} with Founding Member discount</p>
+            </div>
+
+            <div class="bg-amber-950/30 border border-amber-700/30 rounded-xl p-3 text-xs text-amber-300/90 space-y-1">
+                <p>🎉 You're getting our Founding Member rate of ${{ (founding_member_status.discount_price // 100) }} ({{ founding_member_status.discount_percent }}% off — save ${{ ((founding_member_status.original_price - founding_member_status.discount_price) // 100) }})</p>
+                <p>This is our full service — LLC filing, EIN, website, brand kit, and Stripe setup.</p>
+                <p>We're offering this discount to our first 10 customers in exchange for honest feedback.</p>
+                <p class="text-amber-400/70">Everything works exactly the same as our regular ${{ (founding_member_status.original_price // 100) }} service.</p>
+            </div>
+            {% else %}
+            <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+                <div class="flex justify-between text-sm text-gray-300 mb-1.5">
+                    <span>Launch Bridge service fee</span><span class="text-white font-semibold">$250</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-300 mb-2.5">
+                    <span>Virginia state filing fee</span><span class="text-white font-semibold">$100</span>
+                </div>
+                <div class="flex justify-between font-bold border-t border-gray-700 pt-2.5">
+                    <span class="text-white">Total today</span><span class="text-green-400 text-lg">$350</span>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Pay button (inline / desktop) -->
             <button type="submit" id="inline-pay-btn"
-                class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 rounded-xl text-lg shadow-lg shadow-green-900/30 transition">
-                💳 Pay $350 &amp; Launch My LLC →
+                class="w-full {% if founding_member_status and founding_member_status.is_active %}bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 shadow-amber-900/30{% else %}bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-green-900/30{% endif %} text-white font-bold py-4 rounded-xl text-lg shadow-lg transition">
+                💳 Pay ${% if founding_member_status and founding_member_status.is_active %}{{ (founding_member_status.discount_price // 100) }}{% else %}350{% endif %} &amp; Launch My LLC →
             </button>
 
             <!-- Refund guarantee -->
@@ -267,8 +319,8 @@
 <!-- Sticky pay button (shown when step 2 is visible, mobile only) -->
 <div id="pay-sticky" class="hidden">
     <button type="submit" form="payment-form"
-        class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 rounded-xl text-lg shadow-2xl shadow-green-900/40 transition">
-        💳 Pay $350 &amp; Launch My LLC →
+        class="w-full {% if founding_member_status and founding_member_status.is_active %}bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400{% else %}bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500{% endif %} text-white font-bold py-4 rounded-xl text-lg shadow-2xl transition">
+        💳 Pay ${% if founding_member_status and founding_member_status.is_active %}{{ (founding_member_status.discount_price // 100) }}{% else %}350{% endif %} &amp; Launch My LLC →
     </button>
     <p class="text-center text-[11px] text-gray-400 mt-1">
         ↩️ 100% refund until we file &nbsp;·&nbsp; 🔒 Secure via Stripe &nbsp;·&nbsp; ⏱️ Filed within 24h
@@ -558,7 +610,7 @@
         const pr = stripe.paymentRequest({
             country: 'US',
             currency: 'usd',
-            total: { label: 'Launch Bridge — Virginia LLC', amount: 35000 },
+            total: { label: 'Launch Bridge — Virginia LLC', amount: {{ founding_member_status.discount_price if founding_member_status and founding_member_status.is_active else 35000 }} },
             requestPayerName: true,
             requestPayerEmail: true,
             requestPayerPhone: true,
@@ -633,7 +685,7 @@
             }
 
             ev.complete('success');
-            trackEvent('begin_checkout', {currency: 'USD', value: 350, method: 'payment_request'});
+            trackEvent('begin_checkout', {currency: 'USD', value: {{ (founding_member_status.discount_price // 100) if founding_member_status and founding_member_status.is_active else 350 }}, method: 'payment_request'});
             window.location.href = `/success?order_id=${orderId}&payment_intent_id=${paymentIntent.id}`;
         });
     }
@@ -645,7 +697,7 @@
         if (!form) return;
 
         form.addEventListener('htmx:beforeRequest', function() {
-            trackEvent('begin_checkout', {currency: 'USD', value: 350});
+            trackEvent('begin_checkout', {currency: 'USD', value: {{ (founding_member_status.discount_price // 100) if founding_member_status and founding_member_status.is_active else 350 }}});
         });
 
         // ── Confirmation modal for skip_llc ──────────────────────────────
@@ -658,7 +710,7 @@
                 "⚠️ You indicated you already have a Virginia LLC.\n" +
                 "- Your existing LLC will NOT be re-filed with the SCC\n" +
                 "- You'll still receive: brand kit, website, Stripe setup, marketing plan\n" +
-                "- The $350 fee still applies\n\n" +
+                "- The ${% if founding_member_status and founding_member_status.is_active %}{{ (founding_member_status.discount_price // 100) }}{% else %}350{% endif %} fee still applies\n\n" +
                 "Are you sure you want to skip LLC formation?";
             document.getElementById('confirm-modal-body').textContent = msg;
             document.getElementById('confirm-modal').classList.remove('hidden');

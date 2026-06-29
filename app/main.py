@@ -11,7 +11,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResp
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.config import FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL, STRIPE_PUBLISHABLE_KEY
+from app.config import (
+    FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET,
+    SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL,
+    STRIPE_PUBLISHABLE_KEY,
+    FOUNDING_MEMBER_DISCOUNT, FOUNDING_MEMBER_MAX, FOUNDING_MEMBER_PRICE_CENTS,
+    FOUNDING_MEMBER_SERVICE_FEE_CENTS, FOUNDING_MEMBER_DISCOUNT_PERCENT, FOUNDING_MEMBER_LABEL,
+)
 from app.agents.name_agent import screen_business_name, suggest_alternative_names
 from app.agents.name_check_agent import check_business_name
 from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
@@ -87,6 +93,34 @@ db = firestore.Client(project=FIREBASE_PROJECT_ID)
 ORDERS = db.collection(ORDERS_COLLECTION)
 LEADS = db.collection("leads")
 DOCUMENT_ACCESS_LOG = db.collection("document_access_log")
+
+def get_founding_member_status() -> dict:
+    """Returns current founding-member discount availability by counting
+    orders in Firestore that carry founding_member=True and have left the
+    draft/payment_failed state (i.e. actually paid). Thread-safe only in
+    the sense that Firestore reads are consistent point-in-time snapshots;
+    a very tight race between two simultaneous checkouts could let one
+    extra slot through, which is acceptable at this order volume."""
+    base = {
+        "discount_price": FOUNDING_MEMBER_PRICE_CENTS,
+        "original_price": LLC_FORMATION_PRICE_CENTS,
+        "discount_percent": FOUNDING_MEMBER_DISCOUNT_PERCENT,
+        "savings": LLC_FORMATION_PRICE_CENTS - FOUNDING_MEMBER_PRICE_CENTS,
+        "service_fee_cents": FOUNDING_MEMBER_SERVICE_FEE_CENTS,
+    }
+    if not FOUNDING_MEMBER_DISCOUNT:
+        return {**base, "is_active": False, "spots_taken": FOUNDING_MEMBER_MAX, "spots_remaining": 0}
+
+    try:
+        count = sum(
+            1 for doc in ORDERS.where("founding_member", "==", True).stream()
+            if doc.to_dict().get("state", "draft") not in ("draft", "payment_failed")
+        )
+    except Exception:
+        count = 0
+
+    spots_remaining = max(0, FOUNDING_MEMBER_MAX - count)
+    return {**base, "is_active": spots_remaining > 0, "spots_taken": count, "spots_remaining": spots_remaining}
 
 @app.on_event("startup")
 async def on_startup():
@@ -200,8 +234,9 @@ def compute_timeline(order: dict, state: str) -> list:
 
     # 1. Payment Received
     if state != "draft":
+        amount_label = "$200" if order.get("founding_member") else "$350"
         steps.append({"key": "payment", "name": "Payment Received", "status": "complete",
-            "description": f"Payment of $350 confirmed{on_date(order.get('paid_at'))}"})
+            "description": f"Payment of {amount_label} confirmed{on_date(order.get('paid_at'))}"})
     else:
         steps.append({"key": "payment", "name": "Payment Received", "status": "pending",
             "description": "Waiting for payment to go through."})
@@ -368,7 +403,10 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
     return True
 
 def _wizard_context() -> dict:
-    return {"stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or ""}
+    return {
+        "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or "",
+        "founding_member_status": get_founding_member_status(),
+    }
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -1422,6 +1460,10 @@ async def launch(request: Request):
 
     parsed = parse_intake_form(form)
 
+    fm_status = get_founding_member_status()
+    is_founding_member = fm_status["is_active"]
+    charge_amount = FOUNDING_MEMBER_PRICE_CENTS if is_founding_member else LLC_FORMATION_PRICE_CENTS
+
     order_ref = ORDERS.document()
     order_id = order_ref.id
     # Written immediately, before the Stripe call below - so the customer's
@@ -1431,7 +1473,7 @@ async def launch(request: Request):
     # awaiting_intake: address/DOB/sig collected post-payment in dashboard.
     record_state(order_ref, "draft", **form, **parsed, **photo_data,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
-                 awaiting_intake=True)
+                 awaiting_intake=True, founding_member=is_founding_member)
 
     base_url = str(request.base_url)
     try:
@@ -1440,6 +1482,8 @@ async def launch(request: Request):
             business_name=parsed["business_name"],
             success_url=f"{base_url}success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}cancel",
+            amount=charge_amount,
+            founding_member=is_founding_member,
         )
         order_ref.set({"stripe_checkout_session_id": session.id}, merge=True)
     except Exception as e:
@@ -1487,16 +1531,21 @@ async def launch_pr(request: Request):
 
     parsed = parse_intake_form(data)
 
+    fm_status_pr = get_founding_member_status()
+    is_founding_member_pr = fm_status_pr["is_active"]
+    charge_amount_pr = FOUNDING_MEMBER_PRICE_CENTS if is_founding_member_pr else LLC_FORMATION_PRICE_CENTS
+
     order_ref = ORDERS.document()
     order_id = order_ref.id
     safe = {k: data[k] for k in PRE_PAYMENT_VALIDATED_FIELDS if data.get(k)}
     record_state(order_ref, "draft", **safe, **parsed,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
-                 awaiting_intake=True, payment_method="payment_request")
+                 awaiting_intake=True, payment_method="payment_request",
+                 founding_member=is_founding_member_pr)
 
     try:
         pi = create_payment_intent(
-            amount=LLC_FORMATION_PRICE_CENTS,
+            amount=charge_amount_pr,
             order_id=order_id,
             business_name=parsed["business_name"],
             email=data.get("email", ""),
@@ -1565,7 +1614,18 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
 
     order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
     send_order_received_email(order, order_id)
-    send_admin_sms(f"🚀 New order! {order.get('business_name', '')} - {order.get('full_name', '')} paid $350")
+    amount_paid = "$200 (Founding Member)" if order.get("founding_member") else "$350"
+    send_admin_sms(f"🚀 New order! {order.get('business_name', '')} - {order.get('full_name', '')} paid {amount_paid}")
+
+    # Check if this is the 10th founding member — if so, notify admin that
+    # the discount period has ended and future checkouts revert to $350.
+    if order.get("founding_member"):
+        try:
+            fm_check = get_founding_member_status()
+            if fm_check["spots_taken"] >= FOUNDING_MEMBER_MAX:
+                send_admin_sms("🎉 All 10 founding member spots filled! Now charging $350")
+        except Exception:
+            pass
 
     # awaiting_intake orders collected only 5 fields pre-payment. The rest
     # (address, DOB, sig) is gathered in the dashboard before the pipeline
@@ -2234,6 +2294,8 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         entry["processed_display"] = fmt_datetime(entry.get("processed_at"))
         processed_scc_emails.append(entry)
 
+    fm_admin_status = get_founding_member_status()
+
     return templates.TemplateResponse(request, "admin.html", {
         "orders": orders,
         "irs_open": irs_open,
@@ -2241,6 +2303,8 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "warning": request.query_params.get("warning"),
         "gmail_poller_status": gmail_poller_status,
         "processed_scc_emails": processed_scc_emails,
+        "founding_member_count": fm_admin_status["spots_taken"],
+        "founding_member_max": FOUNDING_MEMBER_MAX,
     })
 
 @app.post("/admin/{order_id}/approve")
