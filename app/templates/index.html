@@ -171,7 +171,7 @@
         <div class="bg-amber-950/40 border border-amber-700/40 rounded-xl p-4 mt-4">
             <div class="flex justify-between text-sm text-gray-300 mb-2">
                 <span>Launch Bridge service fee</span>
-                <span><s class="text-gray-500">$250</s> <strong class="text-amber-300">$100</strong> <span class="text-xs text-amber-500">({{ founding_member_status.discount_percent }}% off)</span></span>
+                <span><s class="text-gray-500">$250</s> <strong class="text-amber-300">${{ (founding_member_status.service_fee_cents // 100) }}</strong> <span class="text-xs text-amber-500">($100 off)</span></span>
             </div>
             <div class="flex justify-between text-sm text-gray-300 mb-3">
                 <span>Virginia state filing fee</span><span class="text-white font-semibold">$100</span>

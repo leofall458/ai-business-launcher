@@ -23,8 +23,8 @@ def create_checkout_session(
     charge = amount if amount is not None else LLC_FORMATION_PRICE_CENTS
     if founding_member:
         description = (
-            "$100 Launch Bridge service fee (Founding Member rate — 43% off) + "
-            "$100 Virginia state filing fee = $200 total. "
+            "$150 Launch Bridge service fee (Founding Member rate — $100 off) + "
+            "$100 Virginia state filing fee = $250 total. "
             "Full service: LLC filing, EIN, brand kit, marketing plan, website, and Stripe setup."
         )
     else:
