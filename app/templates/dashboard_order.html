@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Your Dashboard - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     {% if google_places_api_key and awaiting_intake %}
@@ -18,41 +19,41 @@
         }
     </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen py-8 sm:py-12">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
     <div class="max-w-2xl mx-auto px-4 sm:px-8 space-y-6">
 
         <!-- Header -->
         <div class="text-center mb-2">
-            <p class="text-blue-400 text-xs sm:text-sm font-semibold tracking-widest uppercase mb-3">Launch Bridge LLC</p>
-            <h1 class="text-2xl sm:text-3xl font-bold mb-3">
+            <div class="eyebrow justify-center mb-3">Launch Bridge LLC</div>
+            <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-3">
                 {% if state == "complete" %}🎉 Your Business is Live!{% else %}Your Business is Being Built{% endif %}
             </h1>
-            <p class="text-lg sm:text-xl font-semibold text-white">{{ business_name }}</p>
-            <p class="text-gray-500 text-sm mt-1">{{ full_name }} · Virginia</p>
-            <p class="text-purple-400 text-xs mt-1">
+            <p class="font-serif text-lg sm:text-xl font-semibold text-[#0e2148]">{{ business_name }}</p>
+            <p class="text-[#0e2148]/50 text-sm mt-1">{{ full_name }} · Virginia</p>
+            <p class="text-[#0e2148]/40 text-xs mt-1">
                 Registered Agent: {{ "Launch Bridge (Leo Fall)" if registered_agent_choice == "launchbridge" else "Self" }}
             </p>
         </div>
 
         <!-- Status banner -->
-        <div class="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-5 sm:p-6 border border-blue-700">
-            <p class="text-xs font-semibold tracking-widest uppercase text-blue-300 mb-2">Current Status</p>
-            <h2 class="text-lg sm:text-xl font-bold mb-2">{{ state.replace("_", " ").title() }}</h2>
-            <p class="text-blue-200 text-sm leading-relaxed">{{ state_message }}</p>
+        <div class="bg-[#0e2148] rounded-xl p-5 sm:p-6 text-white">
+            <p class="text-xs font-semibold tracking-widest uppercase text-[#c9a227] mb-2">Current Status</p>
+            <h2 class="font-serif text-lg sm:text-xl font-bold mb-2 text-white">{{ state.replace("_", " ").title() }}</h2>
+            <p class="text-white/75 text-sm leading-relaxed">{{ state_message }}</p>
         </div>
 
         {% if awaiting_intake %}
-        <div class="bg-blue-950 border border-blue-700 rounded-xl p-5 sm:p-6">
-            <h2 class="text-base font-semibold text-blue-300 mb-1">🚀 Complete Your Order</h2>
-            <p class="text-sm text-blue-200/80 leading-relaxed mb-4">
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
+            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-1">🚀 Complete Your Order</h2>
+            <p class="text-sm text-[#0e2148]/65 leading-relaxed mb-4">
                 Great — payment received! Fill in the remaining details below so we can form your LLC and file your EIN.
                 Your documents, brand kit, and website will be generated right after.
             </p>
 
             {% if intake_errors %}
-            <div class="bg-red-950 border border-red-700 rounded-lg p-3 mb-4">
-                <p class="text-xs font-semibold text-red-300 mb-2">⚠️ Please fix the following:</p>
-                <ul class="text-xs text-red-300 list-disc list-inside space-y-1">
+            <div class="bg-red-50 border border-red-300 rounded-lg p-3 mb-4">
+                <p class="text-xs font-semibold text-red-700 mb-2">⚠️ Please fix the following:</p>
+                <ul class="text-xs text-red-600 list-disc list-inside space-y-1">
                     {% for field, msg in intake_errors.items() %}
                     <li>{{ msg }}</li>
                     {% endfor %}
@@ -65,227 +66,198 @@
 
                 <!-- Address -->
                 <div>
-                    <label class="block text-xs text-blue-200/70 mb-1">Virginia Street Address *</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Virginia Street Address *</label>
                     <input name="address" type="text" id="address-autocomplete" required
                         value="{{ intake_form_data.get('address', '') }}"
                         placeholder="123 Main Street"
                         autocomplete="street-address"
-                        class="w-full bg-gray-900 border {% if intake_errors.get('address') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
-                    {% if intake_errors.get('address') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.address }}</p>{% endif %}
+                        class="w-full bg-white border {% if intake_errors.get('address') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                    {% if intake_errors.get('address') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.address }}</p>{% endif %}
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs text-blue-200/70 mb-1">City/Town *</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">City/Town *</label>
                         <input name="city" type="text" id="address-city" required
                             value="{{ intake_form_data.get('city', '') }}"
                             placeholder="Arlington"
                             autocomplete="address-level2"
-                            class="w-full bg-gray-900 border {% if intake_errors.get('city') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
-                        {% if intake_errors.get('city') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.city }}</p>{% endif %}
+                            class="w-full bg-white border {% if intake_errors.get('city') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                        {% if intake_errors.get('city') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.city }}</p>{% endif %}
                     </div>
                     <div>
-                        <label class="block text-xs text-blue-200/70 mb-1">ZIP Code *</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">ZIP Code *</label>
                         <input name="zipcode" type="text" id="address-zip" required
                             value="{{ intake_form_data.get('zipcode', '') }}"
                             placeholder="22201" inputmode="numeric" maxlength="5"
                             autocomplete="postal-code"
-                            class="w-full bg-gray-900 border {% if intake_errors.get('zipcode') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
-                        {% if intake_errors.get('zipcode') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.zipcode }}</p>{% endif %}
+                            class="w-full bg-white border {% if intake_errors.get('zipcode') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                        {% if intake_errors.get('zipcode') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.zipcode }}</p>{% endif %}
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs text-blue-200/70 mb-1">County *
-                        <span class="font-normal text-gray-500">(for EIN — if in an independent city like Arlington or Alexandria, re-enter the city name)</span>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">County *
+                        <span class="font-normal text-[#0e2148]/35">(for EIN — if in an independent city like Arlington or Alexandria, re-enter the city name)</span>
                     </label>
                     <input name="county" type="text" id="address-county" required
                         value="{{ intake_form_data.get('county', '') }}"
                         placeholder="Arlington"
-                        class="w-full bg-gray-900 border {% if intake_errors.get('county') %}border-red-700{% else %}border-blue-800{% endif %} rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
-                    {% if intake_errors.get('county') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.county }}</p>{% endif %}
+                        class="w-full bg-white border {% if intake_errors.get('county') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                    {% if intake_errors.get('county') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.county }}</p>{% endif %}
                 </div>
 
                 <!-- Business Purpose -->
                 <div>
-                    <label class="block text-xs text-blue-200/70 mb-1">Business Purpose (one sentence)</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Business Purpose (one sentence)</label>
                     <input name="business_purpose" type="text"
                         value="{{ intake_form_data.get('business_purpose', '') }}"
                         placeholder="e.g. Mobile pet grooming services for residential customers"
-                        class="w-full bg-gray-900 border border-blue-800 rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
-                    <p class="text-xs text-gray-500 mt-1">Leave blank to use your original business description.</p>
+                        class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                    <p class="text-xs text-[#0e2148]/35 mt-1">Leave blank to use your original business description.</p>
                 </div>
 
                 <div>
-                    <label class="block text-xs text-blue-200/70 mb-1">Target Customer</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Target Customer</label>
                     <input name="target_customer" type="text"
                         value="{{ intake_form_data.get('target_customer', '') }}"
                         placeholder="e.g. Busy professionals in Northern Virginia with dogs"
-                        class="w-full bg-gray-900 border border-blue-800 rounded-lg p-3 text-white placeholder-gray-500 text-sm"/>
+                        class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                 </div>
 
-                <!-- RA SELECTION - HIDDEN FOR NOW
-                     To re-enable: uncomment this block and remove the hidden input below.
-                     PATH A (Leo Fall as RA) is implemented in scc_llc_filer.py and works;
-                     hidden pending a commercial RA partner agreement.
-                <div>
-                    <label class="block text-xs text-blue-200/70 mb-2">Registered Agent</label>
-                    <label class="flex items-start gap-3 bg-gray-900 border border-purple-700 rounded-lg p-3 mb-2 cursor-pointer">
-                        <input type="radio" name="registered_agent_choice" value="launchbridge" checked
-                            onchange="toggleSelfRA()"
-                            class="mt-1 w-4 h-4 accent-purple-500 shrink-0"/>
-                        <span>
-                            <span class="block text-sm font-semibold text-white">Use Launch Bridge (Recommended)</span>
-                            <span class="block text-xs text-gray-400 mt-0.5">Included in your $350 fee. We handle all legal correspondence.</span>
-                        </span>
-                    </label>
-                    <label class="flex items-start gap-3 bg-gray-900 border border-gray-700 rounded-lg p-3 cursor-pointer">
-                        <input type="radio" name="registered_agent_choice" value="self"
-                            onchange="toggleSelfRA()"
-                            class="mt-1 w-4 h-4 accent-purple-500 shrink-0"/>
-                        <span>
-                            <span class="block text-sm font-semibold text-white">I'll be my own Registered Agent</span>
-                            <span class="block text-xs text-gray-400 mt-0.5">Must be a Virginia resident available during business hours.</span>
-                        </span>
-                    </label>
-                    <div id="self-ra-notice" class="hidden mt-2 bg-yellow-950 border border-yellow-700 rounded-lg p-3">
-                        <p class="text-xs text-yellow-300">You confirm you are a Virginia resident and will be available at your address during business hours to receive legal documents.</p>
-                    </div>
-                </div>
-                -->
-                <!-- Default "self" submitted silently while RA selection is hidden -->
+                <!-- Hidden self RA -->
                 <input type="hidden" name="registered_agent_choice" value="self">
 
                 <!-- Member Signature (Primary) -->
-                <div class="bg-gray-900 border border-yellow-700/60 rounded-lg p-4">
-                    <p class="text-xs text-yellow-400 font-semibold mb-3">Member 1 — Primary Signer *</p>
-                    <p class="text-xs text-gray-500 mb-3">Electronic signatures are valid under the E-SIGN Act.</p>
+                <div class="bg-[#c9a227]/10 border border-[#c9a227]/35 rounded-lg p-4">
+                    <p class="text-xs text-[#b8860b] font-semibold mb-3">Member 1 — Primary Signer *</p>
+                    <p class="text-xs text-[#0e2148]/40 mb-3">Electronic signatures are valid under the E-SIGN Act.</p>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">First *</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">First *</label>
                             <input name="sig_first" type="text" required
                                 value="{{ intake_form_data.get('sig_first', '') }}"
                                 placeholder="Jane"
-                                class="w-full bg-gray-800 border {% if intake_errors.get('sig_first') %}border-red-700{% else %}border-yellow-700/50{% endif %} rounded-lg p-2 text-white text-sm font-serif italic"/>
-                            {% if intake_errors.get('sig_first') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.sig_first }}</p>{% endif %}
+                                class="w-full bg-white border {% if intake_errors.get('sig_first') %}border-red-400{% else %}border-[#c9a227]/35{% endif %} rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                            {% if intake_errors.get('sig_first') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.sig_first }}</p>{% endif %}
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Middle</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Middle</label>
                             <input name="sig_middle" type="text"
                                 value="{{ intake_form_data.get('sig_middle', '') }}"
                                 placeholder="Optional"
-                                class="w-full bg-gray-800 border border-yellow-700/50 rounded-lg p-2 text-white placeholder-gray-500 text-sm font-serif italic"/>
+                                class="w-full bg-white border border-[#c9a227]/35 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Last *</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Last *</label>
                             <input name="sig_last" type="text" required
                                 value="{{ intake_form_data.get('sig_last', '') }}"
                                 placeholder="Smith"
-                                class="w-full bg-gray-800 border {% if intake_errors.get('sig_last') %}border-red-700{% else %}border-yellow-700/50{% endif %} rounded-lg p-2 text-white text-sm font-serif italic"/>
-                            {% if intake_errors.get('sig_last') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.sig_last }}</p>{% endif %}
+                                class="w-full bg-white border {% if intake_errors.get('sig_last') %}border-red-400{% else %}border-[#c9a227]/35{% endif %} rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                            {% if intake_errors.get('sig_last') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.sig_last }}</p>{% endif %}
                         </div>
                     </div>
                 </div>
 
                 <div id="additional-intake-members"></div>
                 <button type="button" onclick="addIntakeMember()"
-                    class="w-full border border-dashed border-gray-600 hover:border-yellow-500 text-gray-500 hover:text-yellow-400 py-2.5 rounded-lg transition text-sm">
+                    class="w-full border border-dashed border-[#0e2148]/25 hover:border-[#c9a227] text-[#0e2148]/45 hover:text-[#b8860b] py-2.5 rounded-lg transition text-sm">
                     + Add Another LLC Member
                 </button>
 
                 <!-- EIN section -->
-                <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                <div class="bg-white border border-[#0e2148]/10 rounded-lg p-4 shadow-sm">
                     <label class="flex items-start gap-3 cursor-pointer">
                         <input type="checkbox" id="skip-ein-intake" name="skip_ein"
                             onchange="toggleSkipEINIntake()"
-                            class="mt-1 w-4 h-4 accent-yellow-500 shrink-0"/>
-                        <span class="text-sm font-semibold text-white">I already have an EIN — skip EIN application</span>
+                            class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                        <span class="text-sm font-semibold text-[#0e2148]">I already have an EIN — skip EIN application</span>
                     </label>
                     <div id="ssn-note-intake" class="mt-2">
-                        <p class="text-xs text-gray-500 leading-relaxed">
+                        <p class="text-xs text-[#0e2148]/45 leading-relaxed">
                             🔒 You'll enter your SSN on the next screen — encrypted, used only for your EIN application, and deleted within 72 hours.
                         </p>
                     </div>
                     <div id="existing-ein-intake" class="hidden mt-3">
-                        <label class="block text-xs text-yellow-400 font-semibold mb-1">Your existing EIN *</label>
+                        <label class="block text-xs text-[#b8860b] font-semibold mb-1">Your existing EIN *</label>
                         <input name="existing_ein" type="text" id="existing-ein-input" placeholder="XX-XXXXXXX"
-                            class="w-full bg-gray-800 border border-yellow-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm tracking-widest"/>
-                        {% if intake_errors.get('existing_ein') %}<p class="text-red-400 text-xs mt-1">{{ intake_errors.existing_ein }}</p>{% endif %}
+                            class="w-full bg-white border border-[#c9a227]/40 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm tracking-widest focus:border-[#c9a227] focus:outline-none"/>
+                        {% if intake_errors.get('existing_ein') %}<p class="text-red-500 text-xs mt-1">{{ intake_errors.existing_ein }}</p>{% endif %}
                     </div>
                 </div>
 
                 <!-- Website Customization (collapsible) -->
                 <div>
                     <button type="button" onclick="toggleWebsiteCustomization()"
-                        class="w-full flex items-center justify-between text-sm font-semibold text-cyan-400 py-2 border-b border-gray-700">
+                        class="w-full flex items-center justify-between text-sm font-semibold text-[#c9a227] py-2 border-b border-[#0e2148]/10">
                         <span>🌐 Customize Your Website (Optional)</span>
                         <span id="website-chevron">▾</span>
                     </button>
                     <div id="website-customization" class="hidden pt-4 space-y-3">
-                        <p class="text-xs text-gray-500">Everything here is optional — leave blank and AI fills it in.</p>
+                        <p class="text-xs text-[#0e2148]/40">Everything here is optional — leave blank and AI fills it in.</p>
 
                         <!-- Template -->
                         <div>
-                            <label class="block text-xs text-gray-400 mb-2">Template</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-2">Template</label>
                             <div class="grid grid-cols-3 gap-2">
                                 {% for tmpl, label, desc, gradient in [
                                     ('professional','Professional','Clean corporate look','from-slate-700 to-slate-400'),
                                     ('local','Local Business','Warm friendly feel','from-orange-400 to-amber-200'),
                                     ('modern','Modern','Bold startup feel','from-gray-900 to-fuchsia-500')
                                 ] %}
-                                <label class="template-card cursor-pointer rounded-lg border-2 {% if loop.first %}border-cyan-500{% else %}border-gray-700{% endif %} bg-gray-900 p-2 text-center" data-value="{{ tmpl }}">
+                                <label class="template-card cursor-pointer rounded-lg border-2 {% if loop.first %}border-[#c9a227]{% else %}border-[#0e2148]/12{% endif %} bg-white p-2 text-center shadow-sm" data-value="{{ tmpl }}">
                                     <input type="radio" name="website_template" value="{{ tmpl }}" {% if loop.first %}checked{% endif %} onchange="updateTemplateCards()" class="hidden"/>
                                     <div class="h-8 w-full rounded mb-1.5 bg-gradient-to-r {{ gradient }}"></div>
-                                    <p class="text-xs font-semibold text-white">{{ label }}</p>
-                                    <p class="text-[10px] text-gray-500 mt-0.5">{{ desc }}</p>
+                                    <p class="text-xs font-semibold text-[#0e2148]">{{ label }}</p>
+                                    <p class="text-[10px] text-[#0e2148]/45 mt-0.5">{{ desc }}</p>
                                 </label>
                                 {% endfor %}
                             </div>
                         </div>
 
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Tagline</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Tagline</label>
                             <input name="website_tagline" type="text" placeholder="Premium grooming for busy pet owners"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm"/>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Business Description</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Business Description</label>
                             <textarea name="website_description" rows="2" placeholder="What do you do, who do you serve, what makes you special?"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm resize-none"></textarea>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm resize-none focus:border-[#c9a227] focus:outline-none"></textarea>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1.5">Services (up to 3)</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1.5">Services (up to 3)</label>
                             {% for i in [1,2,3] %}
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-1.5">
                                 <input name="service_{{ i }}_name" type="text" placeholder="Service {{ i }} name"
-                                    class="bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                    class="bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                                 <input name="service_{{ i }}_desc" type="text" placeholder="Short description"
-                                    class="bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                    class="bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                             </div>
                             {% endfor %}
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Business Hours</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Business Hours</label>
                             <input name="business_hours" type="text" placeholder="Monday–Friday 9am–5pm"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white placeholder-gray-500 text-sm"/>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Photos (up to 3, max 5MB each)</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Photos (up to 3, max 5MB each)</label>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 {% for i in [1,2,3] %}
                                 <input name="photo_{{ i }}" type="file" accept="image/jpeg,image/png,image/webp"
-                                    class="w-full text-xs text-gray-400 bg-gray-900 border border-gray-700 rounded-lg p-1.5"/>
+                                    class="w-full text-xs text-[#0e2148]/55 bg-white border border-[#0e2148]/15 rounded-lg p-1.5"/>
                                 {% endfor %}
                             </div>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="block text-xs text-gray-400">Social Media (optional)</label>
+                            <label class="block text-xs text-[#0e2148]/55">Social Media (optional)</label>
                             <input name="instagram_url" type="url" placeholder="Instagram URL"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                             <input name="facebook_url" type="url" placeholder="Facebook URL"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                             <input name="tiktok_url" type="url" placeholder="TikTok URL"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 text-sm"/>
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
                         </div>
                     </div>
                 </div>
@@ -293,15 +265,15 @@
                 <!-- LLC Details (collapsible) -->
                 <div>
                     <button type="button" onclick="toggleLLCDetails()"
-                        class="w-full flex items-center justify-between text-sm font-semibold text-gray-400 py-2 border-b border-gray-700">
+                        class="w-full flex items-center justify-between text-sm font-semibold text-[#0e2148]/55 py-2 border-b border-[#0e2148]/10">
                         <span>⚙️ LLC Details (Optional)</span>
                         <span id="llc-details-chevron">▾</span>
                     </button>
                     <div id="llc-details" class="hidden pt-3 space-y-3">
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">Industry Code</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">Industry Code</label>
                             <select name="industry_code"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white text-sm">
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none">
                                 <option value="0">0 – General (most businesses)</option>
                                 <option value="35">35 – Insurance Agencies</option>
                                 <option value="36">36 – Mortgage Companies</option>
@@ -309,9 +281,9 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">LLC Duration</label>
+                            <label class="block text-xs text-[#0e2148]/55 mb-1">LLC Duration</label>
                             <select name="duration"
-                                class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white text-sm">
+                                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none">
                                 <option value="Perpetual">Perpetual (recommended — no end date)</option>
                                 <option value="Fixed">Fixed Term</option>
                             </select>
@@ -320,7 +292,7 @@
                 </div>
 
                 <button type="submit"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-base transition">
+                    class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/20">
                     Complete My Order →
                 </button>
             </form>
@@ -328,11 +300,11 @@
         {% endif %}
 
         {% if needs_ssn_entry %}
-        <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-5 sm:p-6">
-            <h2 class="text-base font-semibold text-yellow-300 mb-1">
+        <div class="bg-[#c9a227]/10 border border-[#c9a227]/35 rounded-xl p-5 sm:p-6">
+            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-1">
                 {% if ssn_expired %}⚠️ Action Required: Re-enter Your SSN{% else %}One More Step: Your SSN{% endif %}
             </h2>
-            <p class="text-sm text-yellow-200/90 leading-relaxed mb-4">
+            <p class="text-sm text-[#0e2148]/70 leading-relaxed mb-4">
                 {% if ssn_expired %}
                 We no longer have your Social Security Number on file, so we can't apply for your EIN yet.
                 Please re-enter it below to continue.
@@ -345,44 +317,44 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 {% if not order.get('dob') %}
                 <div>
-                    <label class="block text-xs text-yellow-200/70 mb-1">Date of Birth *</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Date of Birth *</label>
                     <input name="dob" type="date" required
-                        class="w-full bg-gray-900 border border-yellow-800 rounded-lg p-3 text-white text-sm"/>
+                        class="w-full bg-white border border-[#c9a227]/35 rounded-lg p-3 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none"/>
                 </div>
                 {% endif %}
                 <div>
-                    <label class="block text-xs text-yellow-200/70 mb-1">Social Security Number</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Social Security Number</label>
                     <input name="ssn" type="text" inputmode="numeric" autocomplete="off" required placeholder="XXX-XX-XXXX"
-                        class="w-full bg-gray-900 border border-yellow-800 rounded-lg p-3 text-white text-sm"/>
+                        class="w-full bg-white border border-[#c9a227]/35 rounded-lg p-3 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none"/>
                 </div>
                 {% if ssn_error %}
-                <p class="text-red-400 text-sm">{{ ssn_error }}</p>
+                <p class="text-red-500 text-sm">{{ ssn_error }}</p>
                 {% endif %}
                 <button type="submit"
-                    class="block w-full text-center bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 rounded-lg transition text-sm">
+                    class="block w-full text-center bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-semibold py-3 rounded-full transition text-sm shadow-sm">
                     Submit SSN →
                 </button>
             </form>
         </div>
         {% endif %}
 
-        <!-- EIN (masked by default - click to reveal) -->
+        <!-- EIN -->
         {% if ein %}
-        <div class="bg-green-950 border border-green-700 rounded-xl p-5 sm:p-6">
-            <h2 class="text-base font-semibold text-green-400 mb-3">✅ Your EIN</h2>
+        <div class="bg-emerald-50 border border-emerald-300 rounded-xl p-5 sm:p-6">
+            <h2 class="font-serif text-base font-semibold text-emerald-700 mb-3">✅ Your EIN</h2>
             <div class="flex gap-2 mb-3">
                 <input id="ein-value" type="text" readonly data-ein="{{ ein }}"
-                    class="flex-1 bg-gray-900 border border-green-800 rounded-lg p-2 text-sm text-green-200 font-mono"/>
+                    class="flex-1 bg-white border border-emerald-300 rounded-lg p-2 text-sm text-emerald-800 font-mono"/>
                 <button type="button" onclick="toggleEinMask()"
-                    class="bg-green-700 hover:bg-green-800 text-white text-xs font-semibold px-3 rounded-lg transition whitespace-nowrap">
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 rounded-lg transition whitespace-nowrap">
                     <span id="ein-toggle-label">Show</span>
                 </button>
                 <button type="button" onclick="copyEin()"
-                    class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 rounded-lg transition whitespace-nowrap">
+                    class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-4 rounded-lg transition whitespace-nowrap">
                     <span id="copy-ein-label">Copy</span>
                 </button>
             </div>
-            <p class="text-xs text-green-200/80 mb-3">
+            <p class="text-xs text-emerald-700/70 mb-3">
                 Save this number - you need it to open a business bank account and file taxes.
             </p>
         </div>
@@ -390,15 +362,15 @@
 
         <!-- Documents -->
         {% if available_documents.values() | select | list %}
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 sm:p-6">
-            <h2 class="text-lg font-semibold text-white mb-3">Your Documents</h2>
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
+            <h2 class="font-serif text-lg font-semibold text-[#0e2148] mb-3">Your Documents</h2>
             <div class="space-y-2">
                 {% for doc_id, label in document_labels.items() %}
                 {% if available_documents.get(doc_id) %}
                 <a href="/orders/{{ order_id }}/documents/{{ doc_id }}"
-                    class="flex items-center justify-between bg-gray-800 hover:bg-gray-700 rounded-lg p-3 text-sm transition">
-                    <span>{{ label }}</span>
-                    <span class="text-blue-400 text-xs">Download →</span>
+                    class="flex items-center justify-between bg-[#FAF8F3] hover:bg-white border border-[#0e2148]/10 rounded-lg p-3 text-sm transition">
+                    <span class="text-[#0e2148]">{{ label }}</span>
+                    <span class="text-[#c9a227] text-xs font-semibold">Download →</span>
                 </a>
                 {% endif %}
                 {% endfor %}
@@ -406,8 +378,8 @@
         </div>
         {% endif %}
 
-        <!-- Progress Timeline (auto-refreshes every 30s) -->
-        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 sm:p-6"
+        <!-- Progress Timeline -->
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 sm:p-6 shadow-sm"
              id="timeline-wrapper"
              hx-get="/dashboard/orders/{{ order_id }}/timeline"
              hx-trigger="every 30s"
@@ -417,30 +389,30 @@
 
         <!-- Share (only once fully complete) -->
         {% if state == "complete" and website_url %}
-        <div class="bg-gradient-to-r from-green-950 to-blue-950 border border-green-800 rounded-xl p-5 sm:p-6">
-            <h2 class="text-lg font-semibold text-green-400 mb-3">🚀 Share Your Business Launch</h2>
-            <p class="text-sm text-gray-300 mb-3">{{ business_name }} is live at:</p>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-5 sm:p-6">
+            <h2 class="font-serif text-lg font-semibold text-emerald-700 mb-3">🚀 Share Your Business Launch</h2>
+            <p class="text-sm text-[#0e2148]/70 mb-3">{{ business_name }} is live at:</p>
             <div class="flex gap-2 mb-4">
                 <input id="share-url" type="text" readonly value="{{ website_url }}"
-                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs text-gray-300 font-mono"/>
+                    class="flex-1 bg-white border border-emerald-200 rounded-lg p-2 text-xs text-[#0e2148]/70 font-mono"/>
                 <button type="button" onclick="copyShareLink()"
-                    class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 rounded-lg transition whitespace-nowrap">
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 rounded-lg transition whitespace-nowrap">
                     <span id="copy-label">Copy Link</span>
                 </button>
             </div>
-            <p class="text-xs text-gray-400 italic">"I just launched {{ business_name }} with Launch Bridge! 🚀"</p>
-            <div class="mt-5 rounded-lg overflow-hidden border border-gray-700">
+            <p class="text-xs text-[#0e2148]/50 italic">"I just launched {{ business_name }} with Launch Bridge! 🚀"</p>
+            <div class="mt-5 rounded-lg overflow-hidden border border-emerald-200">
                 <iframe src="{{ website_url }}" class="w-full h-96 bg-white" loading="lazy" title="{{ business_name }} website preview"></iframe>
             </div>
-            <a href="{{ website_url }}" target="_blank" class="block mt-2 text-center text-xs text-blue-400 hover:text-blue-300">Open in new tab →</a>
+            <a href="{{ website_url }}" target="_blank" class="block mt-2 text-center text-xs text-[#c9a227] hover:text-[#b8860b]">Open in new tab →</a>
         </div>
         {% endif %}
 
         <!-- Contact Us -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 sm:p-6">
-            <h2 class="text-lg font-semibold text-white mb-1">Questions about your order?</h2>
-            <p class="text-sm text-gray-400 mb-4">
-                Email <a href="mailto:support@launchbridge.ai" class="text-blue-400 underline">support@launchbridge.ai</a>
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
+            <h2 class="font-serif text-lg font-semibold text-[#0e2148] mb-1">Questions about your order?</h2>
+            <p class="text-sm text-[#0e2148]/55 mb-4">
+                Email <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] underline">support@launchbridge.ai</a>
                 or send us a message below.
             </p>
 
@@ -449,45 +421,45 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">Name</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">Name</label>
                         <input name="name" type="text" value="{{ full_name or '' }}"
-                            class="w-full bg-gray-800 rounded-lg p-2.5 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                            class="w-full bg-[#FAF8F3] rounded-lg p-2.5 text-[#0e2148] border border-[#0e2148]/15 focus:border-[#c9a227] focus:outline-none text-sm"/>
                     </div>
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">Email</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">Email</label>
                         <input name="email" type="email" value="{{ email or '' }}"
-                            class="w-full bg-gray-800 rounded-lg p-2.5 text-white border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                            class="w-full bg-[#FAF8F3] rounded-lg p-2.5 text-[#0e2148] border border-[#0e2148]/15 focus:border-[#c9a227] focus:outline-none text-sm"/>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs text-gray-400 mb-1">Message</label>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Message</label>
                     <textarea name="message" rows="3" required placeholder="How can we help?"
-                        class="w-full bg-gray-800 rounded-lg p-2.5 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"></textarea>
+                        class="w-full bg-[#FAF8F3] rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/15 focus:border-[#c9a227] focus:outline-none text-sm"></textarea>
                 </div>
                 <button type="submit"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition text-sm">
+                    class="w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-2.5 rounded-full transition text-sm">
                     Send Message
                 </button>
                 <div id="contact-result"></div>
             </form>
 
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-5 pt-4 border-t border-gray-800 text-xs text-gray-500">
-                <a href="https://cal.com/launchbridge" target="_blank" class="text-blue-400 underline">📞 Book a call</a>
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-5 pt-4 border-t border-[#0e2148]/10 text-xs text-[#0e2148]/40">
+                <a href="https://cal.com/launchbridge" target="_blank" class="text-[#c9a227] underline">📞 Book a call</a>
                 <span>Support available Monday-Friday 9am-6pm Eastern</span>
             </div>
         </div>
 
-        <p class="text-xs text-gray-600 text-center pt-2">
-            <a href="/dashboard/logout" class="text-gray-500 hover:text-gray-400 underline">Sign out</a>
+        <p class="text-xs text-[#0e2148]/35 text-center pt-2">
+            <a href="/dashboard/logout" class="text-[#0e2148]/45 hover:text-[#0e2148] underline">Sign out</a>
         </p>
 
-        <div class="text-center mt-8 pt-6 border-t border-gray-800">
-            <p class="text-xs text-gray-600">© 2026 Launch Bridge LLC ·
-                <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-                <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-                <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+        <div class="text-center mt-8 pt-6 border-t border-[#0e2148]/10">
+            <p class="text-xs text-[#0e2148]/40">© 2026 Launch Bridge LLC ·
+                <a href="/terms" class="text-[#0e2148]/50 hover:text-[#0e2148]">Terms</a> ·
+                <a href="/privacy" class="text-[#0e2148]/50 hover:text-[#0e2148]">Privacy</a> ·
+                <a href="mailto:support@launchbridge.ai" class="text-[#0e2148]/50 hover:text-[#0e2148]">support@launchbridge.ai</a>
             </p>
-            <p class="text-xs text-gray-700 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
+            <p class="text-xs text-[#0e2148]/30 mt-1">Launch Bridge LLC is a document preparation service, not a law firm.</p>
         </div>
 
     </div>
@@ -528,8 +500,8 @@
         function updateTemplateCards() {
             document.querySelectorAll('.template-card').forEach(card => {
                 const selected = card.querySelector('input[type="radio"]').checked;
-                card.classList.toggle('border-cyan-500', selected);
-                card.classList.toggle('border-gray-700', !selected);
+                card.classList.toggle('border-[#c9a227]', selected);
+                card.classList.toggle('border-[#0e2148]/12', !selected);
             });
         }
 
@@ -540,34 +512,34 @@
             const container = document.getElementById('additional-intake-members');
             const div = document.createElement('div');
             div.id = `intake-member-${n}`;
-            div.className = 'bg-gray-900 border border-gray-700 rounded-lg p-4 mb-2';
+            div.className = 'bg-white border border-[#0e2148]/12 rounded-lg p-4 mb-2 shadow-sm';
             div.innerHTML = `
                 <div class="flex justify-between items-center mb-2">
-                    <p class="text-xs text-gray-400 font-semibold">Member ${n}</p>
+                    <p class="text-xs text-[#0e2148]/55 font-semibold">Member ${n}</p>
                     <button type="button" onclick="document.getElementById('intake-member-${n}').remove()"
-                        class="text-xs text-red-400 hover:text-red-300 transition">− Remove</button>
+                        class="text-xs text-red-500 hover:text-red-600 transition">− Remove</button>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">First *</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">First *</label>
                         <input name="extra_sig_first_${n}" type="text" required placeholder="Jane"
-                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white text-sm font-serif italic"/>
+                            class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
                     </div>
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">Middle</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">Middle</label>
                         <input name="extra_sig_middle_${n}" type="text" placeholder="Optional"
-                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white placeholder-gray-500 text-sm font-serif italic"/>
+                            class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
                     </div>
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1">Last *</label>
+                        <label class="block text-xs text-[#0e2148]/55 mb-1">Last *</label>
                         <input name="extra_sig_last_${n}" type="text" required placeholder="Doe"
-                            class="w-full bg-gray-800 border border-gray-600 rounded-lg p-2 text-white text-sm font-serif italic"/>
+                            class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
                     </div>
                 </div>`;
             container.appendChild(div);
         }
 
-        // ── Google Places address autocomplete (loaded conditionally) ──────────
+        // ── Google Places address autocomplete ──────────────────────────────
 
         function initPlacesAutocomplete() {
             const input = document.getElementById('address-autocomplete');
@@ -643,7 +615,6 @@
             var params = new URLSearchParams(window.location.search);
             if (params.get('ga_event') === 'intake_complete') {
                 ga('intake_complete', {});
-                // Clean URL without triggering a reload
                 history.replaceState(null, '', window.location.pathname);
             }
             {% if state == "complete" %}

@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Examples — What You Get · Launch Bridge</title>
     <meta name="description" content="See exactly what Launch Bridge delivers: a real business website, brand kit, LLC documents, and Stripe account. All for $350.">
+    {% include "_brand.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "_ga4.html" %}
     <style>
-        @keyframes pulse-g { 0%,100%{opacity:1} 50%{opacity:.4} }
-        .dot { animation: pulse-g 2s infinite; }
+        @keyframes pulse-gold { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .dot { animation: pulse-gold 2s infinite; }
         .site-frame {
             width: 166.67%;
             height: 166.67%;
@@ -28,14 +29,14 @@
         .before-after-col { flex: 1; min-width: 0; }
     </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen">
 
 <!-- NAV -->
-<nav class="border-b border-gray-900 px-4 py-3">
+<nav class="border-b border-[#0e2148]/10 px-4 py-3 bg-white/80 backdrop-blur">
     <div class="max-w-5xl mx-auto flex items-center justify-between gap-3">
-        <a href="/" class="text-white font-bold text-base hover:text-blue-400 transition py-2">← Launch Bridge</a>
+        <a href="/" class="text-[#0e2148] font-bold text-base hover:text-[#c9a227] transition py-2">← Launch Bridge</a>
         <a href="/"
-            class="bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold px-4 py-3 rounded-xl text-sm hover:from-green-400 hover:to-emerald-500 transition shrink-0">
+            class="bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold px-4 py-3 rounded-full text-sm transition shrink-0 shadow-sm">
             Start for $350 →
         </a>
     </div>
@@ -43,12 +44,12 @@
 
 <!-- HERO -->
 <div class="max-w-5xl mx-auto px-4 pt-14 pb-10 text-center">
-    <div class="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-blue-400 mb-4">
-        <span class="dot w-2 h-2 bg-blue-400 rounded-full inline-block"></span>
+    <div class="eyebrow justify-center mb-4">
+        <span class="dot w-2 h-2 bg-[#c9a227] rounded-full inline-block"></span>
         Real customer deliverables
     </div>
-    <h1 class="text-4xl sm:text-5xl font-black tracking-tight mb-4">Here's exactly what you get</h1>
-    <p class="text-gray-400 text-lg max-w-2xl mx-auto">
+    <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-4">Here's exactly what you get</h1>
+    <p class="text-[#0e2148]/60 text-lg max-w-2xl mx-auto">
         Everything below is a real example of what we build for every customer.
         "Blue Ridge Consulting LLC" is our fictional demo business — your deliverables will be customized for yours.
     </p>
@@ -60,22 +61,21 @@
     <div id="website">
         <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
             <div>
-                <p class="text-xs font-bold tracking-widest uppercase text-blue-400 mb-2">Deliverable 01</p>
-                <h2 class="text-3xl font-black tracking-tight">Your Business Website</h2>
-                <p class="text-gray-400 mt-2 max-w-xl">
+                <p class="eyebrow mb-2">Deliverable 01</p>
+                <h2 class="font-serif text-3xl font-bold text-[#0e2148]">Your Business Website</h2>
+                <p class="text-[#0e2148]/60 mt-2 max-w-xl">
                     A professional one-page website, live on the internet within 24 hours of your LLC approval.
                     AI-generated content, deployed automatically to GitHub Pages.
                 </p>
             </div>
             <a href="/examples/demo-site" target="_blank"
-                class="shrink-0 bg-blue-700 hover:bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+                class="shrink-0 bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold px-5 py-2.5 rounded-full text-sm transition flex items-center gap-2 shadow-sm">
                 Open full site ↗
             </a>
         </div>
 
-        <!-- Browser mockup -->
-        <div class="bg-gray-900 border border-gray-700 rounded-2xl overflow-hidden shadow-2xl shadow-blue-950/30">
-            <!-- Browser chrome -->
+        <!-- Browser mockup (dark chrome is intentional) -->
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl overflow-hidden shadow-xl shadow-[#0e2148]/15">
             <div class="bg-gray-800 px-4 py-3 flex items-center gap-3 border-b border-gray-700">
                 <div class="flex gap-1.5">
                     <div class="w-3 h-3 rounded-full bg-red-500/70"></div>
@@ -87,7 +87,6 @@
                     blueridgeconsulting-llc.github.io
                 </div>
             </div>
-            <!-- Site preview -->
             <div class="site-wrap">
                 <iframe class="site-frame" src="/examples/demo-site"
                     sandbox="allow-scripts allow-same-origin"
@@ -98,17 +97,17 @@
         </div>
 
         <div class="grid grid-cols-3 gap-4 mt-4">
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black text-white">24h</div>
-                <div class="text-xs text-gray-500 mt-1">after LLC approval</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 text-center shadow-sm">
+                <div class="font-serif text-2xl font-bold text-[#0e2148]">24h</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">after LLC approval</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black text-white">100%</div>
-                <div class="text-xs text-gray-500 mt-1">AI-generated content</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 text-center shadow-sm">
+                <div class="font-serif text-2xl font-bold text-[#0e2148]">100%</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">AI-generated content</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black text-white">Free</div>
-                <div class="text-xs text-gray-500 mt-1">hosting on GitHub Pages</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 text-center shadow-sm">
+                <div class="font-serif text-2xl font-bold text-[#0e2148]">Free</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">hosting on GitHub Pages</div>
             </div>
         </div>
     </div>
@@ -117,90 +116,90 @@
     <div id="brand-kit">
         <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
             <div>
-                <p class="text-xs font-bold tracking-widest uppercase text-purple-400 mb-2">Deliverable 02</p>
-                <h2 class="text-3xl font-black tracking-tight">Complete Brand Kit</h2>
-                <p class="text-gray-400 mt-2 max-w-xl">
+                <p class="eyebrow mb-2" style="color:#7c3aed;">Deliverable 02</p>
+                <h2 class="font-serif text-3xl font-bold text-[#0e2148]">Complete Brand Kit</h2>
+                <p class="text-[#0e2148]/60 mt-2 max-w-xl">
                     Logo direction, color palette with hex codes, typography pairing, and a tagline — generated from your business description.
                     Everything you need to look professional from day one.
                 </p>
             </div>
         </div>
 
-        <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden p-1">
+        <div class="bg-white border border-[#0e2148]/10 rounded-2xl overflow-hidden p-1 shadow-sm">
             <img src="/static/examples/brand_kit.svg" alt="Blue Ridge Consulting LLC brand kit"
                 class="w-full rounded-xl" style="max-height: 400px; object-fit: cover; object-position: top;"/>
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
                 <div class="w-8 h-8 rounded-full mb-3" style="background:#1B4332;"></div>
-                <div class="text-xs font-bold text-white">Forest Green</div>
-                <div class="text-xs text-gray-500 font-mono mt-0.5">#1B4332</div>
+                <div class="text-xs font-bold text-[#0e2148]">Forest Green</div>
+                <div class="text-xs text-[#0e2148]/40 font-mono mt-0.5">#1B4332</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
                 <div class="w-8 h-8 rounded-full mb-3" style="background:#1A3A5C;"></div>
-                <div class="text-xs font-bold text-white">Navy Blue</div>
-                <div class="text-xs text-gray-500 font-mono mt-0.5">#1A3A5C</div>
+                <div class="text-xs font-bold text-[#0e2148]">Navy Blue</div>
+                <div class="text-xs text-[#0e2148]/40 font-mono mt-0.5">#1A3A5C</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
                 <div class="w-8 h-8 rounded-full mb-3" style="background:#C8973A;"></div>
-                <div class="text-xs font-bold text-white">Warm Gold</div>
-                <div class="text-xs text-gray-500 font-mono mt-0.5">#C8973A</div>
+                <div class="text-xs font-bold text-[#0e2148]">Warm Gold</div>
+                <div class="text-xs text-[#0e2148]/40 font-mono mt-0.5">#C8973A</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <div class="w-8 h-8 rounded-full mb-3 border border-gray-700" style="background:#F8F6F1;"></div>
-                <div class="text-xs font-bold text-white">Stone Light</div>
-                <div class="text-xs text-gray-500 font-mono mt-0.5">#F8F6F1</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
+                <div class="w-8 h-8 rounded-full mb-3 border border-[#0e2148]/10" style="background:#F8F6F1;"></div>
+                <div class="text-xs font-bold text-[#0e2148]">Stone Light</div>
+                <div class="text-xs text-[#0e2148]/40 font-mono mt-0.5">#F8F6F1</div>
             </div>
         </div>
     </div>
 
     <!-- ── SECTION 3: DOCUMENTS ── -->
     <div id="documents">
-        <p class="text-xs font-bold tracking-widest uppercase text-green-400 mb-2">Deliverable 03</p>
-        <h2 class="text-3xl font-black tracking-tight mb-2">Your LLC Document Set</h2>
-        <p class="text-gray-400 mb-6 max-w-xl">
+        <p class="eyebrow mb-2" style="color:#059669;">Deliverable 03</p>
+        <h2 class="font-serif text-3xl font-bold text-[#0e2148] mb-2">Your LLC Document Set</h2>
+        <p class="text-[#0e2148]/60 mb-6 max-w-xl">
             Articles of Organization filed with Virginia SCC, Operating Agreement, and EIN confirmation —
             all delivered to your secure dashboard. Blurred here for privacy.
         </p>
 
-        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 flex items-center justify-center" style="min-height: 380px;">
+        <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-8 flex items-center justify-center shadow-sm" style="min-height: 380px;">
             <img src="/static/examples/doc_mockup.svg" alt="LLC document set mockup"
-                class="w-full max-w-lg" style="filter: drop-shadow(0 8px 24px rgba(0,0,0,0.4));"/>
+                class="w-full max-w-lg" style="filter: drop-shadow(0 8px 24px rgba(14,33,72,0.12));"/>
         </div>
 
         <div class="grid grid-cols-3 gap-3 mt-4">
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <div class="text-blue-400 text-lg mb-2">📋</div>
-                <div class="text-sm font-bold text-white">Articles of Org.</div>
-                <div class="text-xs text-gray-500 mt-1">Filed with Virginia SCC within 24h</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
+                <div class="text-[#c9a227] text-lg mb-2">📋</div>
+                <div class="text-sm font-bold text-[#0e2148]">Articles of Org.</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">Filed with Virginia SCC within 24h</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <div class="text-green-400 text-lg mb-2">📄</div>
-                <div class="text-sm font-bold text-white">Operating Agreement</div>
-                <div class="text-xs text-gray-500 mt-1">Custom-drafted, member signatures</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
+                <div class="text-[#c9a227] text-lg mb-2">📄</div>
+                <div class="text-sm font-bold text-[#0e2148]">Operating Agreement</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">Custom-drafted, member signatures</div>
             </div>
-            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <div class="text-purple-400 text-lg mb-2">🔢</div>
-                <div class="text-sm font-bold text-white">EIN Letter</div>
-                <div class="text-xs text-gray-500 mt-1">IRS SS-4 confirmation in 1–3 days</div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
+                <div class="text-[#c9a227] text-lg mb-2">🔢</div>
+                <div class="text-sm font-bold text-[#0e2148]">EIN Letter</div>
+                <div class="text-xs text-[#0e2148]/45 mt-1">IRS SS-4 confirmation in 1–3 days</div>
             </div>
         </div>
     </div>
 
     <!-- ── SECTION 4: STRIPE ── -->
     <div id="stripe">
-        <p class="text-xs font-bold tracking-widest uppercase text-indigo-400 mb-2">Deliverable 04</p>
-        <h2 class="text-3xl font-black tracking-tight mb-2">Stripe Payment Account</h2>
-        <p class="text-gray-400 mb-6 max-w-xl">
+        <p class="eyebrow mb-2" style="color:#4f46e5;">Deliverable 04</p>
+        <h2 class="font-serif text-3xl font-bold text-[#0e2148] mb-2">Stripe Payment Account</h2>
+        <p class="text-[#0e2148]/60 mb-6 max-w-xl">
             A Stripe Connect account created in your business name and linked to your website.
             Accept credit cards, Apple Pay, and Google Pay on day one.
         </p>
 
-        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8">
+        <!-- Stripe mockup stays white (it's showing a Stripe UI) -->
+        <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-8 shadow-sm">
             <div class="max-w-md mx-auto">
-                <!-- Stripe-style dashboard mockup -->
-                <div class="bg-white rounded-xl overflow-hidden shadow-xl">
+                <div class="bg-white rounded-xl overflow-hidden shadow-xl border border-gray-200">
                     <div class="bg-indigo-700 px-5 py-4 flex items-center gap-3">
                         <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-white font-black text-sm">S</div>
                         <div>
@@ -243,79 +242,79 @@
 
     <!-- ── BEFORE / AFTER ── -->
     <div id="before-after">
-        <p class="text-xs font-bold tracking-widest uppercase text-yellow-400 mb-2">The difference</p>
-        <h2 class="text-3xl font-black tracking-tight mb-8">Without Launch Bridge vs. With</h2>
+        <p class="eyebrow mb-2" style="color:#b8860b;">The difference</p>
+        <h2 class="font-serif text-3xl font-bold text-[#0e2148] mb-8">Without Launch Bridge vs. With</h2>
 
         <div class="flex flex-col sm:flex-row gap-4">
             <!-- WITHOUT -->
-            <div class="flex-1 bg-gray-900 border border-red-900/40 rounded-2xl p-6">
-                <div class="text-red-400 font-bold text-sm mb-5 flex items-center gap-2">
+            <div class="flex-1 bg-white border border-red-200 rounded-2xl p-6 shadow-sm">
+                <div class="text-red-500 font-bold text-sm mb-5 flex items-center gap-2">
                     <span>✗</span> Without Launch Bridge
                 </div>
                 <ul class="space-y-4 text-sm">
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>Virginia SCC website — figure out the form yourself, 2–4 hours</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>IRS EIN Assistant — separate form, online filing window, error-prone</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>No brand kit — figure out Canva or pay a designer $300–$800</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>No website — pay a freelancer $1,000–$5,000 or waste months on Wix</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>Stripe setup — separate account, not connected to your site</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-400">
-                        <span class="text-red-500 mt-0.5 shrink-0">✗</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/60">
+                        <span class="text-red-400 mt-0.5 shrink-0">✗</span>
                         <span>Total time: 3–8 weeks. Total cost: $100 state fee + hidden costs everywhere</span>
                     </li>
                 </ul>
-                <div class="mt-6 pt-4 border-t border-gray-800">
-                    <div class="text-red-400 font-bold">$100+ state fee · 3–8 weeks · no website</div>
+                <div class="mt-6 pt-4 border-t border-red-100">
+                    <div class="text-red-500 font-bold text-sm">$100+ state fee · 3–8 weeks · no website</div>
                 </div>
             </div>
 
             <!-- WITH -->
-            <div class="flex-1 bg-gray-900 border border-green-800/50 rounded-2xl p-6">
-                <div class="text-green-400 font-bold text-sm mb-5 flex items-center gap-2">
+            <div class="flex-1 bg-white border border-emerald-200 rounded-2xl p-6 shadow-sm">
+                <div class="text-emerald-600 font-bold text-sm mb-5 flex items-center gap-2">
                     <span>✓</span> With Launch Bridge
                 </div>
                 <ul class="space-y-4 text-sm">
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>Virginia SCC filing — we handle it within 24 hours of your order</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>EIN applied for automatically once SCC approves — no IRS form</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>AI brand kit: logo direction, 5-color palette, typography, tagline</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>Professional website, live within 24h of LLC approval — like the demo above</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>Stripe account set up and pay link embedded in your website automatically</span>
                     </li>
-                    <li class="flex gap-3 items-start text-gray-300">
-                        <span class="text-green-400 mt-0.5 shrink-0">✓</span>
+                    <li class="flex gap-3 items-start text-[#0e2148]/75">
+                        <span class="text-[#c9a227] mt-0.5 shrink-0">✓</span>
                         <span>Total time: 3–5 business days. Total cost: $350 flat — nothing else to pay</span>
                     </li>
                 </ul>
-                <div class="mt-6 pt-4 border-t border-gray-800">
-                    <div class="text-green-400 font-bold">$350 flat · 3–5 days · website included</div>
+                <div class="mt-6 pt-4 border-t border-emerald-100">
+                    <div class="text-emerald-600 font-bold text-sm">$350 flat · 3–5 days · website included</div>
                 </div>
             </div>
         </div>
@@ -323,26 +322,26 @@
 
     <!-- ── CTA ── -->
     <div class="text-center pb-4">
-        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-10">
-            <h2 class="text-3xl font-black tracking-tight mb-3">Ready to get yours?</h2>
-            <p class="text-gray-400 mb-8 text-lg">$350 flat. Everything above, built for your business.</p>
+        <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-10 shadow-sm">
+            <h2 class="font-serif text-3xl font-bold text-[#0e2148] mb-3">Ready to get yours?</h2>
+            <p class="text-[#0e2148]/60 mb-8 text-lg">$350 flat. Everything above, built for your business.</p>
             <a href="/"
-                class="block sm:inline-block bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 px-6 sm:px-10 rounded-xl text-lg shadow-xl shadow-green-900/30 transition text-center">
+                class="block sm:inline-block bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 px-6 sm:px-10 rounded-full text-lg shadow-lg shadow-[#c9a227]/25 transition text-center">
                 Start My Virginia LLC →
             </a>
-            <p class="text-xs text-gray-600 mt-4">Includes $100 Virginia state filing fee · No subscriptions · No upsells</p>
+            <p class="text-xs text-[#0e2148]/35 mt-4">Includes $100 Virginia state filing fee · No subscriptions · No upsells</p>
         </div>
     </div>
 
 </div>
 
 <!-- FOOTER -->
-<footer class="border-t border-gray-900 px-4 py-8 text-center">
-    <p class="text-xs text-gray-600">
+<footer class="border-t border-[#0e2148]/10 px-4 py-8 text-center">
+    <p class="text-xs text-[#0e2148]/40">
         © 2026 Launch Bridge LLC ·
-        <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-        <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-        <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+        <a href="/terms" class="text-[#0e2148]/50 hover:text-[#0e2148]">Terms</a> ·
+        <a href="/privacy" class="text-[#0e2148]/50 hover:text-[#0e2148]">Privacy</a> ·
+        <a href="mailto:support@launchbridge.ai" class="text-[#0e2148]/50 hover:text-[#0e2148]">support@launchbridge.ai</a>
     </p>
 </footer>
 

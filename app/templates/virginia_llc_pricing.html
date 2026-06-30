@@ -5,83 +5,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Virginia LLC Pricing — $350 Flat · Launch Bridge</title>
     <meta name="description" content="Transparent pricing for Virginia LLC formation. One flat $350 fee — no upsells, no annual fees, no hidden costs. See exactly what's included.">
+    {% include "_brand.html" %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "_ga4.html" %}
     <style>
         @media (max-width: 640px) {
             #landing-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-                padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
-                border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
+                padding: 0.75rem 1rem; background: rgba(250,248,243,0.97);
+                border-top: 1px solid rgba(14,33,72,0.12); backdrop-filter: blur(8px); }
             #landing-spacer { height: 5rem; }
             #step1-sticky { display: none !important; }
         }
         @media (min-width: 641px) { #landing-sticky { display: none; } }
     </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen">
 
 <div class="max-w-xl mx-auto px-4">
 
     <!-- Header -->
     <header class="text-center pt-10 pb-8">
-        <div class="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-yellow-400 mb-4">
-            <span class="w-2 h-2 bg-yellow-400 rounded-full inline-block"></span>
-            Transparent Pricing
-        </div>
-        <h1 class="text-3xl sm:text-4xl font-black tracking-tight mb-3 leading-tight">
+        <div class="eyebrow mb-4">Transparent Pricing</div>
+        <h1 class="font-serif text-3xl sm:text-4xl font-bold text-[#0e2148] mb-3 leading-tight">
             $350. Everything Included.<br>No Surprises.
         </h1>
-        <p class="text-gray-400 text-base mb-5 max-w-sm mx-auto">
+        <p class="text-[#0e2148]/60 text-base mb-5 max-w-sm mx-auto">
             One payment covers your Virginia LLC, EIN, brand kit, website, and Stripe setup. That's it.
         </p>
     </header>
 
     <!-- Price breakdown -->
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">What $350 covers</h2>
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 mb-6 shadow-sm">
+        <h2 class="text-sm font-semibold text-[#0e2148]/50 uppercase tracking-widest mb-4">What $350 covers</h2>
         <div class="space-y-3">
             <div class="flex justify-between items-start text-sm">
                 <div>
-                    <p class="text-white font-semibold">Virginia SCC filing fee</p>
-                    <p class="text-gray-500 text-xs">Paid directly to the state — we forward it</p>
+                    <p class="text-[#0e2148] font-semibold">Virginia SCC filing fee</p>
+                    <p class="text-[#0e2148]/45 text-xs">Paid directly to the state — we forward it</p>
                 </div>
-                <span class="text-white font-bold shrink-0 ml-4">$100</span>
+                <span class="text-[#0e2148] font-bold shrink-0 ml-4">$100</span>
             </div>
             <div class="flex justify-between items-start text-sm">
                 <div>
-                    <p class="text-white font-semibold">Launch Bridge service fee</p>
-                    <p class="text-gray-500 text-xs">EIN, brand kit, website, Stripe, self registered agent setup</p>
+                    <p class="text-[#0e2148] font-semibold">Launch Bridge service fee</p>
+                    <p class="text-[#0e2148]/45 text-xs">EIN, brand kit, website, Stripe, self registered agent setup</p>
                 </div>
-                <span class="text-white font-bold shrink-0 ml-4">$250</span>
+                <span class="text-[#0e2148] font-bold shrink-0 ml-4">$250</span>
             </div>
-            <div class="flex justify-between items-center border-t border-gray-700 pt-3 mt-1">
-                <span class="text-white font-bold">Total</span>
-                <span class="text-green-400 text-xl font-black">$350</span>
+            <div class="flex justify-between items-center border-t border-[#0e2148]/10 pt-3 mt-1">
+                <span class="text-[#0e2148] font-bold">Total</span>
+                <span class="text-[#c9a227] text-xl font-black">$350</span>
             </div>
         </div>
     </div>
 
     <!-- What's included checklist -->
     <div class="mb-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-3">Every order includes</h2>
+        <h2 class="text-sm font-semibold text-[#0e2148]/50 uppercase tracking-widest mb-3">Every order includes</h2>
         <div class="space-y-2">
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Articles of Organization filed with Virginia SCC</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Operating Agreement (custom-drafted)</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>EIN application submitted to IRS</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>AI-generated brand kit (logo, colors, fonts)</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Business website, live within days of LLC approval</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Stripe Connect account setup</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Self registered agent setup included</span></div>
-            <div class="flex items-center gap-3 text-sm text-gray-500 text-xs ml-6"><span>You will serve as your own registered agent (Virginia residents only)</span></div>
-            <div class="flex items-center gap-3 text-sm"><span class="text-green-400">✓</span><span>Dashboard to track every step in real time</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Articles of Organization filed with Virginia SCC</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Operating Agreement (custom-drafted)</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">EIN application submitted to IRS</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">AI-generated brand kit (logo, colors, fonts)</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Business website, live within days of LLC approval</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Stripe Connect account setup</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Self registered agent setup included</span></div>
+            <div class="flex items-center gap-3 text-sm text-[#0e2148]/40 text-xs ml-6"><span>You will serve as your own registered agent (Virginia residents only)</span></div>
+            <div class="flex items-center gap-3 text-sm"><span class="text-[#c9a227]">✓</span><span class="text-[#0e2148]/80">Dashboard to track every step in real time</span></div>
         </div>
     </div>
 
     <!-- Not included -->
-    <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-4 mb-6">
-        <h2 class="text-sm font-semibold text-gray-400 mb-2">Not included</h2>
-        <div class="space-y-1 text-xs text-gray-500">
+    <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mb-6 shadow-sm">
+        <h2 class="text-sm font-semibold text-[#0e2148]/55 mb-2">Not included</h2>
+        <div class="space-y-1 text-xs text-[#0e2148]/45">
             <p>• Registered agent replacement (you serve as your own RA; you may designate a commercial RA at any time)</p>
             <p>• Annual SCC report fee (~$50/year — we remind you)</p>
             <p>• Business licenses specific to your industry or locality</p>
@@ -89,61 +87,61 @@
     </div>
 
     <!-- Comparison table -->
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-8">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">Compare your options</h2>
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 mb-8 shadow-sm">
+        <h2 class="text-sm font-semibold text-[#0e2148]/50 uppercase tracking-widest mb-4">Compare your options</h2>
         <div class="overflow-x-auto">
             <table class="w-full text-xs text-left">
                 <thead>
-                    <tr class="border-b border-gray-700">
-                        <th class="pb-2 text-gray-500 font-normal"></th>
-                        <th class="pb-2 text-gray-500 font-normal text-center">DIY</th>
-                        <th class="pb-2 text-gray-500 font-normal text-center">LegalZoom</th>
-                        <th class="pb-2 text-gray-500 font-normal text-center">Attorney</th>
-                        <th class="pb-2 text-green-400 font-bold text-center">Launch Bridge</th>
+                    <tr class="border-b border-[#0e2148]/10">
+                        <th class="pb-2 text-[#0e2148]/40 font-normal"></th>
+                        <th class="pb-2 text-[#0e2148]/40 font-normal text-center">DIY</th>
+                        <th class="pb-2 text-[#0e2148]/40 font-normal text-center">LegalZoom</th>
+                        <th class="pb-2 text-[#0e2148]/40 font-normal text-center">Attorney</th>
+                        <th class="pb-2 text-[#c9a227] font-bold text-center">Launch Bridge</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-800">
+                <tbody class="divide-y divide-[#0e2148]/8">
                     <tr>
-                        <td class="py-2 text-gray-400">LLC filing</td>
-                        <td class="py-2 text-center text-yellow-400">✓ $100</td>
-                        <td class="py-2 text-center text-yellow-400">✓ $399+</td>
-                        <td class="py-2 text-center text-yellow-400">✓ $1,200+</td>
-                        <td class="py-2 text-center text-green-400 font-bold">✓ included</td>
+                        <td class="py-2 text-[#0e2148]/60">LLC filing</td>
+                        <td class="py-2 text-center text-[#0e2148]/55">✓ $100</td>
+                        <td class="py-2 text-center text-[#0e2148]/55">✓ $399+</td>
+                        <td class="py-2 text-center text-[#0e2148]/55">✓ $1,200+</td>
+                        <td class="py-2 text-center text-[#c9a227] font-bold">✓ included</td>
                     </tr>
                     <tr>
-                        <td class="py-2 text-gray-400">EIN</td>
-                        <td class="py-2 text-center text-gray-500">Self-file</td>
-                        <td class="py-2 text-center text-gray-500">Extra fee</td>
-                        <td class="py-2 text-center text-gray-500">Extra fee</td>
-                        <td class="py-2 text-center text-green-400 font-bold">✓ included</td>
+                        <td class="py-2 text-[#0e2148]/60">EIN</td>
+                        <td class="py-2 text-center text-[#0e2148]/40">Self-file</td>
+                        <td class="py-2 text-center text-[#0e2148]/40">Extra fee</td>
+                        <td class="py-2 text-center text-[#0e2148]/40">Extra fee</td>
+                        <td class="py-2 text-center text-[#c9a227] font-bold">✓ included</td>
                     </tr>
                     <tr>
-                        <td class="py-2 text-gray-400">Website</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-green-400 font-bold">✓ included</td>
+                        <td class="py-2 text-[#0e2148]/60">Website</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#c9a227] font-bold">✓ included</td>
                     </tr>
                     <tr>
-                        <td class="py-2 text-gray-400">Brand kit</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-green-400 font-bold">✓ included</td>
+                        <td class="py-2 text-[#0e2148]/60">Brand kit</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#c9a227] font-bold">✓ included</td>
                     </tr>
                     <tr>
-                        <td class="py-2 text-gray-400">Stripe setup</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-gray-600">✗</td>
-                        <td class="py-2 text-center text-green-400 font-bold">✓ included</td>
+                        <td class="py-2 text-[#0e2148]/60">Stripe setup</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#0e2148]/25">✗</td>
+                        <td class="py-2 text-center text-[#c9a227] font-bold">✓ included</td>
                     </tr>
                     <tr>
-                        <td class="py-2 text-gray-400 font-semibold">Total cost</td>
-                        <td class="py-2 text-center text-white">$100+<br><span class="text-gray-500">+ hours</span></td>
-                        <td class="py-2 text-center text-white">$408+<br><span class="text-gray-500">+ $9/mo</span></td>
-                        <td class="py-2 text-center text-white">$1,200+</td>
-                        <td class="py-2 text-center text-green-400 font-black text-sm">$350 flat</td>
+                        <td class="py-2 text-[#0e2148]/70 font-semibold">Total cost</td>
+                        <td class="py-2 text-center text-[#0e2148]/65">$100+<br><span class="text-[#0e2148]/35">+ hours</span></td>
+                        <td class="py-2 text-center text-[#0e2148]/65">$408+<br><span class="text-[#0e2148]/35">+ $9/mo</span></td>
+                        <td class="py-2 text-center text-[#0e2148]/65">$1,200+</td>
+                        <td class="py-2 text-center text-[#c9a227] font-black text-sm">$350 flat</td>
                     </tr>
                 </tbody>
             </table>
@@ -159,16 +157,16 @@
     <div id="landing-sticky">
         <button type="button"
             onclick="document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'}); setTimeout(function(){ var el=document.getElementById('business_idea_step1'); if(el)el.focus(); },500);"
-            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl text-base transition">
+            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md">
             Launch My Virginia LLC →
         </button>
     </div>
-    <footer class="text-center py-10 border-t border-gray-900 mt-8">
-        <p class="text-xs text-gray-600">
+    <footer class="text-center py-10 border-t border-[#0e2148]/10 mt-8">
+        <p class="text-xs text-[#0e2148]/40">
             © 2026 Launch Bridge LLC ·
-            <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-            <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-            <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+            <a href="/terms" class="text-[#0e2148]/50 hover:text-[#0e2148]">Terms</a> ·
+            <a href="/privacy" class="text-[#0e2148]/50 hover:text-[#0e2148]">Privacy</a> ·
+            <a href="mailto:support@launchbridge.ai" class="text-[#0e2148]/50 hover:text-[#0e2148]">support@launchbridge.ai</a>
         </p>
     </footer>
 

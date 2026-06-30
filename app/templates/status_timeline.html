@@ -1,8 +1,8 @@
 <div id="timeline-container">
     <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-white">Progress</h2>
-        <div class="flex items-center gap-2 text-xs text-gray-500">
-            <svg class="htmx-indicator animate-spin h-3 w-3 text-blue-400" viewBox="0 0 24 24" fill="none">
+        <h2 class="font-serif text-lg font-bold text-[#0e2148]">Progress</h2>
+        <div class="flex items-center gap-2 text-xs text-[#0e2148]/40">
+            <svg class="htmx-indicator animate-spin h-3 w-3 text-[#c9a227]" viewBox="0 0 24 24" fill="none">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
@@ -15,47 +15,47 @@
         <div class="flex gap-4 {% if not loop.last %}pb-1{% endif %}">
             <div class="flex flex-col items-center">
                 {% if step.status == "complete" %}
-                <div class="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-bold shrink-0">✓</div>
+                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-sm font-bold shrink-0">✓</div>
                 {% elif step.status == "on_hold" %}
-                <div class="w-8 h-8 rounded-full bg-amber-600 flex items-center justify-center text-white text-sm font-bold shrink-0">!</div>
+                <div class="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-white text-sm font-bold shrink-0">!</div>
                 {% elif step.status == "current" %}
-                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0 animate-pulse ring-4 ring-blue-900">{{ loop.index }}</div>
+                <div class="w-8 h-8 rounded-full bg-[#c9a227] flex items-center justify-center text-[#0e2148] text-sm font-bold shrink-0 animate-pulse ring-4 ring-[#c9a227]/25">{{ loop.index }}</div>
                 {% else %}
-                <div class="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-gray-500 text-sm font-bold shrink-0">{{ loop.index }}</div>
+                <div class="w-8 h-8 rounded-full bg-[#FAF8F3] border border-[#0e2148]/15 flex items-center justify-center text-[#0e2148]/35 text-sm font-bold shrink-0">{{ loop.index }}</div>
                 {% endif %}
                 {% if not loop.last %}
-                <div class="w-0.5 flex-1 my-1 {{ 'bg-green-600' if step.status == 'complete' else 'bg-gray-700' }}"></div>
+                <div class="w-0.5 flex-1 my-1 {{ 'bg-emerald-500' if step.status == 'complete' else 'bg-[#0e2148]/10' }}"></div>
                 {% endif %}
             </div>
 
             <div class="flex-1 {% if not loop.last %}pb-4{% endif %}">
                 <div class="rounded-lg border p-4
-                    {% if step.status == 'complete' %}bg-gray-900 border-green-800
-                    {% elif step.status == 'on_hold' %}bg-amber-950 border-amber-700
-                    {% elif step.status == 'current' %}bg-gray-900 border-blue-600 shadow-lg shadow-blue-950
-                    {% else %}bg-gray-900/50 border-gray-800{% endif %}">
+                    {% if step.status == 'complete' %}bg-white border-emerald-200 shadow-sm
+                    {% elif step.status == 'on_hold' %}bg-amber-50 border-amber-300
+                    {% elif step.status == 'current' %}bg-white border-[#c9a227]/40 shadow-md shadow-[#c9a227]/10
+                    {% else %}bg-[#FAF8F3] border-[#0e2148]/8{% endif %}">
                     <p class="font-semibold text-sm
-                        {% if step.status == 'complete' %}text-green-400
-                        {% elif step.status == 'on_hold' %}text-amber-300
-                        {% elif step.status == 'current' %}text-white
-                        {% else %}text-gray-500{% endif %}">
+                        {% if step.status == 'complete' %}text-emerald-700
+                        {% elif step.status == 'on_hold' %}text-amber-700
+                        {% elif step.status == 'current' %}text-[#0e2148]
+                        {% else %}text-[#0e2148]/35{% endif %}">
                         {{ step.name }}
                     </p>
                     <p class="text-sm mt-1
-                        {% if step.status == 'pending' %}text-gray-600
-                        {% elif step.status == 'on_hold' %}text-amber-200
-                        {% else %}text-gray-400{% endif %}">
+                        {% if step.status == 'pending' %}text-[#0e2148]/30
+                        {% elif step.status == 'on_hold' %}text-amber-600
+                        {% else %}text-[#0e2148]/55{% endif %}">
                         {{ step.description }}
                     </p>
                     {% if step.url %}
                     <a href="{{ step.url }}" target="_blank"
-                        class="inline-block mt-2 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition">
+                        class="inline-block mt-2 text-xs font-semibold bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] px-3 py-1.5 rounded-full transition">
                         View Website →
                     </a>
                     {% endif %}
                     {% if step.onboarding and onboarding_url %}
                     <a href="{{ onboarding_url }}"
-                        class="inline-block mt-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition">
+                        class="inline-block mt-2 text-xs font-semibold bg-[#0e2148] hover:bg-[#0e2148]/90 text-white px-3 py-1.5 rounded-full transition">
                         Complete Setup →
                     </a>
                     {% endif %}
@@ -66,9 +66,9 @@
     </div>
 
     {% if estimated_completion %}
-    <div class="mt-2 bg-blue-950 border border-blue-800 rounded-xl p-4">
-        <p class="text-sm text-blue-300 font-semibold">📅 Estimated Completion: {{ estimated_completion }}</p>
-        <p class="text-xs text-blue-400 mt-1">{{ estimate_breakdown }}</p>
+    <div class="mt-2 bg-[#c9a227]/10 border border-[#c9a227]/30 rounded-xl p-4">
+        <p class="text-sm text-[#0e2148] font-semibold">📅 Estimated Completion: {{ estimated_completion }}</p>
+        <p class="text-xs text-[#0e2148]/55 mt-1">{{ estimate_breakdown }}</p>
     </div>
     {% endif %}
 </div>

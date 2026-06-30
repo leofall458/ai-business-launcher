@@ -5,50 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Launch Bridge — AI-Powered Virginia LLC Formation</title>
     <meta name="description" content="Form a Virginia LLC in days with AI. Get your Articles, EIN, brand kit, business website, and Stripe account — all for $350 flat.">
+    {% include "_brand.html" %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @keyframes pulse-green { 0%,100%{opacity:1} 50%{opacity:.4} }
-        .live-dot { animation: pulse-green 2s infinite; }
+        @keyframes pulse-gold { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .live-dot { animation: pulse-gold 2s infinite; }
     </style>
     {% include "_ga4.html" %}
 </head>
-<body class="bg-gray-950 text-white min-h-screen">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen">
 
 <div class="max-w-xl mx-auto px-4">
 
     <!-- ── HEADER ── -->
     <header class="text-center pt-10 pb-6">
-        <div class="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-blue-400 mb-4">
-            <span class="live-dot w-2 h-2 bg-blue-400 rounded-full inline-block"></span>
+        <div class="eyebrow mb-4">
+            <span class="live-dot w-2 h-2 bg-[#c9a227] rounded-full inline-block"></span>
             Virginia LLC Formation
         </div>
-        <h1 class="text-4xl sm:text-5xl font-black tracking-tight mb-3">Launch Bridge</h1>
-        <p class="text-gray-400 text-base sm:text-lg mb-5 max-w-sm mx-auto">
+        <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-3">Launch Bridge</h1>
+        <p class="text-[#0e2148]/65 text-base sm:text-lg mb-5 max-w-sm mx-auto">
             From business idea to fully-formed LLC with a website, brand kit, EIN, and Stripe account — all done for you.
         </p>
         {% if founding_member_status and founding_member_status.is_active %}
-        <div class="inline-flex items-center gap-2 bg-amber-900/40 border border-amber-700/60 rounded-full px-5 py-2 text-amber-400 text-sm font-bold">
+        <div class="inline-flex items-center gap-2 bg-[#c9a227]/15 border border-[#c9a227]/50 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
             ${{ (founding_member_status.discount_price // 100) }} Founding Member · normally ${{ (founding_member_status.original_price // 100) }}
         </div>
         {% else %}
-        <div class="inline-flex items-center gap-2 bg-green-900/40 border border-green-800/60 rounded-full px-5 py-2 text-green-400 text-sm font-bold">
+        <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
             $350 flat · includes $100 Virginia state fee
         </div>
         {% endif %}
     </header>
 
     {% if cancelled %}
-    <div class="bg-yellow-950 border border-yellow-700 rounded-xl p-4 mb-6 text-center text-sm text-yellow-300">
+    <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 text-center text-sm text-amber-800">
         Payment cancelled — no charge was made. Fill out the form below whenever you're ready.
     </div>
     {% endif %}
 
     <!-- Already have an order? -->
     <a href="/dashboard"
-        class="flex items-center justify-between bg-gray-900 border border-gray-700 hover:border-blue-600 rounded-xl p-4 mb-6 text-sm font-semibold text-blue-400 transition">
+        class="flex items-center justify-between bg-white border border-[#0e2148]/15 hover:border-[#c9a227] rounded-xl p-4 mb-6 text-sm font-semibold text-[#0e2148] transition shadow-sm">
         <span>📦 Already have an order?</span>
-        <span>Sign in to your dashboard →</span>
+        <span class="text-[#c9a227]">Sign in to your dashboard →</span>
     </a>
 
     {% include "_wizard.html" %}
@@ -57,39 +58,34 @@
     <section class="mb-10">
         <div class="flex items-end justify-between mb-5">
             <div>
-                <h2 class="text-xl font-bold">Here's exactly what you get</h2>
-                <p class="text-gray-500 text-xs mt-1">Real examples — built for every order</p>
+                <h2 class="font-serif text-xl font-bold text-[#0e2148]">Here's exactly what you get</h2>
+                <p class="text-[#0e2148]/45 text-xs mt-1">Real examples — built for every order</p>
             </div>
-            <a href="/examples" class="text-blue-400 hover:text-blue-300 text-xs font-semibold transition shrink-0 ml-4">See all →</a>
+            <a href="/examples" class="text-[#c9a227] hover:text-[#b8860b] text-xs font-semibold transition shrink-0 ml-4">See all →</a>
         </div>
 
         <!-- ── Website browser preview ── -->
         <a href="/examples/demo-site" target="_blank" class="block group mb-3">
-            <!-- Floating browser window -->
-            <div class="rounded-2xl overflow-hidden shadow-2xl shadow-blue-950/50 ring-1 ring-gray-700 group-hover:ring-blue-600 transition-all duration-200">
+            <div class="rounded-2xl overflow-hidden shadow-lg shadow-[#0e2148]/10 ring-1 ring-[#0e2148]/10 group-hover:ring-[#c9a227]/50 transition-all duration-200">
 
-                <!-- Browser chrome -->
+                <!-- Browser chrome (intentionally dark — it IS a browser) -->
                 <div class="bg-gray-800 px-3 py-2.5 flex items-center gap-2.5 border-b border-gray-700/80">
-                    <!-- Traffic lights -->
                     <div class="flex gap-1.5 shrink-0">
                         <div class="w-3 h-3 rounded-full bg-red-500"></div>
                         <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
                         <div class="w-3 h-3 rounded-full bg-green-500"></div>
                     </div>
-                    <!-- URL bar -->
                     <div class="flex-1 bg-gray-700/80 rounded px-2.5 py-1 text-xs text-gray-300 flex items-center gap-1.5 min-w-0">
                         <svg class="w-3 h-3 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                         </svg>
                         <span class="truncate">blueridgeconsulting.launchbridge-sites.github.io</span>
                     </div>
-                    <!-- External link icon -->
-                    <svg class="w-3.5 h-3.5 text-gray-500 group-hover:text-blue-400 shrink-0 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <svg class="w-3.5 h-3.5 text-gray-500 group-hover:text-[#c9a227] shrink-0 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                     </svg>
                 </div>
 
-                <!-- Live iframe embed -->
                 <div style="height: 420px; overflow: hidden; position: relative; background: #fff;">
                     <iframe
                         src="/examples/demo-site"
@@ -97,7 +93,6 @@
                         scrolling="yes"
                         title="Blue Ridge Consulting LLC — example website">
                     </iframe>
-                    <!-- Invisible click-capture overlay that opens full site -->
                     <div class="absolute inset-0" style="cursor: pointer;" title="Open full site"></div>
                 </div>
             </div>
@@ -105,11 +100,11 @@
 
         <!-- Caption + CTA -->
         <div class="flex items-center justify-between mb-5 px-1">
-            <p class="text-xs text-gray-500">
+            <p class="text-xs text-[#0e2148]/45">
                 🌐 A real example of the website we build for every customer
             </p>
             <a href="/examples/demo-site" target="_blank"
-                class="text-blue-400 hover:text-blue-300 text-xs font-semibold transition shrink-0 ml-3">
+                class="text-[#c9a227] hover:text-[#b8860b] text-xs font-semibold transition shrink-0 ml-3">
                 View full site →
             </a>
         </div>
@@ -118,31 +113,31 @@
         <div class="grid grid-cols-3 gap-2">
 
             <!-- Brand Kit -->
-            <a href="/examples#brand-kit" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-purple-700 transition block">
-                <div class="h-24 overflow-hidden bg-gray-800">
+            <a href="/examples#brand-kit" class="bg-white border border-[#0e2148]/10 rounded-xl overflow-hidden hover:border-[#c9a227]/60 transition block shadow-sm">
+                <div class="h-24 overflow-hidden bg-[#FAF8F3]">
                     <img src="/static/examples/brand_kit.svg" alt="Brand kit"
                         class="w-full h-full" style="object-fit:cover; object-position: top left;"/>
                 </div>
                 <div class="p-2.5">
-                    <p class="text-white font-semibold text-xs">🎨 Brand Kit</p>
-                    <p class="text-gray-500 text-[10px] mt-0.5 leading-snug">Logo · colors · fonts · tagline</p>
+                    <p class="text-[#0e2148] font-semibold text-xs">🎨 Brand Kit</p>
+                    <p class="text-[#0e2148]/45 text-[10px] mt-0.5 leading-snug">Logo · colors · fonts · tagline</p>
                 </div>
             </a>
 
             <!-- Documents -->
-            <a href="/examples#documents" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-green-700 transition block">
-                <div class="h-24 bg-gray-800 flex items-center justify-center overflow-hidden p-1">
+            <a href="/examples#documents" class="bg-white border border-[#0e2148]/10 rounded-xl overflow-hidden hover:border-[#c9a227]/60 transition block shadow-sm">
+                <div class="h-24 bg-[#FAF8F3] flex items-center justify-center overflow-hidden p-1">
                     <img src="/static/examples/doc_mockup.svg" alt="LLC documents"
                         class="h-full w-auto"/>
                 </div>
                 <div class="p-2.5">
-                    <p class="text-white font-semibold text-xs">📄 LLC Docs</p>
-                    <p class="text-gray-500 text-[10px] mt-0.5 leading-snug">Articles · Op. Agmt · EIN</p>
+                    <p class="text-[#0e2148] font-semibold text-xs">📄 LLC Docs</p>
+                    <p class="text-[#0e2148]/45 text-[10px] mt-0.5 leading-snug">Articles · Op. Agmt · EIN</p>
                 </div>
             </a>
 
-            <!-- Stripe -->
-            <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <!-- Stripe (keep dark mockup interior) -->
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl overflow-hidden shadow-sm">
                 <div class="h-24 bg-gray-800 p-2 flex flex-col justify-center gap-1.5">
                     <div class="bg-indigo-900/60 border border-indigo-700/40 rounded px-2 py-1.5 flex items-center gap-1.5">
                         <div class="text-indigo-400 font-black text-xs">S</div>
@@ -159,8 +154,8 @@
                     </div>
                 </div>
                 <div class="p-2.5">
-                    <p class="text-white font-semibold text-xs">💳 Stripe</p>
-                    <p class="text-gray-500 text-[10px] mt-0.5 leading-snug">Accept payments day 1</p>
+                    <p class="text-[#0e2148] font-semibold text-xs">💳 Stripe</p>
+                    <p class="text-[#0e2148]/45 text-[10px] mt-0.5 leading-snug">Accept payments day 1</p>
                 </div>
             </div>
 
@@ -168,42 +163,42 @@
 
         <!-- Pricing breakdown -->
         {% if founding_member_status and founding_member_status.is_active %}
-        <div class="bg-amber-950/40 border border-amber-700/40 rounded-xl p-4 mt-4">
-            <div class="flex justify-between text-sm text-gray-300 mb-2">
+        <div class="bg-[#c9a227]/10 border border-[#c9a227]/35 rounded-xl p-4 mt-4">
+            <div class="flex justify-between text-sm text-[#0e2148]/75 mb-2">
                 <span>Launch Bridge service fee</span>
-                <span><s class="text-gray-500">$250</s> <strong class="text-amber-300">${{ (founding_member_status.service_fee_cents // 100) }}</strong> <span class="text-xs text-amber-500">($100 off)</span></span>
+                <span><s class="text-[#0e2148]/35">$250</s> <strong class="text-[#b8860b]">${{ (founding_member_status.service_fee_cents // 100) }}</strong> <span class="text-xs text-[#b8860b]/70">($100 off)</span></span>
             </div>
-            <div class="flex justify-between text-sm text-gray-300 mb-3">
-                <span>Virginia state filing fee</span><span class="text-white font-semibold">$100</span>
+            <div class="flex justify-between text-sm text-[#0e2148]/75 mb-3">
+                <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
             </div>
-            <div class="flex justify-between font-bold border-t border-amber-700/30 pt-3">
-                <span class="text-white">Total</span><span class="text-amber-300 text-lg">${{ (founding_member_status.discount_price // 100) }}</span>
+            <div class="flex justify-between font-bold border-t border-[#c9a227]/25 pt-3">
+                <span class="text-[#0e2148]">Total</span><span class="text-[#b8860b] text-lg">${{ (founding_member_status.discount_price // 100) }}</span>
             </div>
-            <p class="text-xs text-amber-400/70 mt-2">Founding Member rate · {{ founding_member_status.spots_remaining }} spot{{ "s" if founding_member_status.spots_remaining != 1 else "" }} remaining · We pay Virginia directly.</p>
+            <p class="text-xs text-[#b8860b]/70 mt-2">Founding Member rate · {{ founding_member_status.spots_remaining }} spot{{ "s" if founding_member_status.spots_remaining != 1 else "" }} remaining · We pay Virginia directly.</p>
         </div>
         {% else %}
-        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-4 mt-4">
-            <div class="flex justify-between text-sm text-gray-300 mb-2">
-                <span>Launch Bridge service fee</span><span class="text-white font-semibold">$250</span>
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mt-4 shadow-sm">
+            <div class="flex justify-between text-sm text-[#0e2148]/70 mb-2">
+                <span>Launch Bridge service fee</span><span class="text-[#0e2148] font-semibold">$250</span>
             </div>
-            <div class="flex justify-between text-sm text-gray-300 mb-3">
-                <span>Virginia state filing fee</span><span class="text-white font-semibold">$100</span>
+            <div class="flex justify-between text-sm text-[#0e2148]/70 mb-3">
+                <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
             </div>
-            <div class="flex justify-between font-bold border-t border-gray-700 pt-3">
-                <span class="text-white">Total</span><span class="text-green-400 text-lg">$350</span>
+            <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-3">
+                <span class="text-[#0e2148]">Total</span><span class="text-[#c9a227] text-lg">$350</span>
             </div>
-            <p class="text-xs text-gray-600 mt-2">We pay Virginia directly — you never pay separately.</p>
+            <p class="text-xs text-[#0e2148]/35 mt-2">We pay Virginia directly — you never pay separately.</p>
         </div>
         {% endif %}
     </section>
 
     <!-- ── FOOTER ── -->
-    <footer class="text-center py-10 border-t border-gray-900 mt-8">
-        <p class="text-xs text-gray-600">
+    <footer class="text-center py-10 border-t border-[#0e2148]/10 mt-8">
+        <p class="text-xs text-[#0e2148]/40">
             © 2026 Launch Bridge LLC ·
-            <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-            <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-            <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+            <a href="/terms" class="text-[#0e2148]/50 hover:text-[#0e2148]">Terms</a> ·
+            <a href="/privacy" class="text-[#0e2148]/50 hover:text-[#0e2148]">Privacy</a> ·
+            <a href="mailto:support@launchbridge.ai" class="text-[#0e2148]/50 hover:text-[#0e2148]">support@launchbridge.ai</a>
         </p>
     </footer>
 

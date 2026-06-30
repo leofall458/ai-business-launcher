@@ -5,84 +5,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Virginia LLC for Government Contractors — Launch Bridge</title>
     <meta name="description" content="Be SAM.gov-eligible in days. Get your Virginia LLC, EIN, and contractor-ready business package — done for you for $350 flat.">
+    {% include "_brand.html" %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "_ga4.html" %}
     <style>
         @media (max-width: 640px) {
             #landing-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-                padding: 0.75rem 1rem; background: rgba(3,7,18,0.97);
-                border-top: 1px solid rgba(75,85,99,0.5); backdrop-filter: blur(8px); }
+                padding: 0.75rem 1rem; background: rgba(250,248,243,0.97);
+                border-top: 1px solid rgba(14,33,72,0.12); backdrop-filter: blur(8px); }
             #landing-spacer { height: 5rem; }
             #step1-sticky { display: none !important; }
         }
         @media (min-width: 641px) { #landing-sticky { display: none; } }
     </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen">
 
 <div class="max-w-xl mx-auto px-4">
 
     <!-- Header -->
     <header class="text-center pt-10 pb-8">
-        <div class="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-blue-400 mb-4">
-            <span class="w-2 h-2 bg-blue-400 rounded-full inline-block"></span>
-            Virginia LLC for Contractors
-        </div>
-        <h1 class="text-3xl sm:text-4xl font-black tracking-tight mb-3 leading-tight">
+        <div class="eyebrow mb-4">Virginia LLC for Contractors</div>
+        <h1 class="font-serif text-3xl sm:text-4xl font-bold text-[#0e2148] mb-3 leading-tight">
             Get Contract-Eligible<br>in Days, Not Weeks
         </h1>
-        <p class="text-gray-400 text-base mb-5 max-w-sm mx-auto">
+        <p class="text-[#0e2148]/60 text-base mb-5 max-w-sm mx-auto">
             Virginia LLC + EIN + SAM-ready business package — everything a federal contractor needs to start bidding.
         </p>
-        <div class="inline-flex items-center gap-2 bg-green-900/40 border border-green-800/60 rounded-full px-5 py-2 text-green-400 text-sm font-bold">
+        <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
             $350 flat · all-in · no subscriptions
         </div>
     </header>
 
     <!-- Pain points -->
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-8">
-        <p class="text-sm font-semibold text-gray-300 mb-3">You need an LLC to:</p>
-        <ul class="space-y-2 text-sm text-gray-400">
-            <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">→</span> Register in SAM.gov and get a CAGE code</li>
-            <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">→</span> Obtain a DUNS / UEI number</li>
-            <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">→</span> Bid on federal, state, and IDIQ contracts</li>
-            <li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">→</span> Open a business bank account for contract payments</li>
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 mb-8 shadow-sm">
+        <p class="text-sm font-semibold text-[#0e2148]/75 mb-3">You need an LLC to:</p>
+        <ul class="space-y-2 text-sm text-[#0e2148]/65">
+            <li class="flex items-start gap-2"><span class="text-[#c9a227] mt-0.5">→</span> Register in SAM.gov and get a CAGE code</li>
+            <li class="flex items-start gap-2"><span class="text-[#c9a227] mt-0.5">→</span> Obtain a DUNS / UEI number</li>
+            <li class="flex items-start gap-2"><span class="text-[#c9a227] mt-0.5">→</span> Bid on federal, state, and IDIQ contracts</li>
+            <li class="flex items-start gap-2"><span class="text-[#c9a227] mt-0.5">→</span> Open a business bank account for contract payments</li>
         </ul>
-        <p class="text-xs text-gray-600 mt-3">Virginia is home to more federal contractors than any other state — form here first.</p>
+        <p class="text-xs text-[#0e2148]/35 mt-3">Virginia is home to more federal contractors than any other state — form here first.</p>
     </div>
 
     <!-- What you get -->
     <div class="mb-8">
-        <h2 class="text-lg font-bold mb-4">Everything included for $350:</h2>
+        <h2 class="font-serif text-lg font-bold text-[#0e2148] mb-4">Everything included for $350:</h2>
         <div class="space-y-2">
-            <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 text-sm">
-                <span class="text-green-400 text-base">✓</span>
-                <div><span class="text-white font-semibold">Virginia LLC filing</span><span class="text-gray-500 ml-2">SCC Articles of Organization</span></div>
+            <div class="flex items-center gap-3 bg-white border border-[#0e2148]/10 rounded-xl p-3 text-sm shadow-sm">
+                <span class="text-[#c9a227] text-base">✓</span>
+                <div><span class="text-[#0e2148] font-semibold">Virginia LLC filing</span><span class="text-[#0e2148]/45 ml-2">SCC Articles of Organization</span></div>
             </div>
-            <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 text-sm">
-                <span class="text-green-400 text-base">✓</span>
-                <div><span class="text-white font-semibold">EIN application</span><span class="text-gray-500 ml-2">IRS Employer ID — required for SAM</span></div>
+            <div class="flex items-center gap-3 bg-white border border-[#0e2148]/10 rounded-xl p-3 text-sm shadow-sm">
+                <span class="text-[#c9a227] text-base">✓</span>
+                <div><span class="text-[#0e2148] font-semibold">EIN application</span><span class="text-[#0e2148]/45 ml-2">IRS Employer ID — required for SAM</span></div>
             </div>
-            <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 text-sm">
-                <span class="text-green-400 text-base">✓</span>
-                <div><span class="text-white font-semibold">Brand kit</span><span class="text-gray-500 ml-2">Logo, colors, fonts for proposals</span></div>
+            <div class="flex items-center gap-3 bg-white border border-[#0e2148]/10 rounded-xl p-3 text-sm shadow-sm">
+                <span class="text-[#c9a227] text-base">✓</span>
+                <div><span class="text-[#0e2148] font-semibold">Brand kit</span><span class="text-[#0e2148]/45 ml-2">Logo, colors, fonts for proposals</span></div>
             </div>
-            <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 text-sm">
-                <span class="text-green-400 text-base">✓</span>
-                <div><span class="text-white font-semibold">Business website</span><span class="text-gray-500 ml-2">Required for past performance pages</span></div>
+            <div class="flex items-center gap-3 bg-white border border-[#0e2148]/10 rounded-xl p-3 text-sm shadow-sm">
+                <span class="text-[#c9a227] text-base">✓</span>
+                <div><span class="text-[#0e2148] font-semibold">Business website</span><span class="text-[#0e2148]/45 ml-2">Required for past performance pages</span></div>
             </div>
-            <div class="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 text-sm">
-                <span class="text-green-400 text-base">✓</span>
-                <div><span class="text-white font-semibold">Stripe account setup</span><span class="text-gray-500 ml-2">For commercial invoicing alongside contracts</span></div>
+            <div class="flex items-center gap-3 bg-white border border-[#0e2148]/10 rounded-xl p-3 text-sm shadow-sm">
+                <span class="text-[#c9a227] text-base">✓</span>
+                <div><span class="text-[#0e2148] font-semibold">Stripe account setup</span><span class="text-[#0e2148]/45 ml-2">For commercial invoicing alongside contracts</span></div>
             </div>
         </div>
     </div>
 
     <!-- Social proof -->
-    <div class="bg-blue-950/40 border border-blue-900/50 rounded-2xl p-5 mb-8 text-sm text-blue-200">
-        <p class="font-semibold mb-1">Less than a billable hour of attorney time.</p>
-        <p class="text-blue-300/70">A government contractor attorney charges $350–$500/hr. Launch Bridge does the formation for the same cost — and delivers a website and brand kit too.</p>
+    <div class="bg-[#0e2148]/5 border border-[#0e2148]/12 rounded-2xl p-5 mb-8 text-sm text-[#0e2148]/75">
+        <p class="font-semibold mb-1 text-[#0e2148]">Less than a billable hour of attorney time.</p>
+        <p class="text-[#0e2148]/55">A government contractor attorney charges $350–$500/hr. Launch Bridge does the formation for the same cost — and delivers a website and brand kit too.</p>
     </div>
 
     <!-- Wizard -->
@@ -94,16 +92,16 @@
     <div id="landing-sticky">
         <button type="button"
             onclick="document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'}); setTimeout(function(){ var el=document.getElementById('business_idea_step1'); if(el)el.focus(); },500);"
-            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl text-base transition">
+            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md">
             Launch My Virginia LLC →
         </button>
     </div>
-    <footer class="text-center py-10 border-t border-gray-900 mt-8">
-        <p class="text-xs text-gray-600">
+    <footer class="text-center py-10 border-t border-[#0e2148]/10 mt-8">
+        <p class="text-xs text-[#0e2148]/40">
             © 2026 Launch Bridge LLC ·
-            <a href="/terms" class="text-gray-500 hover:text-gray-400">Terms</a> ·
-            <a href="/privacy" class="text-gray-500 hover:text-gray-400">Privacy</a> ·
-            <a href="mailto:support@launchbridge.ai" class="text-gray-500 hover:text-gray-400">support@launchbridge.ai</a>
+            <a href="/terms" class="text-[#0e2148]/50 hover:text-[#0e2148]">Terms</a> ·
+            <a href="/privacy" class="text-[#0e2148]/50 hover:text-[#0e2148]">Privacy</a> ·
+            <a href="mailto:support@launchbridge.ai" class="text-[#0e2148]/50 hover:text-[#0e2148]">support@launchbridge.ai</a>
         </p>
     </footer>
 

@@ -1,0 +1,62 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            fontFamily: {
+                serif: ['"Playfair Display"', 'Georgia', 'serif'],
+                sans: ['Inter', 'system-ui', 'sans-serif'],
+            }
+        }
+    }
+}
+</script>
+<style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .font-serif { font-family: 'Playfair Display', Georgia, serif !important; }
+
+    /* Gold eyebrow label: small dash + uppercase letter-spaced text */
+    .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #c9a227;
+    }
+    .eyebrow::before { content: '—'; color: #c9a227; flex-shrink: 0; }
+
+    /* Gold underline accent for key phrases */
+    .gold-underline {
+        text-decoration: underline;
+        text-decoration-color: #c9a227;
+        text-underline-offset: 5px;
+        text-decoration-thickness: 2px;
+        text-decoration-style: wavy;
+    }
+
+    /* Name-selection chips → gold palette */
+    .name-chip {
+        display: inline-block; cursor: pointer;
+        background: rgba(201,162,39,0.12);
+        border: 1px solid rgba(201,162,39,0.4);
+        color: #b8860b;
+        padding: 4px 10px; border-radius: 9999px; font-size: 12px; margin: 3px 2px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .name-chip:hover { background: rgba(201,162,39,0.25); border-color: #c9a227; color: #0e2148; }
+    .name-chip.selected { background: #c9a227; border-color: #c9a227; color: #0e2148; }
+
+    /* Mobile sticky bars → cream background */
+    @media (max-width: 640px) {
+        #pay-sticky, #step1-sticky, #landing-sticky {
+            background: rgba(250,248,243,0.97) !important;
+            border-top-color: rgba(14,33,72,0.12) !important;
+        }
+        #pay-sticky p { color: rgba(14,33,72,0.55) !important; }
+    }
+</style>
