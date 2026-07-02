@@ -187,6 +187,90 @@ def pay_scc_filing_fee(page):
     print("✅ Payment submitted - LLC filing fee paid!")
     return True
 
+class NameTakenError(Exception):
+    """Raised when a business name is confirmed taken on Virginia SCC -
+    either by verify_name_before_filing's pre-check or by the filing
+    wizard's own Step 3 distinguishability check further down in
+    file_llc_on_scc. Deliberately a distinct exception type from a plain
+    return False, so the caller (run_scc_filing) can tell "this name needs
+    to be replaced by the customer" apart from "the filer crashed/hit an
+    unrelated site problem" and react differently (notify the customer to
+    pick a new name, not just log a generic filing_error for retry)."""
+    pass
+
+
+def verify_name_before_filing(business_name: str) -> dict:
+    """Fast pre-check against SCC's public Entity Search, using the local,
+    already-logged-in Chrome instance over CDP - a real browser driving
+    real DOM interactions, so Virginia SCC's cookie-consent gate and
+    reCAPTCHA v3 (both added to that page after app/agents/
+    scc_name_check.py's plain-HTTP scraper was written - see that
+    module's check_name_public docstring) aren't the hard blockers they
+    are for Cloud Run's plain HTTP client.
+
+    Returns {"available": True|False|None, "message": str}. None means
+    "couldn't determine either way" (timeout, unexpected page layout,
+    no CDP access) - never guess in that case, let the caller fall back to
+    a human decision. This is a best-effort speed check meant to catch an
+    obviously-taken name before spending several minutes filling out the
+    rest of the filing wizard; that wizard's own Step 3 name-
+    distinguishability check (further down in file_llc_on_scc) is still
+    the real, final, authoritative gate before anything is actually
+    submitted."""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(CDP_URL)
+            context = browser.contexts[0]
+            page = context.new_page()
+
+            page.goto("https://cis.scc.virginia.gov/EntitySearch/Index")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(1000)
+
+            # Dismiss the cookie-consent modal if it's showing - a real
+            # click through the page's own "Accept" button
+            # (id="acceptCookies"), not the plain-HTTP StoreCookieConsent
+            # workaround scc_name_check.py needs.
+            if page.locator('#acceptCookies').count() > 0:
+                js_click(page, '#acceptCookies')
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(1000)
+
+            page.wait_for_selector('#BusinessSearch_Index_txtBusinessName', timeout=15000)
+            js_fill_field(page, '#BusinessSearch_Index_txtBusinessName', business_name)
+
+            if page.locator('#BEFilingSearch_ddlSearchLogic').count() > 0:
+                try:
+                    page.select_option('#BEFilingSearch_ddlSearchLogic', label='Exact Match')
+                except Exception:
+                    pass  # dropdown may not offer this exact label - fine, default search logic still runs
+
+            page.click('#btnSearch')
+            # The search itself is reCAPTCHA v3-gated client-side and
+            # reloads the page with results once Google's check clears -
+            # give it real time to settle rather than assuming an instant
+            # response.
+            page.wait_for_load_state("networkidle", timeout=20000)
+            page.wait_for_timeout(2000)
+
+            body = page.inner_text("body")
+            page.close()
+
+            body_lower = body.lower()
+            if "no records found" in body_lower or "0 records" in body_lower:
+                return {"available": True, "message": f'"{business_name}" appears to be available on Virginia SCC.'}
+
+            if business_name.upper() in body.upper():
+                return {"available": False, "message": f'"{business_name}" already exists on Virginia SCC.'}
+
+            # Results came back but nothing matched the name exactly -
+            # ambiguous rather than a clean yes/no, don't guess.
+            return {"available": None, "message": "Could not confirm an exact match either way - please verify manually."}
+    except Exception as e:
+        print(f"⚠️ verify_name_before_filing crashed for '{business_name}': {e}")
+        return {"available": None, "message": f"Could not verify: {e}"}
+
+
 def file_llc_on_scc(customer_data: dict, interactive=True):
     business_name = customer_data["business_name"]
     first_name = customer_data["first_name"]
@@ -202,6 +286,18 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
 
     if not business_name.upper().endswith(" LLC"):
         business_name = business_name + " LLC"
+
+    # Safety-net pre-check before touching the login/filing wizard at all -
+    # the wizard's own Step 3 name-distinguishability check further below
+    # is still the real, final gate, but there's no reason to spend several
+    # minutes filling out Entity Information/Registered Agent/Principal
+    # Address for a name that's already known to be taken. available=None
+    # (couldn't verify) is not a rejection - proceeds to the wizard's own
+    # check same as always, per verify_name_before_filing's docstring.
+    pre_check = verify_name_before_filing(business_name)
+    print(f"📋 Pre-filing name check for '{business_name}': {pre_check}")
+    if pre_check["available"] is False:
+        raise NameTakenError(pre_check["message"])
 
     ra_label = "Leo Fall (Launch Bridge)" if registered_agent_choice == "launchbridge" else "Self (customer)"
     print(f"\n🚀 Filing LLC for: {business_name}")
@@ -293,8 +389,15 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             print(f"❌ Name NOT available")
             if interactive:
                 input("Press ENTER to close...")
+                browser.close()
+                return False
+            # Confirmed rejection (not just an unclear/timeout result, see
+            # the except block above for that case) - same treatment as
+            # verify_name_before_filing's pre-check: a distinct,
+            # non-retryable outcome the caller needs to notify the
+            # customer about, not a generic filing crash.
             browser.close()
-            return False
+            raise NameTakenError(f'"{business_name}" is not distinguishable from an existing Virginia entity.')
 
         print(f"✅ Name AVAILABLE!")
 

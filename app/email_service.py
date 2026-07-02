@@ -505,6 +505,36 @@ def send_ssn_expired_email(order: dict, order_id: str):
     html = _wrap_html(html_inner, cta_text="Re-enter Your SSN", cta_url=url)
     _send(email, "Action Required - Re-enter SSN for EIN Application", body, html_body=html)
 
+def send_name_rejected_email(order: dict, order_id: str, business_name: str) -> bool:
+    """Sent by app.main's handle_name_rejected the moment Virginia SCC
+    rejects a name as not distinguishable from an existing entity - either
+    caught early by verify_name_before_filing (before the filing wizard is
+    even touched) or by the wizard's own Step 3 check partway through.
+    Either way, the order needs a new name before filing can proceed - the
+    magic link lands back on the dashboard, which routes a name_rejected
+    order straight to Step 3 (see next_incomplete_step_url)."""
+    email = order.get("email", "")
+    if not email:
+        return False
+    name = order.get("full_name", "") or "there"
+    url = create_magic_link(email)
+    body = (
+        f"Hi {name},\n\n"
+        f"Unfortunately, \"{business_name}\" is already taken in Virginia and we're not able to file it as your LLC name.\n\n"
+        "Please log into your dashboard to choose a new name - everything else on your order stays as-is.\n\n"
+        f"{url}\n\n"
+        f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>Unfortunately, <strong>{business_name}</strong> is already taken in Virginia and we're not able to "
+        "file it as your LLC name.</p>"
+        "<p>Please log into your dashboard to choose a new name - everything else on your order stays as-is.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Choose a New Name →", cta_url=url)
+    return _send(email, f'Action needed: "{business_name}" is taken in Virginia', body, html_body=html)
+
 def send_abandoned_cart_email_1h(lead: dict) -> bool:
     email = lead.get("email", "")
     if not email:

@@ -1,0 +1,35 @@
+<div id="approve-area-{{ order_id }}">
+    {% if status == "verified" %}
+    <div class="bg-green-950 border border-green-700 rounded-lg p-3 text-sm text-green-300">
+        ✅ Name verified, filing now...
+    </div>
+    {% elif status == "confirmed_manually" %}
+    <div class="bg-green-950 border border-green-700 rounded-lg p-3 text-sm text-green-300">
+        ✅ Proceeding on your manual confirmation — filing now...
+    </div>
+    {% elif status == "taken" %}
+    <div class="bg-red-950 border border-red-700 rounded-lg p-3 text-sm text-red-300">
+        ❌ Name is taken! Customer has been notified to choose a new name.
+    </div>
+    {% elif status == "unknown" %}
+    <div class="bg-yellow-950 border border-yellow-700 rounded-lg p-3 text-sm text-yellow-300 space-y-2">
+        <p>⚠️ Could not auto-verify. Did you manually check the name at
+            <a href="https://cis.scc.virginia.gov/EntitySearch/Index" target="_blank" rel="noopener" class="underline">Virginia SCC Entity Search</a>?</p>
+        <div class="flex gap-2 pt-1">
+            <form hx-post="/admin/{{ order_id }}/confirm-approve"
+                  hx-target="#approve-area-{{ order_id }}" hx-swap="outerHTML">
+                <button type="submit"
+                    class="bg-green-700 hover:bg-green-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                    Yes, proceed
+                </button>
+            </form>
+            <button type="button"
+                hx-get="/admin/{{ order_id }}/approve-button"
+                hx-target="#approve-area-{{ order_id }}" hx-swap="outerHTML"
+                class="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                Cancel
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>

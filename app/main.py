@@ -28,7 +28,7 @@ from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
 from app.agents.pdf_agent import generate_llc_pdf
-from app.scc_llc_filer import file_llc_on_scc
+from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTakenError
 
 # REGISTERED AGENT PARTNER - FUTURE FEATURE
 # Code for RA partner (Leo Fall) is implemented in scc_llc_filer.py PATH A
@@ -69,6 +69,7 @@ from app.email_service import (
     send_website_live_email,
     send_everything_complete_email,
     send_ssn_expired_email,
+    send_name_rejected_email,
     send_magic_link_email,
     send_visitor_message_email,
     send_abandoned_cart_email_1h,
@@ -150,11 +151,18 @@ async def on_startup():
 ORDER_STATES = [
     "draft", "paid", "name_selected", "intake_complete",
     "assets_generating", "assets_complete",
-    "review_approved", "filing_submitted",
+    "review_approved", "name_rejected", "filing_submitted",
     "filing_confirmed", "awaiting_ein_filing", "ein_requested", "ein_issued",
     "finalizing", "complete",
 ]
 ORDER_STATE_INDEX = {s: i for i, s in enumerate(ORDER_STATES)}
+# name_rejected is a "go back" outcome (SCC rejected the name at filing
+# time - see verify_name_before_filing/NameTakenError), not a forward
+# ordinal milestone - its position in ORDER_STATES only exists so
+# ORDER_STATE_INDEX[state] lookups don't KeyError; every place that cares
+# whether an order needs to re-pick a name checks state == "name_rejected"
+# explicitly (see next_incomplete_step_url, step_label, dashboard_name)
+# rather than relying on reached()'s ordinal comparison.
 
 def reached(state: str, milestone: str) -> bool:
     """True once an order's state has reached or passed the given
@@ -210,6 +218,11 @@ def compute_state_message(order: dict, state: str) -> str:
         return "Your EIN application has been submitted to the IRS. You will receive your EIN shortly."
     if state == "ein_issued":
         return f"Your EIN is: {order.get('ein', '')}. Your business is fully ready to operate!"
+    if state == "name_rejected":
+        return (
+            f"\"{order.get('business_name', 'Your chosen name')}\" was rejected by Virginia SCC - "
+            "please log in and choose a new name to continue."
+        )
     return STATE_MESSAGES.get(state, "")
 
 def step_label(order: dict) -> str:
@@ -220,6 +233,8 @@ def step_label(order: dict) -> str:
     state = order.get("state", "draft")
     if state == "draft":
         return "Step 2: Payment"
+    if state == "name_rejected":
+        return "Step 3: Name rejected — needs new name"
     if not reached(state, "name_selected"):
         return "Step 3: Naming"
     if order.get("awaiting_intake"):
@@ -238,6 +253,12 @@ def next_incomplete_step_url(order_id: str, order: dict) -> str | None:
     Mirrors step_label's logic since both answer "what step are they on,"
     just as a URL instead of a display string."""
     state = order.get("state", "draft")
+    # name_rejected can happen well after Steps 3-5 (SCC rejects at filing
+    # time, which is admin-triggered post-intake) - checked before the
+    # ordinal reached() comparison since name_rejected's list position
+    # doesn't reflect a real forward-progress point (see ORDER_STATES).
+    if state == "name_rejected":
+        return f"/dashboard/orders/{order_id}/name"
     if not reached(state, "name_selected"):
         return f"/dashboard/orders/{order_id}/name"
     if order.get("awaiting_intake"):
@@ -415,7 +436,7 @@ def estimate_completion(order: dict, state: str) -> str:
     """Rough estimate, not a promise - SCC and the IRS move at their own
     pace and we say so elsewhere on the page. Just gives the customer a
     ballpark instead of nothing."""
-    if state == "complete":
+    if state in ("complete", "name_rejected"):
         return None
 
     today = datetime.date.today()
@@ -998,6 +1019,25 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
         notify_ein_ready(order, order_id)
     return False
 
+def handle_name_rejected(order_ref, order: dict, order_id: str, message: str = "") -> None:
+    """Shared reaction to a confirmed name rejection - called from both the
+    admin's synchronous pre-flight check (POST /admin/{id}/verify-and-
+    approve) and run_scc_filing's NameTakenError handler below, so a
+    rejection caught either early (before the filing wizard is touched) or
+    mid-wizard (SCC's own Step 3 distinguishability check) gets identical
+    treatment: state moves backward to name_rejected (see ORDER_STATES'
+    comment on why that's safe), the customer is emailed to pick a new
+    name, and the admin is paged so nobody's left wondering why an order
+    stalled."""
+    business_name = order.get("business_name", "this name")
+    record_state(order_ref, "name_rejected",
+        name_rejected_at=firestore.SERVER_TIMESTAMP,
+        name_rejected_reason=message or f'"{business_name}" is taken in Virginia.',
+        filing_error=firestore.DELETE_FIELD,
+    )
+    send_name_rejected_email(order, order_id, business_name)
+    send_admin_sms(f"⚠️ Name taken for {order_id} - customer needs to pick new name ({business_name})")
+
 def run_scc_filing(order_id: str):
     """Triggered by the admin's Approve button. Files the LLC with SCC.
     EIN filing is a fully separate, later step (see run_ein_filing) that
@@ -1044,6 +1084,9 @@ def run_scc_filing(order_id: str):
             filing_error=firestore.DELETE_FIELD,
         )
         send_llc_filed_email(order, order_id)
+    except NameTakenError as e:
+        print(f"🚫 Name confirmed taken for order {order_id}: {e}")
+        handle_name_rejected(order_ref, order, order_id, message=str(e))
     except Exception as e:
         print(f"⚠️ SCC filing crashed for order {order_id}: {e}")
         order_ref.set({"filing_error": f"Filing crashed unexpectedly: {e}. Check server logs/screenshots."}, merge=True)
@@ -2054,10 +2097,13 @@ async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_ord
 async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_order)):
     order_ref, order, customer_id = owned
     order_id = order_ref.id
+    state = order.get("state", "draft")
     # Once a name is cleared, re-entering this page would let the customer
     # pick a different one after assets/filing have already started against
     # the first - forward-only, matches every other step's nav guard.
-    if reached(order.get("state", "draft"), "name_selected"):
+    # name_rejected is the one deliberate exception: SCC rejected the name
+    # at filing time, so the customer must be able to come back here.
+    if reached(state, "name_selected") and state != "name_rejected":
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
     business_idea = order.get("business_idea", "")
@@ -2075,8 +2121,12 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         "name_ideas": name_ideas,
         "csrf_token": make_csrf_token(session_id),
         "name_error": None,
+        "name_error_field": None,
         "skip_llc_formation": False,
         "submitted_name": "",
+        "scc_confirmed": False,
+        "name_rejected": state == "name_rejected",
+        "business_name": order.get("business_name", ""),
     })
 
 @app.post("/dashboard/orders/{order_id}/name", response_class=HTMLResponse)
@@ -2084,8 +2134,9 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
     order_ref, order, customer_id = owned
     order_id = order_ref.id
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+    state = order.get("state", "draft")
 
-    if reached(order.get("state", "draft"), "name_selected"):
+    if reached(state, "name_selected") and state != "name_rejected":
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
     form = await request.form()
@@ -2094,33 +2145,56 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
 
     business_idea = order.get("business_idea", "")
     skip_llc = form.get("skip_llc_formation") == "on"
+    scc_confirmed = form.get("scc_confirmed") == "on"
 
-    def render_error(error_msg: str, submitted: str):
+    def render_error(error_msg: str, submitted: str, field: str = None):
         return templates.TemplateResponse(request, "dashboard_name.html", {
             "order_id": order_id,
             "business_idea": business_idea,
             "name_ideas": [],
             "csrf_token": make_csrf_token(session_id),
             "name_error": error_msg,
+            "name_error_field": field,
             "skip_llc_formation": skip_llc,
             "submitted_name": submitted,
+            "scc_confirmed": scc_confirmed,
+            "name_rejected": state == "name_rejected",
+            "business_name": order.get("business_name", ""),
         }, status_code=400)
+
+    # Automated SCC checking doesn't work from Cloud Run anymore (Virginia
+    # SCC added reCAPTCHA v3 to entity search - see app/agents/
+    # scc_name_check.py's check_name_public docstring). The customer
+    # self-certifies via this checkbox instead of a live/blocking check;
+    # our own Playwright-driven verify_name_before_filing (real Chrome, not
+    # plain HTTP, so reCAPTCHA isn't an issue) still re-verifies before
+    # anything is actually filed - see admin approve flow and
+    # run_scc_filing.
+    if not scc_confirmed:
+        return render_error(
+            "Please confirm you checked Virginia SCC availability before continuing.",
+            form.get("existing_llc_name" if skip_llc else "business_name", ""),
+            field="scc_confirmed",
+        )
 
     if skip_llc:
         existing_llc_name = (form.get("existing_llc_name") or "").strip()
         if not existing_llc_name:
             return render_error("Please enter your existing LLC's name.", "")
+        # Best-effort, non-blocking - populates order.name_check for the
+        # admin dashboard's "unverified" banner; never gates submission,
+        # since it's expected to fail (reCAPTCHA-gated) most of the time.
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
-        if result.get("exists") is False:
-            return render_error(
-                "We couldn't find this LLC in the Virginia SCC database — double check the name, "
-                "or uncheck the box to form a new LLC instead.", existing_llc_name)
+        try:
+            result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
+        except Exception as e:
+            result = {"exists": None, "message": str(e)}
         order_ref.set({
             "business_name": existing_llc_name,
             "existing_llc_name": existing_llc_name,
             "skip_llc_formation": True,
             "name_check": result,
+            "scc_self_confirmed": True,
         }, merge=True)
     else:
         submitted_name = (form.get("business_name") or "").strip()
@@ -2128,18 +2202,33 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
         if sanitize_error:
             return render_error(sanitize_error, submitted_name)
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, check_name_on_scc, business_name)
-        if result.get("status") == "TAKEN":
-            return render_error(
-                f'"{business_name}" is already taken in Virginia. Please choose a different name below.',
-                submitted_name)
+        try:
+            result = await loop.run_in_executor(None, check_name_on_scc, business_name)
+        except Exception as e:
+            result = {"status": "UNAVAILABLE", "message": str(e)}
         order_ref.set({
             "business_name": business_name,
             "skip_llc_formation": False,
             "name_check": result,
+            "scc_self_confirmed": True,
+            "name_rejected_reason": firestore.DELETE_FIELD,
         }, merge=True)
 
     record_state(order_ref, "name_selected", name_selected_at=firestore.SERVER_TIMESTAMP)
+
+    if not order.get("awaiting_intake"):
+        # Resubmitting a name after SCC rejected the original one (Steps
+        # 4-5 were already completed before that happened, so they don't
+        # need to be redone) - advance straight back to intake_complete so
+        # the admin-approval/filing pipeline (which only watches for
+        # intake_complete+ - see local_filing_poller.py) picks this order
+        # up again. NOTE: this does not regenerate the brand kit/website/
+        # documents already produced under the old (rejected) name -
+        # they'll still reference it until someone re-runs
+        # run_early_assets with those fields cleared first.
+        record_state(order_ref, "intake_complete")
+        return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
+
     return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
 # ── Step 4: personal info ───────────────────────────────────────────────────
@@ -2629,16 +2718,62 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "stats": stats,
     })
 
-@app.post("/admin/{order_id}/approve")
-async def admin_approve(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
-    """Approves the order for SCC filing and kicks off filing + asset
-    generation in parallel. run_early_assets is idempotent — if the
-    customer's intake already triggered it, it skips whatever's already
-    done; this is a safety net for the rare case assets haven't run yet."""
-    record_state(ORDERS.document(order_id), "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
+def _approve_and_trigger_filing(order_ref, order_id: str, background_tasks: BackgroundTasks) -> None:
+    """Shared by both the "name verified" and "admin manually confirmed"
+    approve paths below. Kicks off filing + asset generation in parallel -
+    run_early_assets is idempotent (skips whatever the customer's intake
+    already triggered), a safety net for the rare case assets haven't run
+    yet."""
+    record_state(order_ref, "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
     background_tasks.add_task(run_scc_filing, order_id)
     background_tasks.add_task(run_early_assets, order_id)
-    return RedirectResponse(url="/admin", status_code=303)
+
+@app.get("/admin/{order_id}/approve-button", response_class=HTMLResponse)
+async def admin_approve_button(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    """Re-renders the plain Approve button - the "Cancel" action on the
+    "could not auto-verify" prompt (see _admin_approve_result.html)."""
+    return templates.TemplateResponse(request, "_admin_approve_button.html", {"order_id": order_id})
+
+@app.post("/admin/{order_id}/verify-and-approve", response_class=HTMLResponse)
+async def admin_verify_and_approve(request: Request, order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """The Approve button's real target now: synchronously (blocking this
+    one admin request - a Playwright/CDP round trip takes real time, which
+    is fine for a single manual click) re-verifies the name on Virginia
+    SCC via a real browser before ever kicking off the filing wizard. This
+    is on top of, not instead of, file_llc_on_scc's own pre-check
+    (verify_name_before_filing) and its Step 3 in-wizard check - defense
+    in depth per Part 5's "safety net" framing, not redundant busywork:
+    catching a rejection here means the customer finds out in seconds
+    instead of however long the filing wizard takes to fail."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return templates.TemplateResponse(request, "_admin_approve_button.html", {"order_id": order_id})
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, verify_name_before_filing, order.get("business_name", ""))
+    print(f"[admin-approve] verify_name_before_filing for {order_id}: {result}")
+
+    if result["available"] is True:
+        _approve_and_trigger_filing(order_ref, order_id, background_tasks)
+        return templates.TemplateResponse(request, "_admin_approve_result.html", {"order_id": order_id, "status": "verified"})
+
+    if result["available"] is False:
+        handle_name_rejected(order_ref, order, order_id, message=result.get("message", ""))
+        return templates.TemplateResponse(request, "_admin_approve_result.html", {"order_id": order_id, "status": "taken"})
+
+    return templates.TemplateResponse(request, "_admin_approve_result.html", {"order_id": order_id, "status": "unknown"})
+
+@app.post("/admin/{order_id}/confirm-approve", response_class=HTMLResponse)
+async def admin_confirm_approve(request: Request, order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """"Yes, proceed" on the "could not auto-verify" prompt - the admin has
+    manually checked Virginia SCC themselves (per the prompt's own
+    instruction) and is overriding the inconclusive automated result."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return templates.TemplateResponse(request, "_admin_approve_button.html", {"order_id": order_id})
+    _approve_and_trigger_filing(order_ref, order_id, background_tasks)
+    return templates.TemplateResponse(request, "_admin_approve_result.html", {"order_id": order_id, "status": "confirmed_manually"})
 
 @app.post("/admin/{order_id}/mark-filed")
 async def admin_mark_filed(order_id: str, background_tasks: BackgroundTasks, scc_confirmation_number: str = Form(...), authorized: bool = Depends(verify_admin)):

@@ -1,0 +1,17 @@
+<div id="approve-area-{{ order_id }}">
+    <form hx-post="/admin/{{ order_id }}/verify-and-approve"
+          hx-target="#approve-area-{{ order_id }}" hx-swap="outerHTML"
+          hx-indicator="#approve-loading-{{ order_id }}">
+        <button type="submit"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+            Approve → File with SCC
+        </button>
+    </form>
+    <div id="approve-loading-{{ order_id }}" class="htmx-indicator items-center gap-2 text-sm text-blue-300 mt-2">
+        <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span>🔍 Verifying name availability on Virginia SCC...</span>
+    </div>
+</div>

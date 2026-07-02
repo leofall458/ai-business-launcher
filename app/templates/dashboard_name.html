@@ -5,12 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Name Your Business - Launch Bridge LLC</title>
     {% include "_brand.html" %}
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "_ga4.html" %}
     <style>
-        .htmx-request .htmx-indicator { display: block !important; }
-        .htmx-indicator { display: none; }
         @media (max-width: 640px) { input, textarea { font-size: 16px !important; } }
     </style>
 </head>
@@ -22,8 +19,15 @@
 
     <div class="text-center mb-6">
         <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Let's name your business 🏢</h1>
-        <p class="text-[#0e2148]/55 text-sm">We'll check it against the Virginia SCC while you type.</p>
+        <p class="text-[#0e2148]/55 text-sm">Pick a name, then confirm it's available with Virginia SCC.</p>
     </div>
+
+    {% if name_rejected %}
+    <div class="bg-red-50 border border-red-300 rounded-xl p-4 mb-4">
+        <p class="text-sm text-red-700 font-semibold">⚠️ "{{ business_name }}" was rejected by Virginia SCC when we tried to file it.</p>
+        <p class="text-xs text-red-600 mt-1">Please choose a different name below and confirm availability again.</p>
+    </div>
+    {% endif %}
 
     <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
         <p class="text-xs text-[#0e2148]/45 mb-1">Your business idea</p>
@@ -38,7 +42,7 @@
 
     <!-- AI name ideas -->
     <div class="mb-6">
-        <p class="text-xs text-[#0e2148]/55 font-medium mb-2">✨ AI-generated ideas for your business</p>
+        <p class="text-xs text-[#0e2148]/55 font-medium mb-2">✨ Here are AI-suggested names for your business:</p>
         {% if name_ideas %}
         <div class="flex flex-wrap gap-2">
             {% for idea in name_ideas %}
@@ -55,16 +59,10 @@
 
         <div id="new-llc-section" class="{% if skip_llc_formation %}hidden{% endif %}">
             <label class="block text-xs text-[#0e2148]/55 mb-1.5">Desired business name (must end in LLC) *</label>
-            <input id="business_name" name="business_name" type="text" placeholder="e.g. Blue Ridge Consulting LLC"
+            <input id="business_name" name="business_name" type="text" placeholder="e.g. Apex Federal Advisors LLC"
                 value="{{ submitted_name if not skip_llc_formation else '' }}"
-                hx-post="/check-name" hx-trigger="blur changed delay:500ms" hx-target="#name-check-inline" hx-swap="innerHTML" hx-indicator="#name-check-spinner"
                 class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
-            <p class="text-xs text-[#0e2148]/40 mt-1">Letters, numbers, spaces, and basic punctuation only — must end with "LLC".</p>
-            <div id="name-check-spinner" class="htmx-indicator text-xs text-[#0e2148]/45 mt-2">
-                <span class="inline-block w-3 h-3 border-2 border-[#c9a227] border-t-transparent rounded-full animate-spin mr-1"></span>
-                🔍 Checking Virginia SCC...
-            </div>
-            <div id="name-check-inline" class="mt-2"></div>
+            <p class="text-xs text-[#0e2148]/40 mt-1">Enter your desired business name including LLC at the end — e.g. Apex Federal Advisors LLC</p>
         </div>
 
         <label class="flex items-start gap-3 cursor-pointer group">
@@ -76,19 +74,38 @@
 
         <div id="existing-llc-section" class="{% if not skip_llc_formation %}hidden{% endif %}">
             <label class="block text-xs text-[#0e2148]/55 mb-1.5">Existing LLC name *</label>
-            <input id="existing_llc_name" name="existing_llc_name" type="text" placeholder="e.g. Blue Ridge Consulting LLC"
+            <input id="existing_llc_name" name="existing_llc_name" type="text" placeholder="e.g. Apex Federal Advisors LLC"
                 value="{{ submitted_name if skip_llc_formation else '' }}"
-                hx-post="/verify-existing-llc" hx-trigger="blur changed delay:500ms" hx-target="#existing-llc-verify" hx-swap="innerHTML" hx-indicator="#existing-llc-spinner"
                 class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
-            <p class="text-xs text-[#0e2148]/40 mt-1">We'll confirm it's on file with Virginia SCC.</p>
-            <div id="existing-llc-spinner" class="htmx-indicator text-xs text-[#0e2148]/45 mt-2">🔍 Checking Virginia SCC...</div>
-            <div id="existing-llc-verify" class="mt-2"></div>
+            <p class="text-xs text-[#0e2148]/40 mt-1">Enter your existing LLC's full name, including LLC at the end.</p>
         </div>
 
-        <button type="submit"
+        <!-- Manual SCC availability check -->
+        <div class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-xl p-4">
+            <p class="text-sm font-semibold text-[#0e2148] mb-1">🔍 Check if your name is available:</p>
+            <p class="text-xs text-[#0e2148]/60 mb-3">Virginia requires all LLC names to be unique.</p>
+            <a href="https://cis.scc.virginia.gov/EntitySearch/Index" target="_blank" rel="noopener"
+                class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2">
+                Check on Virginia SCC →
+            </a>
+            <p class="text-xs text-[#0e2148]/50">Search for your chosen name — if no results appear it's available!</p>
+        </div>
+
+        <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="scc_confirmed" name="scc_confirmed" required
+                {% if scc_confirmed %}checked{% endif %}
+                class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+            <span class="text-sm text-[#0e2148]/80 group-hover:text-[#0e2148] transition">I checked the Virginia SCC and my name is available</span>
+        </label>
+        {% if name_error_field == 'scc_confirmed' %}
+        <p class="text-red-500 text-xs -mt-2">Please confirm you checked Virginia SCC availability before continuing.</p>
+        {% endif %}
+
+        <button type="submit" id="name-submit-btn"
             class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
-            Check availability &amp; continue →
+            Use this name &amp; continue →
         </button>
+        <p class="text-center text-xs text-[#0e2148]/45">Our team also verifies your name with Virginia SCC before filing, as an extra safety check.</p>
     </form>
 </div>
 
@@ -101,9 +118,7 @@
     function pickName(name) {
         document.getElementById('skip_llc_formation').checked = false;
         toggleExistingLLC();
-        const input = document.getElementById('business_name');
-        input.value = name;
-        htmx.trigger(input, 'blur');
+        document.getElementById('business_name').value = name;
         document.querySelectorAll('.name-chip').forEach(c => c.classList.remove('selected'));
         event.target.classList.add('selected');
     }
