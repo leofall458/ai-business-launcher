@@ -205,9 +205,11 @@ def validate_pre_payment_form(form: dict) -> dict:
 
 def validate_step4_details(form: dict) -> dict:
     """Validates Step 4 (personal info) in the post-payment dashboard:
-    name/phone/dob/email plus the Virginia address, split out of the old
+    name/phone/dob plus the Virginia address, split out of the old
     single-page post-payment intake form so address collection can happen
-    before business details (Step 5)."""
+    before business details (Step 5). Email isn't collected here - it's
+    captured from Stripe Checkout at payment time (see process_paid_order
+    in app/main.py) and isn't shown again on this step."""
     errors = {}
 
     def check(field, fn, *args):
@@ -217,7 +219,6 @@ def validate_step4_details(form: dict) -> dict:
 
     check("first_name", validate_name, form.get("first_name"), "First name")
     check("last_name", validate_name, form.get("last_name"), "Last name")
-    check("email", validate_email, form.get("email"))
     check("phone", validate_phone, form.get("phone"))
     check("dob", validate_dob, form.get("dob"))
     check("address", validate_address, form.get("address"))

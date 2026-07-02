@@ -18,6 +18,7 @@ app.main can import this module without a circular import.
 import datetime
 import hashlib
 import hmac
+import os
 import secrets
 
 from google.cloud import firestore
@@ -28,7 +29,9 @@ MAGIC_LINK_TTL_SECONDS = 900  # 15 minutes - long enough to find the email, shor
 SESSION_IDLE_SECONDS = 3600  # 1 hour, refreshed on every authenticated request
 SESSION_ABSOLUTE_SECONDS = 86400  # 24 hours, never refreshed - forces re-login at least once a day
 
-BASE_URL = "https://app.launchbridge.ai"
+# Overridable so staging (a different Cloud Run URL) doesn't mint magic
+# links that point at production - see BASE_URL env var on the staging service.
+BASE_URL = os.getenv("BASE_URL", "https://app.launchbridge.ai")
 
 _db = firestore.Client(project=FIREBASE_PROJECT_ID)
 _MAGIC_LINKS = _db.collection("magic_link_tokens")

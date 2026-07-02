@@ -23,9 +23,8 @@ from app.config import (
     FOUNDING_MEMBER_DISCOUNT, FOUNDING_MEMBER_MAX, FOUNDING_MEMBER_PRICE_CENTS,
     FOUNDING_MEMBER_SERVICE_FEE_CENTS, FOUNDING_MEMBER_DISCOUNT_PERCENT, FOUNDING_MEMBER_LABEL,
 )
-from app.agents.name_agent import screen_business_name, suggest_alternative_names, generate_name_ideas
-from app.agents.name_check_agent import check_business_name
-from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name, SCC_NAME_CHECK_URL
+from app.agents.name_agent import screen_business_name, generate_name_ideas
+from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
@@ -128,6 +127,7 @@ def log_customer_error(request: Request, exc: Exception) -> None:
             "order_id": order_id,
             "user_agent": request.headers.get("user-agent", ""),
             "resolved": False,
+            "app_env": APP_ENV,
         })
     except Exception as log_err:
         print(f"⚠️ Could not log error to Firestore: {log_err}")
@@ -382,7 +382,7 @@ def compute_timeline(order: dict, state: str) -> list:
 
     # 1. Payment Received
     if state != "draft":
-        amount_label = "$200" if order.get("founding_member") else "$350"
+        amount_label = f"${FOUNDING_MEMBER_PRICE_CENTS // 100}" if order.get("founding_member") else f"${LLC_FORMATION_PRICE_CENTS // 100}"
         steps.append({"key": "payment", "name": "Payment Received", "status": "complete",
             "description": f"Payment of {amount_label} confirmed{on_date(order.get('paid_at'))}"})
     else:
@@ -624,6 +624,10 @@ async def api_capture_lead(request: Request):
         }
     if not update:
         return {"ok": False}
+    # leads is a shared collection (not split by ORDERS_COLLECTION like
+    # orders is) - tag every write so staging traffic can be told apart
+    # from real leads.
+    update["app_env"] = APP_ENV
     if lead_id:
         ref = LEADS.document(lead_id)
         ref.set(update, merge=True)
@@ -636,92 +640,7 @@ async def api_capture_lead(request: Request):
     return {"ok": True, "lead_id": lead_id}
 
 
-@app.post("/screen-name", response_class=HTMLResponse)
-async def screen_name(request: Request):
-    form = await request.form()
-    result = screen_business_name(form.get("business_idea", ""))
-    return templates.TemplateResponse(request, "result.html", {"result": result})
-
-@app.post("/check-name", response_class=HTMLResponse)
-async def check_name(request: Request):
-    form = await request.form()
-    desired_name = form.get("desired_name", "")
-
-    ip = get_client_ip(request)
-    if _rate_limited("name_check_rate_limit", "ip", ip, datetime.timedelta(minutes=1), 5):
-        return HTMLResponse(
-            '<div class="p-4 rounded-lg bg-yellow-900 border border-yellow-700">'
-            '<p class="font-semibold text-yellow-300">⚠️ Too many requests</p>'
-            '<p class="text-xs text-yellow-400 mt-1">Please wait a moment before checking another name.</p>'
-            '</div>',
-            status_code=429,
-        )
-
-    desired_name, validation_error = sanitize_business_name(desired_name)
-    if validation_error:
-        return HTMLResponse(
-            f'<div class="p-4 rounded-lg bg-red-900 border border-red-700">'
-            f'<p class="font-semibold text-red-300">⚠️ Invalid business name</p>'
-            f'<p class="text-xs text-red-400 mt-1">{validation_error}</p>'
-            f'</div>'
-        )
-
-    loop = asyncio.get_event_loop()
-
-    scc_result, gemini_result = await asyncio.gather(
-        loop.run_in_executor(None, check_name_on_scc, desired_name),
-        loop.run_in_executor(None, check_business_name, desired_name, "Virginia"),
-        return_exceptions=True,
-    )
-    # Each check must stand on its own - a Gemini hiccup shouldn't blank out
-    # a working SCC result, and vice versa.
-    if isinstance(scc_result, Exception):
-        print(f"⚠️ /check-name crashed for '{desired_name}': {scc_result}")
-        scc_result = {"available": None, "status": "ERROR", "message": CUSTOMER_FRIENDLY_ERROR, "conflicts": [], "raw": ""}
-    if isinstance(gemini_result, Exception):
-        gemini_result = {
-            "status": "error", "domain": "", "domain_available": None,
-            "gemini_analysis": "Trademark analysis is temporarily unavailable - please try again.",
-            "scc_url": SCC_NAME_CHECK_URL,
-        }
-
-    return templates.TemplateResponse(request, "name_check_result.html", {
-        "result": gemini_result,
-        "scc": scc_result,
-        "desired_name": desired_name
-    })
-
-@app.post("/suggest-names", response_class=HTMLResponse)
-async def suggest_names(request: Request):
-    """Returns AI-generated alternative LLC names when the customer's chosen
-    name is already taken on Virginia SCC. Called automatically by the wizard
-    when a TAKEN result comes back."""
-    form = await request.form()
-    desired_name = form.get("desired_name", "").strip()
-    business_idea = form.get("business_idea", "").strip()
-    if not desired_name:
-        return HTMLResponse("")
-    loop = asyncio.get_event_loop()
-    names = await loop.run_in_executor(None, suggest_alternative_names, desired_name, business_idea)
-    return templates.TemplateResponse(request, "name_suggestions.html", {"names": names})
-
-@app.post("/verify-existing-llc", response_class=HTMLResponse)
-async def verify_existing_llc(request: Request):
-    """Live-checked while the customer types their existing LLC's name on
-    the intake form (skip_llc_formation path) - confirms it's actually on
-    Virginia SCC's books before we let them skip formation for it."""
-    form = await request.form()
-    existing_llc_name = form.get("existing_llc_name", "").strip()
-    if not existing_llc_name:
-        return HTMLResponse("")
-
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
-
-    return templates.TemplateResponse(request, "existing_llc_verify_result.html", {
-        "result": result,
-        "business_name": existing_llc_name,
-    })
+# Note: name checking is now handled in /dashboard/orders/{id}/name (Step 3)
 
 def parse_step4_details(form: dict) -> dict:
     """Pulls derived fields out of Step 4 (personal info): full_name and the
@@ -1757,8 +1676,28 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         return False
 
     order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
+
+    # Stripe Checkout collects the customer's email itself (see /start) -
+    # nothing else in this pipeline ever wrote it back onto the order, so
+    # without this every order's email field stayed empty forever: no
+    # confirmation/magic-link email, no auto-login on /success, and no way
+    # to look the order up from the "sign in" form either. Re-fetched by
+    # session ID here (not passed in) so both /success and /webhook - either
+    # of which can be first to reach this function - land on the same result.
+    if not order.get("email") and order.get("stripe_checkout_session_id"):
+        try:
+            checkout_session = retrieve_checkout_session(order["stripe_checkout_session_id"])
+            customer_email = checkout_session.customer_details.email if checkout_session.customer_details else None
+        except Exception as e:
+            print(f"⚠️ Could not retrieve Stripe session to capture email for order {order_id}: {e}")
+            customer_email = None
+        if customer_email:
+            order_ref.set({"email": customer_email, "customer_email": customer_email}, merge=True)
+            order["email"] = customer_email
+            order["customer_email"] = customer_email
+
     send_order_received_email(order, order_id)
-    amount_paid = "$200 (Founding Member)" if order.get("founding_member") else "$350"
+    amount_paid = f"${FOUNDING_MEMBER_PRICE_CENTS // 100} (Founding Member)" if order.get("founding_member") else f"${LLC_FORMATION_PRICE_CENTS // 100}"
     send_admin_sms(f"🚀 New order! {order.get('business_name', '')} - {order.get('full_name', '')} paid {amount_paid}")
 
     # Check if this is the 10th founding member — if so, notify admin that
@@ -1906,7 +1845,7 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         "order_id": resolved_order_id,
         "business_name": order.get("business_name", ""),
         "founding_member": is_founding,
-        "amount_paid": 200 if is_founding else 350,
+        "amount_paid": FOUNDING_MEMBER_PRICE_CENTS // 100 if is_founding else LLC_FORMATION_PRICE_CENTS // 100,
     })
 
 @app.post("/webhook")
@@ -1928,12 +1867,13 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         db.collection("webhook_events").add({
             "verified": False, "error": str(e), "received_at": firestore.SERVER_TIMESTAMP,
+            "app_env": APP_ENV,
         })
         return Response(status_code=400)
 
     log_entry = {
         "verified": True, "event_id": event.id, "event_type": event.type,
-        "received_at": firestore.SERVER_TIMESTAMP,
+        "received_at": firestore.SERVER_TIMESTAMP, "app_env": APP_ENV,
     }
 
     if event.type == "checkout.session.completed":
@@ -2358,7 +2298,7 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
 # ── Step 4: personal info ───────────────────────────────────────────────────
 
 _STEP4_DETAILS_SIMPLE_FIELDS = [
-    "first_name", "middle_name", "last_name", "phone", "dob", "email",
+    "first_name", "middle_name", "last_name", "phone", "dob",
     "address", "city", "zipcode", "county",
 ]
 
@@ -2848,6 +2788,13 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
     for doc in error_query.stream():
         entry = doc.to_dict()
         if entry.get("resolved"):
+            continue
+        # Staging shares this collection with production (see app_env tag
+        # added where errors are logged) - the admin only cares about real
+        # customer-facing errors. Entries logged before this tag existed
+        # have no app_env at all; treat those as production so old errors
+        # don't silently vanish from the dashboard.
+        if entry.get("app_env", "production") != "production":
             continue
         entry["id"] = doc.id
         entry["timestamp_display"] = fmt_datetime(entry.get("timestamp"))
