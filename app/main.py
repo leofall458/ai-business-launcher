@@ -813,6 +813,16 @@ def run_name_check(order_id: str):
         print(f"⚠️ Name check crashed for order {order_id}: {e}")
         order_ref.set({"name_check_error": str(e)}, merge=True)
 
+# Mirrors dashboard_business.html's industry_code <select> options - the
+# order only ever stores the numeric code, but the marketing plan agent
+# needs a readable label to write anything industry-specific.
+INDUSTRY_CODE_LABELS = {
+    "0": "General Business",
+    "35": "Insurance Agency",
+    "36": "Mortgage Company",
+    "65": "Church / Religious Organization",
+}
+
 def run_document_generation(order_id: str):
     """Generates the brand kit, marketing plan, reference name ideas, and
     signed LLC PDF as soon as the business name is confirmed (or
@@ -872,9 +882,11 @@ def run_document_generation(order_id: str):
             print(f"⚠️ Brand kit agent failed for order {order_id}: {e}")
             errors["brand_result"] = f"Brand kit: {e}"
 
-    if not order.get("marketing_result"):
+    if not order.get("marketing_plan_html"):
         try:
-            update["marketing_result"] = generate_marketing_plan(business_name, business_idea, "Virginia", target_customer)
+            industry_label = INDUSTRY_CODE_LABELS.get(order.get("industry_code", "0"), "General Business")
+            update["marketing_plan_html"] = generate_marketing_plan(
+                business_name, business_idea, target_customer, industry_label, location="Virginia")
         except Exception as e:
             print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
             errors["marketing_result"] = f"Marketing plan: {e}"
@@ -900,7 +912,7 @@ def run_document_generation(order_id: str):
     have_all = all([
         update.get("name_result") or order.get("name_result"),
         update.get("brand_result") or order.get("brand_result"),
-        update.get("marketing_result") or order.get("marketing_result"),
+        update.get("marketing_plan_html") or order.get("marketing_plan_html"),
         update.get("documents.articles") or existing_documents.get("articles"),
     ])
     update["documents_generated"] = have_all

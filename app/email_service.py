@@ -374,6 +374,7 @@ def send_early_assets_email(order: dict, order_id: str):
     business_name = order.get("business_name", "your business")
     website_url = order.get("website_url", "")
     connect_id = order.get("stripe_connect_account_id")
+    marketing_plan_html = order.get("marketing_plan_html", "")
     url = create_magic_link(email)
 
     website_line = (
@@ -391,7 +392,7 @@ def send_early_assets_email(order: dict, order_id: str):
         "While your LLC is being filed, here's everything we've already built for you:\n\n"
         "✅ Your brand kit is ready — view it on your dashboard\n"
         f"{website_line}\n"
-        "✅ Your marketing plan is ready — view it on your dashboard\n"
+        "✅ Your 30-day marketing plan is included below (see the HTML version of this email)\n"
         "✅ Your LLC documents are ready — view them on your dashboard\n"
         f"{stripe_line}\n\n"
         "We are filing your LLC with Virginia SCC within 24 hours.\n"
@@ -417,7 +418,7 @@ def send_early_assets_email(order: dict, order_id: str):
         "<ul style='margin:0 0 16px;padding-left:20px;line-height:2;'>"
         "<li>✅ Your brand kit is ready — view it on your dashboard</li>"
         f"{website_html}"
-        "<li>✅ Your marketing plan is ready — view it on your dashboard</li>"
+        "<li>✅ Your 30-day marketing plan is included below</li>"
         "<li>✅ Your LLC documents are ready — view them on your dashboard</li>"
         f"{stripe_html}"
         "</ul>"
@@ -425,8 +426,13 @@ def send_early_assets_email(order: dict, order_id: str):
         "You will receive your certificate and EIN within 1–3 business days.</p>"
         f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
     )
+    if marketing_plan_html:
+        html_inner += (
+            '<div style="margin-top:28px;padding-top:24px;border-top:2px solid #e5e7eb;">'
+            + marketing_plan_html + '</div>'
+        )
     html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
-    _send(email, f"Your Launch Bridge package is ready! 🎉 — {business_name}", body, html_body=html)
+    _send(email, "Your Launch Bridge package is ready - marketing plan inside", body, html_body=html)
 
 def send_website_live_email(order: dict, order_id: str):
     """Email 6 (Part 4): sent once run_asset_generation finishes the

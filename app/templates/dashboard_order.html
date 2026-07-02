@@ -126,6 +126,21 @@
         </div>
         {% endif %}
 
+        <!-- Marketing Plan (collapsible, shown once assets are generated) -->
+        {% if order.get('marketing_plan_html') %}
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
+            <details id="marketing-plan-details">
+                <summary class="cursor-pointer list-none flex items-center justify-between">
+                    <h2 class="font-serif text-lg font-semibold text-[#0e2148]">📈 Your 30-Day Marketing Plan</h2>
+                    <span class="text-[#c9a227] text-xs font-semibold whitespace-nowrap ml-3" id="marketing-plan-toggle-label">View Full Marketing Plan →</span>
+                </summary>
+                <div class="mt-4 pt-4 border-t border-[#0e2148]/10 max-h-[32rem] overflow-y-auto text-sm">
+                    {{ order.get('marketing_plan_html') | safe }}
+                </div>
+            </details>
+        </div>
+        {% endif %}
+
         <!-- Progress Timeline -->
         <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 sm:p-6 shadow-sm"
              id="timeline-wrapper"
@@ -221,6 +236,18 @@
     </div>
 
     <script>
+        // ── Marketing plan collapsible toggle ────────────────────────────────
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const details = document.getElementById('marketing-plan-details');
+            const label = document.getElementById('marketing-plan-toggle-label');
+            if (details && label) {
+                details.addEventListener('toggle', () => {
+                    label.textContent = details.open ? 'Hide Marketing Plan ↑' : 'View Full Marketing Plan →';
+                });
+            }
+        });
+
         // ── EIN mask / copy ────────────────────────────────────────────────────
 
         let einMasked = true;
