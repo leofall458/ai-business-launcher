@@ -461,10 +461,10 @@ def compute_timeline(order: dict, state: str) -> list:
             "description": "Your LLC is being submitted to the Virginia SCC..."})
     elif reached(state, "name_selected"):
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
-            "description": "Our team is reviewing and will file your LLC within 24 hours."})
+            "description": "Our team is reviewing and will file your LLC within 72 hours."})
     else:
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "pending",
-            "description": "Will be filed within 24 hours of setup completion."})
+            "description": "Will be filed within 72 hours of setup completion."})
 
     # 7. LLC Approved by Virginia
     if skip_llc:
@@ -3158,7 +3158,7 @@ async def contact(request: Request):
     by the HX-Request header) and the public contact form embedded on every
     deployed customer website (a plain, full-page <form> POST - no fetch, no
     JS, so no CORS preflight is ever involved even though those sites live
-    on a different origin on GitHub Pages). The two need different
+    on a different origin on Firebase Hosting). The two need different
     responses: htmx gets the small result partial it already targets,
     everyone else gets a real standalone page since their browser actually
     navigates here."""
