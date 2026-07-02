@@ -2010,6 +2010,7 @@ def _dashboard_order_context(
     ssn_expired = bool(order.get("ssn_expired")) or needs_ssn_reentry(order, order_id)
     return {
         **status_context(order_id, order),
+        "order": order,
         "business_name": order.get("business_name"),
         "full_name": order.get("full_name"),
         "email": order.get("email"),
