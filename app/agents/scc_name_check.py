@@ -11,6 +11,7 @@ SCC_PASSWORD = get_secret("SCC_PASSWORD")
 
 SCC_NAME_CHECK_URL = "https://cis.scc.virginia.gov/Account/NameCheckAvailability"
 SCC_ENTITY_SEARCH_URL = "https://cis.scc.virginia.gov/EntitySearch/Index"
+SCC_COOKIE_CONSENT_URL = "https://cis.scc.virginia.gov/Cookie/StoreCookieConsent"
 
 _SCC_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -193,6 +194,16 @@ def check_name_public(business_name: str) -> dict:
         try:
             with httpx.Client(timeout=5.0, follow_redirects=True,
                               headers={"User-Agent": _SCC_UA}) as client:
+                # SCC now gates every page behind a cookie-consent redirect
+                # (added after this scraper was written) - GET without this
+                # lands on /Cookie/CookieConsent instead of the search form,
+                # with no anti-forgery token to find. This POST is what the
+                # page's own "Accept" button does client-side
+                # (function acceptCookies() -> $.ajax POST here); it sets a
+                # cookiesAccepted cookie in this client's jar that the
+                # subsequent GET below then carries.
+                client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+
                 resp = client.get(SCC_ENTITY_SEARCH_URL)
                 print(f"[name-check] GET {SCC_ENTITY_SEARCH_URL} → {resp.status_code} "
                       f"({len(resp.text)} bytes) attempt {attempt}/3")
@@ -203,11 +214,15 @@ def check_name_public(business_name: str) -> dict:
                       f"post_data keys={list(post_data.keys())}")
 
                 if not name_field:
-                    last_error = f"name field not found in SCC form (attempt {attempt}/3)"
+                    # SCC's business-name input has no `name` attribute at all
+                    # as of this rewrite (JS reads .val() directly and builds
+                    # a JSON payload) - this is now the *expected* outcome,
+                    # not a transient parse failure, so don't burn retries on
+                    # it. See the reCAPTCHA note below for why there's no
+                    # plain-HTTP field-name fix to fall back to.
+                    last_error = "SCC search form has no named business-name input (site now requires reCAPTCHA v3 - see check_name_public docstring)"
                     print(f"[name-check] {last_error} for '{business_name}'")
-                    if attempt < 3:
-                        time.sleep(2)
-                    continue
+                    break
 
                 post_data[name_field] = business_name
                 if logic_field:
@@ -216,6 +231,20 @@ def check_name_public(business_name: str) -> dict:
                 resp2 = client.post(SCC_ENTITY_SEARCH_URL, data=post_data)
                 print(f"[name-check] POST → {resp2.status_code} ({len(resp2.text)} bytes)")
                 resp2.raise_for_status()
+
+                if len(resp2.text) == 0:
+                    # SCC's search POST now requires a server-verified Google
+                    # reCAPTCHA v3 token (POSTed to
+                    # /GoogleCaptchaHelper/VerifyReCaptcha first) - without one,
+                    # the search endpoint silently 200s with an empty body
+                    # instead of erroring. Treating this as "no exact match"
+                    # would misreport UNKNOWN/no-conflicts as if a real search
+                    # ran. No plain-HTTP client can solve reCAPTCHA v3; this
+                    # needs a real browser (see _check_name_chrome) or a
+                    # paid solving service - neither wired up here.
+                    last_error = "SCC search returned an empty body - reCAPTCHA v3 verification required and not solvable via plain HTTP"
+                    print(f"[name-check] {last_error} for '{business_name}'")
+                    break
 
                 available, conflicts = _parse_scc_results(resp2.text, business_name)
                 print(f"[name-check] result for '{business_name}': available={available} "
@@ -385,6 +414,10 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
     try:
         with httpx.Client(timeout=10.0, follow_redirects=True,
                           headers={"User-Agent": _SCC_UA}) as client:
+            # See check_name_public's comment on the same call - SCC now
+            # redirects every page to a cookie-consent gate first.
+            client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+
             resp = client.get(SCC_ENTITY_SEARCH_URL)
             print(f"[llc-exists] GET {SCC_ENTITY_SEARCH_URL} → {resp.status_code} ({len(resp.text)} bytes)")
             resp.raise_for_status()
@@ -399,6 +432,14 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
                 resp2 = client.post(SCC_ENTITY_SEARCH_URL, data=post_data)
                 print(f"[llc-exists] POST → {resp2.status_code} ({len(resp2.text)} bytes)")
                 resp2.raise_for_status()
+
+                if len(resp2.text) == 0:
+                    # Same reCAPTCHA v3 gating as check_name_public - fall
+                    # through to the Chrome CDP attempt below instead of
+                    # parsing an empty body as a result.
+                    print(f"[llc-exists] SCC search returned an empty body for '{business_name}' "
+                          "- reCAPTCHA v3 verification required, falling through to Chrome CDP")
+                    raise RuntimeError("SCC search gated by reCAPTCHA v3")
 
                 available, _ = _parse_scc_results(resp2.text, business_name)
 
