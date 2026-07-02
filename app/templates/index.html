@@ -24,7 +24,7 @@
             <span class="live-dot w-2 h-2 bg-[#c9a227] rounded-full inline-block"></span>
             Virginia LLC Formation
         </div>
-        <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-3">Launch Bridge</h1>
+        <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-3">Your Virginia LLC, launched in 72 hours</h1>
         <p class="text-[#0e2148]/65 text-base sm:text-lg mb-5 max-w-sm mx-auto">
             From business idea to fully-formed LLC with a website, brand kit, EIN, and Stripe account — all done for you.
         </p>
@@ -41,7 +41,7 @@
 
     {% if cancelled %}
     <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 text-center text-sm text-amber-800">
-        Payment cancelled — no charge was made. Fill out the form below whenever you're ready.
+        Payment cancelled — no charge was made. Describe your idea below whenever you're ready.
     </div>
     {% endif %}
 
@@ -52,7 +52,14 @@
         <span class="text-[#c9a227]">Sign in to your dashboard →</span>
     </a>
 
-    {% include "_wizard.html" %}
+    {% include "_hero_idea_form.html" %}
+
+    <!-- ── TRUST STRIP ── -->
+    <div class="grid grid-cols-3 gap-2 text-xs text-[#0e2148]/55 mb-10">
+        <div class="bg-white rounded-lg p-2.5 text-center border border-[#0e2148]/8 shadow-sm">↩️ Refund guarantee</div>
+        <div class="bg-white rounded-lg p-2.5 text-center border border-[#0e2148]/8 shadow-sm">⏱️ 24hr filing</div>
+        <div class="bg-white rounded-lg p-2.5 text-center border border-[#0e2148]/8 shadow-sm">💳 $350 flat</div>
+    </div>
 
     <!-- ── DELIVERABLES GALLERY ── -->
     <section class="mb-10">

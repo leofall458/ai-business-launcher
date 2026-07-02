@@ -41,6 +41,9 @@ PRE_PAYMENT_VALIDATED_FIELDS = [
     "desired_name", "existing_llc_name",
 ]
 
+# Used by /start - the only thing collected before payment now is the idea.
+IDEA_VALIDATED_FIELDS = ["business_idea"]
+
 # Used by the post-payment dashboard intake form.
 POST_PAYMENT_VALIDATED_FIELDS = [
     "address", "city", "zipcode", "county",
@@ -166,6 +169,17 @@ def validate_ein(ein: str) -> str | None:
         return f"Invalid EIN - the first 2 digits cannot be {prefix}."
     return None
 
+def validate_business_idea(idea: str) -> str | None:
+    idea = (idea or "").strip()
+    if not idea:
+        return "Please describe your business idea."
+    if len(idea) < 10:
+        return "Please give a bit more detail about your business idea."
+    if len(idea) > 1000:
+        return "That's a lot of detail — please keep it under 1000 characters."
+    return None
+
+
 def validate_pre_payment_form(form: dict) -> dict:
     """Validates only the 5 fields collected before payment in the wizard."""
     errors = {}
@@ -189,9 +203,11 @@ def validate_pre_payment_form(form: dict) -> dict:
     return errors
 
 
-def validate_post_payment_intake(form: dict) -> dict:
-    """Validates the address/signature fields collected in the dashboard after payment.
-    DOB is now collected at the SSN step, not here."""
+def validate_step4_details(form: dict) -> dict:
+    """Validates Step 4 (personal info) in the post-payment dashboard:
+    name/phone/dob/email plus the Virginia address, split out of the old
+    single-page post-payment intake form so address collection can happen
+    before business details (Step 5)."""
     errors = {}
 
     def check(field, fn, *args):
@@ -199,14 +215,35 @@ def validate_post_payment_intake(form: dict) -> dict:
         if err:
             errors[field] = err
 
+    check("first_name", validate_name, form.get("first_name"), "First name")
+    check("last_name", validate_name, form.get("last_name"), "Last name")
+    check("email", validate_email, form.get("email"))
+    check("phone", validate_phone, form.get("phone"))
+    check("dob", validate_dob, form.get("dob"))
     check("address", validate_address, form.get("address"))
     check("city", validate_city, form.get("city"))
     check("zipcode", validate_zip, form.get("zipcode"))
-    check("sig_first", validate_name, form.get("sig_first"), "First name (signature)")
-    check("sig_last", validate_name, form.get("sig_last"), "Last name (signature)")
 
     if not (form.get("county") or "").strip():
         errors["county"] = "County is required for your EIN application."
+
+    return errors
+
+
+def validate_post_payment_intake(form: dict) -> dict:
+    """Validates Step 5 (business details) in the post-payment dashboard:
+    LLC member signatures and the EIN-skip toggle. Address/city/zip/county
+    are Step 4's job (validate_step4_details above) - already on the order
+    by the time Step 5 submits."""
+    errors = {}
+
+    def check(field, fn, *args):
+        err = fn(*args)
+        if err:
+            errors[field] = err
+
+    check("sig_first", validate_name, form.get("sig_first"), "First name (signature)")
+    check("sig_last", validate_name, form.get("sig_last"), "Last name (signature)")
 
     if form.get("skip_ein") == "on":
         check("existing_ein", validate_ein, form.get("existing_ein"))

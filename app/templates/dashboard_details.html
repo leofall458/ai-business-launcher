@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Info - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% if google_places_api_key %}
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key={{ google_places_api_key }}&libraries=places&callback=initPlacesAutocomplete">
+    </script>
+    {% endif %}
+    {% include "_ga4.html" %}
+    <style>
+        .autosave-flash { animation: fadeInOut 2s ease; }
+        @keyframes fadeInOut { 0% { opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
+        @media (max-width: 640px) { input, textarea, select { font-size: 16px !important; } }
+    </style>
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
+<div class="max-w-xl mx-auto px-4 sm:px-8">
+
+    {% set wizard_step = 2 %}
+    {% include "_wizard_progress.html" %}
+
+    <div class="text-center mb-6">
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Tell us about yourself 👤</h1>
+        <p class="text-[#0e2148]/55 text-sm">Great choice on "{{ business_name }}"! Now let's get your details.</p>
+    </div>
+
+    <form method="post" action="/dashboard/orders/{{ order_id }}/details" class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">First Name *</label>
+                <input name="first_name" type="text" placeholder="Jane" required autocomplete="given-name"
+                    value="{{ order.get('first_name', '') }}"
+                    hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"first_name","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-first_name" hx-swap="innerHTML"
+                    class="w-full bg-white border {% if details_errors.get('first_name') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <div class="flex justify-between mt-1">
+                    {% if details_errors.get('first_name') %}<p class="text-red-500 text-xs">{{ details_errors.first_name }}</p>{% else %}<span></span>{% endif %}
+                    <span id="save-first_name"></span>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">Last Name *</label>
+                <input name="last_name" type="text" placeholder="Smith" required autocomplete="family-name"
+                    value="{{ order.get('last_name', '') }}"
+                    hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"last_name","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-last_name" hx-swap="innerHTML"
+                    class="w-full bg-white border {% if details_errors.get('last_name') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <div class="flex justify-between mt-1">
+                    {% if details_errors.get('last_name') %}<p class="text-red-500 text-xs">{{ details_errors.last_name }}</p>{% else %}<span></span>{% endif %}
+                    <span id="save-last_name"></span>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Email Address *</label>
+            <input name="email" type="email" placeholder="jane@example.com" required autocomplete="email" inputmode="email"
+                value="{{ order.get('email', '') }}"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"email","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-email" hx-swap="innerHTML"
+                class="w-full bg-white border {% if details_errors.get('email') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">Pre-filled from checkout — change it if you'd rather we use a different one.</p>
+                <span id="save-email"></span>
+            </div>
+            {% if details_errors.get('email') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.email }}</p>{% endif %}
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Phone Number *</label>
+            <input name="phone" type="tel" placeholder="(703) 555-0100" required autocomplete="tel" inputmode="tel"
+                value="{{ order.get('phone', '') }}"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"phone","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-phone" hx-swap="innerHTML"
+                class="w-full bg-white border {% if details_errors.get('phone') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">In case we need to reach you about your filing.</p>
+                <span id="save-phone"></span>
+            </div>
+            {% if details_errors.get('phone') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.phone }}</p>{% endif %}
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Date of Birth *</label>
+            <input name="dob" type="date" required value="{{ order.get('dob', '') }}"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change" hx-vals='{"field":"dob","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-dob" hx-swap="innerHTML"
+                class="w-full bg-white border {% if details_errors.get('dob') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">Required for your EIN application — you must be 18+.</p>
+                <span id="save-dob"></span>
+            </div>
+            {% if details_errors.get('dob') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.dob }}</p>{% endif %}
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Virginia Street Address *</label>
+            <input name="address" type="text" id="address-autocomplete" required
+                value="{{ order.get('address', '') }}" placeholder="123 Main Street" autocomplete="street-address"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"address","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-address" hx-swap="innerHTML"
+                class="w-full bg-white border {% if details_errors.get('address') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">Where you'll receive official mail about your LLC.</p>
+                <span id="save-address"></span>
+            </div>
+            {% if details_errors.get('address') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.address }}</p>{% endif %}
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">City/Town *</label>
+                <input name="city" type="text" id="address-city" required value="{{ order.get('city', '') }}"
+                    placeholder="Arlington" autocomplete="address-level2"
+                    hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"city","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-city" hx-swap="innerHTML"
+                    class="w-full bg-white border {% if details_errors.get('city') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <span id="save-city" class="block mt-1"></span>
+                {% if details_errors.get('city') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.city }}</p>{% endif %}
+            </div>
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">ZIP Code *</label>
+                <input name="zipcode" type="text" id="address-zip" required value="{{ order.get('zipcode', '') }}"
+                    placeholder="22201" inputmode="numeric" maxlength="5" autocomplete="postal-code"
+                    hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"zipcode","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-zipcode" hx-swap="innerHTML"
+                    class="w-full bg-white border {% if details_errors.get('zipcode') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <span id="save-zipcode" class="block mt-1"></span>
+                {% if details_errors.get('zipcode') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.zipcode }}</p>{% endif %}
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">County *</label>
+            <input name="county" type="text" id="address-county" required value="{{ order.get('county', '') }}" placeholder="Arlington"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"county","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-county" hx-swap="innerHTML"
+                class="w-full bg-white border {% if details_errors.get('county') %}border-red-400{% else %}border-[#0e2148]/20{% endif %} rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">For your EIN application — if you're in an independent city like Arlington or Alexandria, re-enter the city name here.</p>
+                <span id="save-county"></span>
+            </div>
+            {% if details_errors.get('county') %}<p class="text-red-500 text-xs mt-1">{{ details_errors.county }}</p>{% endif %}
+        </div>
+
+        <button type="submit"
+            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
+            Save my info &amp; continue →
+        </button>
+    </form>
+</div>
+
+<script>
+    function initPlacesAutocomplete() {
+        const input = document.getElementById('address-autocomplete');
+        if (!input || !window.google?.maps?.places) return;
+        const ac = new google.maps.places.Autocomplete(input, {
+            componentRestrictions: { country: 'us' },
+            fields: ['address_components'],
+            types: ['address'],
+        });
+        ac.addListener('place_changed', () => {
+            const place = ac.getPlace();
+            if (!place.address_components) return;
+            let streetNumber = '', route = '', city = '', zip = '', county = '';
+            for (const c of place.address_components) {
+                if (c.types.includes('street_number')) streetNumber = c.long_name;
+                if (c.types.includes('route')) route = c.long_name;
+                if (c.types.includes('locality')) city = c.long_name;
+                if (c.types.includes('administrative_area_level_3')) city = city || c.long_name;
+                if (c.types.includes('postal_code')) zip = c.long_name;
+                if (c.types.includes('administrative_area_level_2')) county = c.long_name.replace(/ County$/, '');
+            }
+            if (streetNumber && route) input.value = `${streetNumber} ${route}`;
+            const cityEl = document.getElementById('address-city');
+            const zipEl = document.getElementById('address-zip');
+            const countyEl = document.getElementById('address-county');
+            if (cityEl && city) cityEl.value = city;
+            if (zipEl && zip) zipEl.value = zip;
+            if (countyEl && county) countyEl.value = county;
+        });
+    }
+</script>
+</body>
+</html>

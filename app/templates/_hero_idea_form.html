@@ -1,0 +1,78 @@
+<!-- Step 1: the only pre-payment field. Included by index.html and the SEO
+     landing pages, each of which supplies its own headline/copy above this. -->
+<div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6" id="landing-form">
+    <label class="block text-xs text-[#0e2148]/55 mb-1.5">Describe your business idea *</label>
+    <textarea id="hero_business_idea" rows="3"
+        placeholder="e.g. IT consulting for federal contractors in Northern Virginia"
+        class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm resize-none"></textarea>
+    <p id="hero-idea-error" class="text-red-500 text-xs mt-1 hidden"></p>
+
+    <button type="button" onclick="startWithIdea()"
+        class="mt-4 w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg transition shadow-md shadow-[#c9a227]/25">
+        Get Started →
+    </button>
+    <p class="text-center text-xs text-[#0e2148]/50 mt-3">
+        ↩️ 100% refund guarantee &nbsp;·&nbsp; ⏱️ Filed within 24 hours &nbsp;·&nbsp;
+        💳 {% if founding_member_status and founding_member_status.is_active %}${{ (founding_member_status.discount_price // 100) }}{% else %}$350{% endif %} flat
+    </p>
+</div>
+
+<!-- Sticky mobile CTA -->
+<div id="landing-sticky" class="hidden">
+    <button type="button" onclick="startWithIdea()"
+        class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-xl transition">
+        Get Started →
+    </button>
+</div>
+
+<style>
+    @media (max-width: 640px) {
+        #landing-sticky { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+            padding: 0.75rem 1rem; background: rgba(250,248,243,0.97);
+            border-top: 1px solid rgba(14,33,72,0.12); backdrop-filter: blur(8px); display: block; }
+        #landing-spacer { height: 5.5rem; display: block; }
+        textarea, input { font-size: 16px !important; }
+    }
+</style>
+<div id="landing-spacer" class="hidden"></div>
+
+<script>
+    // Restore an in-progress idea if the customer bounced back here (e.g. hit "back" from /start).
+    document.addEventListener('DOMContentLoaded', () => {
+        const saved = localStorage.getItem('lb_business_idea');
+        if (saved) document.getElementById('hero_business_idea').value = saved;
+    });
+
+    function startWithIdea() {
+        const textarea = document.getElementById('hero_business_idea');
+        const idea = textarea.value.trim();
+        const errEl = document.getElementById('hero-idea-error');
+        errEl.classList.add('hidden');
+
+        if (!idea) {
+            errEl.textContent = 'Please describe your business idea.';
+            errEl.classList.remove('hidden');
+            textarea.focus();
+            return;
+        }
+        if (idea.length < 10) {
+            errEl.textContent = 'Please give a bit more detail about your business idea.';
+            errEl.classList.remove('hidden');
+            textarea.focus();
+            return;
+        }
+
+        localStorage.setItem('lb_business_idea', idea);
+        try { if (typeof gtag !== 'undefined') gtag('event', 'idea_submitted', { idea_length: idea.length }); } catch(e) {}
+
+        fetch('/api/capture-lead', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ business_idea: idea, step: 'step1' }),
+        }).then(r => r.json()).then(json => {
+            if (json.lead_id) localStorage.setItem('lb_lead_id', json.lead_id);
+        }).catch(() => {}).finally(() => {
+            window.location.href = '/start?idea=' + encodeURIComponent(idea);
+        });
+    }
+</script>

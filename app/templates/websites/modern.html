@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ business_name }}</title>
+<title>{{ business_name }} | {{ service_area }}</title>
+<meta name="description" content="{{ about_text[:155] }}">
+<meta property="og:title" content="{{ business_name }}">
+<meta property="og:description" content="{{ about_text[:155] }}">
+<meta property="og:type" content="website">
+{% if site_url %}<meta property="og:url" content="{{ site_url }}">
+<link rel="canonical" href="{{ site_url }}/">{% endif %}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='{{ primary_color }}'/><text y='.9em' font-size='70' x='50%' text-anchor='middle' dominant-baseline='auto' fill='white' font-family='sans-serif'>{{ business_name[0] | upper }}</text></svg>">
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -214,9 +221,7 @@
         <h2 class="display text-3xl font-bold mb-4">Ready When You Are</h2>
         <p class="text-gray-400 mb-8">Reach out — we respond fast.</p>
         <div class="space-y-3 text-gray-300">
-          <p>📞 {{ phone }}</p>
-          <p>✉️ {{ email }}</p>
-          <p>📍 {{ address }}</p>
+          <p>Use the form to get in touch — we respond quickly.</p>
         </div>
       </div>
       <form method="post" action="{{ contact_endpoint }}" class="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-3">

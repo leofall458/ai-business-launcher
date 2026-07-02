@@ -12,14 +12,23 @@ def construct_webhook_event(payload: bytes, sig_header: str):
     return stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
 
 def create_checkout_session(
-    order_id: str, business_name: str, success_url: str, cancel_url: str,
-    amount: int = None, founding_member: bool = False,
+    order_id: str, success_url: str, cancel_url: str,
+    amount: int = None, founding_member: bool = False, email: str = None,
 ):
     """Stripe Checkout Session for the flat-fee LLC formation package.
     order_id travels in metadata + client_reference_id so /success can look
     up the right Firestore order regardless of which one it reads back.
     amount defaults to LLC_FORMATION_PRICE_CENTS ($350); pass a lower value
-    for the founding-member discount."""
+    for the founding-member discount.
+
+    Called at Step 2, before the customer has picked a business name (that's
+    Step 3, post-payment) - so the line item can't be named after the
+    business. customer_email/phone_number_collection let Stripe's own hosted
+    form collect contact info; email is only ever passed if already known
+    (e.g. a resumed abandoned checkout) since Stripe rejects an empty string.
+    Checkout renders Apple Pay/Google Pay automatically above the card form
+    once wallets are enabled in the Stripe Dashboard - no extra params
+    needed for that."""
     charge = amount if amount is not None else LLC_FORMATION_PRICE_CENTS
     if founding_member:
         description = (
@@ -27,12 +36,17 @@ def create_checkout_session(
             "$100 Virginia state filing fee = $250 total. "
             "Full service: LLC filing, EIN, brand kit, marketing plan, website, and Stripe setup."
         )
+        product_name = "Virginia LLC Formation — Founding Member"
     else:
         description = (
             "$250 Launch Bridge service fee + $100 Virginia state filing fee "
             "(we pay this to Virginia for you) = $350 total. "
             "Includes EIN application, brand kit, marketing plan, and business website."
         )
+        product_name = "Virginia LLC Formation"
+    kwargs = {}
+    if email:
+        kwargs["customer_email"] = email
     return stripe.checkout.Session.create(
         mode="payment",
         line_items=[{
@@ -40,35 +54,22 @@ def create_checkout_session(
                 "currency": "usd",
                 "unit_amount": charge,
                 "product_data": {
-                    "name": f"Virginia LLC Formation - {business_name}",
+                    "name": product_name,
                     "description": description,
                 },
             },
             "quantity": 1,
         }],
+        phone_number_collection={"enabled": True},
         success_url=success_url,
         cancel_url=cancel_url,
         client_reference_id=order_id,
         metadata={"order_id": order_id, "founding_member": "true" if founding_member else "false"},
+        **kwargs,
     )
 
 def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id)
-
-def create_payment_intent(amount: int, order_id: str, business_name: str, email: str):
-    """PaymentIntent for the Stripe.js Payment Request Button (Apple Pay / Google Pay).
-    Unlike CheckoutSession, this stays on-page — the native payment sheet handles
-    the entire flow, and the webhook payment_intent.succeeded advances the order."""
-    return stripe.PaymentIntent.create(
-        amount=amount,
-        currency="usd",
-        metadata={"order_id": order_id},
-        description=f"Launch Bridge LLC — {business_name}",
-        receipt_email=email or None,
-    )
-
-def retrieve_payment_intent(pi_id: str):
-    return stripe.PaymentIntent.retrieve(pi_id)
 
 def create_connect_account(email: str, business_name: str, multi_member: bool):
     """Standard account for the customer, pre-filled as an LLC. Stripe's

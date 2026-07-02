@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% if error %}Message Not Sent{% else %}Message Sent{% endif %}{% if business_name %} - {{ business_name }}{% endif %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    {% include "_ga4.html" %}
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex items-center justify-center px-6">
     <div class="max-w-md w-full text-center">

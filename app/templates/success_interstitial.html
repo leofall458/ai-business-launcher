@@ -24,12 +24,13 @@
     <script>
         gtag('event', 'purchase', {
             currency: 'USD',
-            value: 350.00,
+            value: {{ amount_paid | default(350) }},
             transaction_id: '{{ order_id }}',
+            founding_member: {{ 'true' if founding_member else 'false' }},
             items: [{
                 item_id: 'virginia_llc_formation',
                 item_name: '{{ business_name | replace("'", "\\'") }}',
-                price: 350.00,
+                price: {{ amount_paid | default(350) }},
                 quantity: 1
             }]
         });

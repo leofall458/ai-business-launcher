@@ -75,5 +75,8 @@ GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 # Optional: GA4 measurement ID (e.g. "G-XXXXXXXXXX"). Leave empty to disable tracking.
 GOOGLE_ANALYTICS_ID = os.getenv("GOOGLE_ANALYTICS_ID", "")
 
+# Optional: Microsoft Clarity project ID. Leave empty to disable session recording.
+CLARITY_ID = os.getenv("CLARITY_ID", "")
+
 # Optional: URL of a deployed sample site for the deliverables gallery iframe preview.
 SAMPLE_WEBSITE_URL = os.getenv("SAMPLE_WEBSITE_URL", "")

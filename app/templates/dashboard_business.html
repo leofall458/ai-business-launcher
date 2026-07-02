@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Details - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% include "_ga4.html" %}
+    <style>
+        .autosave-flash { animation: fadeInOut 2s ease; }
+        @keyframes fadeInOut { 0% { opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
+        @media (max-width: 640px) { input, textarea, select { font-size: 16px !important; } }
+    </style>
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
+<div class="max-w-xl mx-auto px-4 sm:px-8">
+
+    {% set wizard_step = 3 %}
+    {% include "_wizard_progress.html" %}
+
+    <div class="text-center mb-6">
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">A few details about your business 📋</h1>
+        <p class="text-[#0e2148]/55 text-sm">Almost there — this is the last step before we start building.</p>
+    </div>
+
+    <form method="post" action="/dashboard/orders/{{ order_id }}/business" class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Business Purpose <span class="font-normal text-[#0e2148]/35">(optional, one sentence)</span></label>
+            <input name="business_purpose" type="text" value="{{ order.get('business_purpose', '') }}"
+                placeholder="e.g. Mobile pet grooming services for residential customers"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"business_purpose","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-business_purpose" hx-swap="innerHTML"
+                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <div class="flex justify-between mt-1">
+                <p class="text-xs text-[#0e2148]/40">Leave blank to use your original business description.</p>
+                <span id="save-business_purpose"></span>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">Target Customer <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
+            <input name="target_customer" type="text" value="{{ order.get('target_customer', '') }}"
+                placeholder="e.g. Busy professionals in Northern Virginia with dogs"
+                hx-post="/dashboard/orders/{{ order_id }}/autosave" hx-trigger="change, keyup delay:1s" hx-vals='{"field":"target_customer","csrf_token":"{{ csrf_token }}"}' hx-include="this" hx-target="#save-target_customer" hx-swap="innerHTML"
+                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <span id="save-target_customer" class="block mt-1"></span>
+        </div>
+
+        <input type="hidden" name="registered_agent_choice" value="self">
+
+        <!-- Member signature -->
+        <div class="bg-[#c9a227]/10 border border-[#c9a227]/35 rounded-lg p-4">
+            <p class="text-xs text-[#b8860b] font-semibold mb-1">Member 1 — Primary Signer *</p>
+            <p class="text-xs text-[#0e2148]/40 mb-3">Electronic signatures are valid under the E-SIGN Act — this signs your Articles of Organization.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">First *</label>
+                    <input name="sig_first" type="text" required value="{{ order.get('sig_first', order.get('first_name', '')) }}" placeholder="Jane"
+                        class="w-full bg-white border {% if business_errors.get('sig_first') %}border-red-400{% else %}border-[#c9a227]/35{% endif %} rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                    {% if business_errors.get('sig_first') %}<p class="text-red-500 text-xs mt-1">{{ business_errors.sig_first }}</p>{% endif %}
+                </div>
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Middle</label>
+                    <input name="sig_middle" type="text" value="{{ order.get('sig_middle', '') }}" placeholder="Optional"
+                        class="w-full bg-white border border-[#c9a227]/35 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                </div>
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Last *</label>
+                    <input name="sig_last" type="text" required value="{{ order.get('sig_last', order.get('last_name', '')) }}" placeholder="Smith"
+                        class="w-full bg-white border {% if business_errors.get('sig_last') %}border-red-400{% else %}border-[#c9a227]/35{% endif %} rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                    {% if business_errors.get('sig_last') %}<p class="text-red-500 text-xs mt-1">{{ business_errors.sig_last }}</p>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div id="additional-business-members"></div>
+        <button type="button" onclick="addBusinessMember()"
+            class="w-full border border-dashed border-[#0e2148]/25 hover:border-[#c9a227] text-[#0e2148]/45 hover:text-[#b8860b] py-2.5 rounded-lg transition text-sm">
+            + Add Another LLC Member <span class="font-normal">(optional)</span>
+        </button>
+
+        <!-- EIN -->
+        <div class="bg-white border border-[#0e2148]/10 rounded-lg p-4 shadow-sm">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" id="skip-ein" name="skip_ein" onchange="toggleSkipEIN()"
+                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                <span class="text-sm font-semibold text-[#0e2148]">I already have an EIN — skip EIN application</span>
+            </label>
+            <p id="ssn-note" class="text-xs text-[#0e2148]/45 leading-relaxed mt-2">
+                🔒 You'll enter your SSN on a secure screen later, once your LLC is ready to file — encrypted, used only for your EIN application, and deleted within 72 hours.
+            </p>
+            <div id="existing-ein" class="hidden mt-3">
+                <label class="block text-xs text-[#b8860b] font-semibold mb-1">Your existing EIN *</label>
+                <input name="existing_ein" type="text" id="existing-ein-input" placeholder="XX-XXXXXXX"
+                    class="w-full bg-white border border-[#c9a227]/40 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm tracking-widest focus:border-[#c9a227] focus:outline-none"/>
+                {% if business_errors.get('existing_ein') %}<p class="text-red-500 text-xs mt-1">{{ business_errors.existing_ein }}</p>{% endif %}
+            </div>
+        </div>
+
+        <!-- LLC Details -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">Industry Code</label>
+                <select name="industry_code"
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none">
+                    <option value="0">0 – General (most businesses)</option>
+                    <option value="35">35 – Insurance Agencies</option>
+                    <option value="36">36 – Mortgage Companies</option>
+                    <option value="65">65 – Churches / Religious Organizations</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-[#0e2148]/55 mb-1">LLC Duration</label>
+                <select name="duration"
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none">
+                    <option value="Perpetual">Perpetual (recommended)</option>
+                    <option value="Fixed">Fixed Term</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="submit"
+            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
+            Save business details &amp; continue →
+        </button>
+        <p class="text-center text-xs text-[#0e2148]/45">We have everything we need! Submitting starts your business now. 🎉</p>
+    </form>
+</div>
+
+<script>
+    function toggleSkipEIN() {
+        const skip = document.getElementById('skip-ein').checked;
+        document.getElementById('ssn-note').classList.toggle('hidden', skip);
+        document.getElementById('existing-ein').classList.toggle('hidden', !skip);
+        document.getElementById('existing-ein-input').required = !!skip;
+    }
+
+    let businessMemberCount = 1;
+    function addBusinessMember() {
+        businessMemberCount++;
+        const n = businessMemberCount;
+        const container = document.getElementById('additional-business-members');
+        const div = document.createElement('div');
+        div.id = `business-member-${n}`;
+        div.className = 'bg-white border border-[#0e2148]/12 rounded-lg p-4 mb-2 shadow-sm';
+        div.innerHTML = `
+            <div class="flex justify-between items-center mb-2">
+                <p class="text-xs text-[#0e2148]/55 font-semibold">Member ${n}</p>
+                <button type="button" onclick="document.getElementById('business-member-${n}').remove()"
+                    class="text-xs text-red-500 hover:text-red-600 transition">− Remove</button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">First *</label>
+                    <input name="extra_sig_first_${n}" type="text" required placeholder="Jane"
+                        class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                </div>
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Middle</label>
+                    <input name="extra_sig_middle_${n}" type="text" placeholder="Optional"
+                        class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                </div>
+                <div>
+                    <label class="block text-xs text-[#0e2148]/55 mb-1">Last *</label>
+                    <input name="extra_sig_last_${n}" type="text" required placeholder="Doe"
+                        class="w-full bg-white border border-[#0e2148]/18 rounded-lg p-2 text-[#0e2148] text-sm font-serif italic focus:border-[#c9a227] focus:outline-none"/>
+                </div>
+            </div>`;
+        container.appendChild(div);
+    }
+</script>
+</body>
+</html>

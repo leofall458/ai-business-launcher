@@ -39,6 +39,39 @@ def screen_business_name(business_idea: str) -> dict:
     }
 
 
+def generate_name_ideas(business_idea: str, count: int = 5) -> list[str]:
+    """Generate fresh LLC name ideas for Step 3 of the dashboard flow, before
+    the customer has tried (and had rejected) any specific name - unlike
+    suggest_alternative_names below, there's nothing to be "distinct from"
+    yet."""
+    client = get_client()
+    prompt = f"""You are a Virginia LLC naming expert.
+
+Business idea: {business_idea}
+
+Suggest exactly {count} strong Virginia LLC names for this business that:
+1. Are distinct from each other — not just variations on the same word
+2. Capture the business's essence or market niche
+3. End with " LLC"
+4. Are short (2-4 words before LLC) and memorable
+
+Reply with ONLY a numbered list of {count} names, one per line. No explanations, no extra text.
+Example format:
+1. Blue Ridge Advisors LLC
+2. Shenandoah Capital LLC
+3. Potomac Strategy LLC
+4. Cardinal Path LLC
+5. Skyline Ventures LLC"""
+
+    response = client.models.generate_content(model=MODEL, contents=prompt)
+    names = []
+    for m in re.finditer(r'\b([A-Z][A-Za-z0-9 &\'.\-]{1,40} LLC)\b', response.text):
+        name = m.group(1).strip()
+        if name not in names:
+            names.append(name)
+    return names[:count]
+
+
 def suggest_alternative_names(taken_name: str, business_idea: str) -> list[str]:
     """Generate up to 5 LLC name alternatives when the requested name is taken."""
     client = get_client()

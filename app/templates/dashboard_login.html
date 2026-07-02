@@ -4,34 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
     <script src="https://cdn.tailwindcss.com"></script>
+    {% include "_ga4.html" %}
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center py-12">
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen flex items-center justify-center py-12">
     <div class="max-w-md w-full mx-auto px-6 space-y-6">
         <div class="text-center mb-2">
-            <p class="text-blue-400 text-xs sm:text-sm font-semibold tracking-widest uppercase mb-3">Launch Bridge LLC</p>
-            <h1 class="text-2xl sm:text-3xl font-bold mb-2">Sign In to Your Dashboard</h1>
-            <p class="text-gray-400 text-sm">Enter the email you used to place your order and we'll send you a one-time sign-in link.</p>
+            <div class="eyebrow justify-center mb-4">Launch Bridge LLC</div>
+            <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Sign In to Your Dashboard</h1>
+            <p class="text-[#0e2148]/55 text-sm">Enter the email you used to place your order and we'll send you a one-time sign-in link.</p>
         </div>
 
         {% if error %}
-        <div class="bg-red-950 border border-red-700 rounded-xl p-4 text-sm text-red-300">{{ error }}</div>
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{{ error }}</div>
         {% endif %}
 
         <form method="post" action="/dashboard/login" class="space-y-3">
             <div>
-                <label class="block text-xs text-gray-400 mb-1">Email</label>
+                <label class="block text-xs text-[#0e2148]/50 font-medium mb-1">Email</label>
                 <input name="email" type="email" required autofocus
-                    class="w-full bg-gray-800 rounded-lg p-3 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"/>
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 focus:border-[#c9a227] focus:outline-none text-sm transition"/>
             </div>
             <button type="submit"
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition text-sm">
+                class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-3 rounded-full transition text-sm shadow-md shadow-[#c9a227]/25">
                 Send Sign-In Link
             </button>
         </form>
 
-        <p class="text-xs text-gray-600 text-center">
-            Questions? Email <a href="mailto:support@launchbridge.ai" class="text-blue-400 underline">support@launchbridge.ai</a>
+        <p class="text-xs text-[#0e2148]/35 text-center">
+            Questions? Email <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] underline">support@launchbridge.ai</a>
         </p>
     </div>
 </body>

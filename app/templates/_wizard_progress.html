@@ -1,0 +1,29 @@
+<!-- Shared post-payment step progress bar. Include with:
+     {% set wizard_step = 1 %} (1-5, see WIZARD_STEPS below) before including. -->
+{% set wizard_steps = ["Name", "Your Info", "Business", "Website", "Done"] %}
+<div class="mb-6">
+    <p class="text-xs text-[#0e2148]/45 font-semibold mb-2">Step {{ wizard_step }} of {{ wizard_steps|length }}</p>
+    <div class="flex items-center">
+        {% for label in wizard_steps %}
+        {% set n = loop.index %}
+        <div class="flex items-center {% if not loop.last %}flex-1{% endif %}">
+            <div class="flex flex-col items-center shrink-0">
+                {% if n < wizard_step %}
+                <div class="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold">✓</div>
+                {% elif n == wizard_step %}
+                <div class="w-7 h-7 rounded-full bg-[#c9a227] flex items-center justify-center text-[#0e2148] text-xs font-bold ring-4 ring-[#c9a227]/25">{{ n }}</div>
+                {% else %}
+                <div class="w-7 h-7 rounded-full bg-[#FAF8F3] border border-[#0e2148]/15 flex items-center justify-center text-[#0e2148]/35 text-xs font-bold">{{ n }}</div>
+                {% endif %}
+                <p class="text-[10px] mt-1 text-center whitespace-nowrap
+                    {% if n == wizard_step %}text-[#0e2148] font-semibold{% elif n < wizard_step %}text-emerald-700{% else %}text-[#0e2148]/35{% endif %}">
+                    {{ label }}
+                </p>
+            </div>
+            {% if not loop.last %}
+            <div class="flex-1 h-0.5 mx-1 mb-4 {% if n < wizard_step %}bg-emerald-500{% else %}bg-[#0e2148]/10{% endif %}"></div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>

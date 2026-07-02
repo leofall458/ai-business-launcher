@@ -104,7 +104,8 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
                          hero_photo: str = None, gallery_photos: list = None,
                          hours: str = None, instagram_url: str = None,
                          facebook_url: str = None, tiktok_url: str = None,
-                         order_id: str = None) -> str:
+                         order_id: str = None, site_url: str = None,
+                         service_area: str = "Virginia") -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
     caller)."""
@@ -121,9 +122,6 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         faq=content.get("faq") or [],
         primary_color=content["primary_color"],
         secondary_color=content["secondary_color"],
-        email=email,
-        phone=phone,
-        address=address,
         payment_link_url=payment_link_url,
         hero_photo=hero_photo,
         gallery_photos=gallery_photos or [],
@@ -132,6 +130,8 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         facebook_url=facebook_url,
         tiktok_url=tiktok_url,
         order_id=order_id,
+        site_url=site_url or "",
+        service_area=service_area or "Virginia",
         contact_endpoint="https://app.launchbridge.ai/contact",
     )
 
@@ -145,7 +145,7 @@ def generate_website(
     photos: list = None,
     instagram_url: str = None, facebook_url: str = None, tiktok_url: str = None,
     color_preference: str = "default", custom_primary_color: str = None,
-    payment_link_url: str = None, order_id: str = None,
+    payment_link_url: str = None, order_id: str = None, site_url: str = None,
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
@@ -195,6 +195,7 @@ def generate_website(
         facebook_url=(facebook_url or "").strip() or None,
         tiktok_url=(tiktok_url or "").strip() or None,
         order_id=order_id,
+        site_url=site_url,
     )
 
     return {"html": html, "template": template_name, "content": content}

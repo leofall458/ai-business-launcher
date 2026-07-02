@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Name Your Business - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% include "_ga4.html" %}
+    <style>
+        .htmx-request .htmx-indicator { display: block !important; }
+        .htmx-indicator { display: none; }
+        @media (max-width: 640px) { input, textarea { font-size: 16px !important; } }
+    </style>
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
+<div class="max-w-xl mx-auto px-4 sm:px-8">
+
+    {% set wizard_step = 1 %}
+    {% include "_wizard_progress.html" %}
+
+    <div class="text-center mb-6">
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Let's name your business 🏢</h1>
+        <p class="text-[#0e2148]/55 text-sm">We'll check it against the Virginia SCC while you type.</p>
+    </div>
+
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
+        <p class="text-xs text-[#0e2148]/45 mb-1">Your business idea</p>
+        <p class="text-sm text-[#0e2148]/80 italic">"{{ business_idea }}"</p>
+    </div>
+
+    {% if name_error %}
+    <div class="bg-red-50 border border-red-300 rounded-xl p-4 mb-4">
+        <p class="text-sm text-red-700">⚠️ {{ name_error }}</p>
+    </div>
+    {% endif %}
+
+    <!-- AI name ideas -->
+    <div class="mb-6">
+        <p class="text-xs text-[#0e2148]/55 font-medium mb-2">✨ AI-generated ideas for your business</p>
+        {% if name_ideas %}
+        <div class="flex flex-wrap gap-2">
+            {% for idea in name_ideas %}
+            <span class="name-chip" onclick="pickName('{{ idea|replace("'", "\\'") }}')">{{ idea }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs text-[#0e2148]/40">✨ Generating name ideas for your business... refresh if this doesn't appear.</p>
+        {% endif %}
+    </div>
+
+    <form method="post" action="/dashboard/orders/{{ order_id }}/name" class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4" id="name-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+        <div id="new-llc-section" class="{% if skip_llc_formation %}hidden{% endif %}">
+            <label class="block text-xs text-[#0e2148]/55 mb-1.5">Desired business name (must end in LLC) *</label>
+            <input id="business_name" name="business_name" type="text" placeholder="e.g. Blue Ridge Consulting LLC"
+                value="{{ submitted_name if not skip_llc_formation else '' }}"
+                hx-post="/check-name" hx-trigger="blur changed delay:500ms" hx-target="#name-check-inline" hx-swap="innerHTML" hx-indicator="#name-check-spinner"
+                class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
+            <p class="text-xs text-[#0e2148]/40 mt-1">Letters, numbers, spaces, and basic punctuation only — must end with "LLC".</p>
+            <div id="name-check-spinner" class="htmx-indicator text-xs text-[#0e2148]/45 mt-2">
+                <span class="inline-block w-3 h-3 border-2 border-[#c9a227] border-t-transparent rounded-full animate-spin mr-1"></span>
+                🔍 Checking Virginia SCC...
+            </div>
+            <div id="name-check-inline" class="mt-2"></div>
+        </div>
+
+        <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="skip_llc_formation" name="skip_llc_formation" onchange="toggleExistingLLC()"
+                {% if skip_llc_formation %}checked{% endif %}
+                class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+            <span class="text-xs text-[#0e2148]/55 group-hover:text-[#0e2148]/80 transition">I already have a Virginia LLC — skip formation</span>
+        </label>
+
+        <div id="existing-llc-section" class="{% if not skip_llc_formation %}hidden{% endif %}">
+            <label class="block text-xs text-[#0e2148]/55 mb-1.5">Existing LLC name *</label>
+            <input id="existing_llc_name" name="existing_llc_name" type="text" placeholder="e.g. Blue Ridge Consulting LLC"
+                value="{{ submitted_name if skip_llc_formation else '' }}"
+                hx-post="/verify-existing-llc" hx-trigger="blur changed delay:500ms" hx-target="#existing-llc-verify" hx-swap="innerHTML" hx-indicator="#existing-llc-spinner"
+                class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
+            <p class="text-xs text-[#0e2148]/40 mt-1">We'll confirm it's on file with Virginia SCC.</p>
+            <div id="existing-llc-spinner" class="htmx-indicator text-xs text-[#0e2148]/45 mt-2">🔍 Checking Virginia SCC...</div>
+            <div id="existing-llc-verify" class="mt-2"></div>
+        </div>
+
+        <button type="submit"
+            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
+            Check availability &amp; continue →
+        </button>
+    </form>
+</div>
+
+<script>
+    function toggleExistingLLC() {
+        const skip = document.getElementById('skip_llc_formation').checked;
+        document.getElementById('existing-llc-section').classList.toggle('hidden', !skip);
+        document.getElementById('new-llc-section').classList.toggle('hidden', skip);
+    }
+    function pickName(name) {
+        document.getElementById('skip_llc_formation').checked = false;
+        toggleExistingLLC();
+        const input = document.getElementById('business_name');
+        input.value = name;
+        htmx.trigger(input, 'blur');
+        document.querySelectorAll('.name-chip').forEach(c => c.classList.remove('selected'));
+        event.target.classList.add('selected');
+    }
+</script>
+</body>
+</html>

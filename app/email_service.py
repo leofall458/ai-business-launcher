@@ -16,6 +16,7 @@ the same across all of them.
 import smtplib
 import mimetypes
 from email.message import EmailMessage
+from urllib.parse import quote
 
 from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
 from app.dashboard_auth import create_magic_link
@@ -567,6 +568,34 @@ def send_abandoned_cart_email_24h(lead: dict) -> bool:
     )
     html = _wrap_html(html_inner, cta_text="Finish My LLC Setup →", cta_url=url)
     return _send(email, f"Still interested in forming {business_name}?", body, html_body=html)
+
+
+def send_mid_flow_recovery_email(order: dict, step_url: str) -> bool:
+    """Sent 1h after a *paid* order stalls mid-wizard (Steps 3-5 - see
+    abandoned_cart_scheduler's second loop) - unlike the pre-payment
+    abandoned-cart emails above, we already have a real order and a magic
+    link is the natural CTA, landing them exactly back on step_url instead
+    of a generic login page (see dashboard_verify's `next` param)."""
+    email = order.get("email", "")
+    if not email:
+        return False
+    name = order.get("first_name") or "there"
+    business_idea = order.get("business_idea", "your business")
+    magic_url = create_magic_link(email)
+    resume_url = f"{magic_url}&next={quote(step_url, safe='')}"
+    body = (
+        f"Hi {name},\n\n"
+        f"You're almost done! Continue setting up {business_idea}.\n\n"
+        f"Pick up right where you left off: {resume_url}\n\n"
+        "Questions? Just reply to this email.\n\n- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>You're almost done! Continue setting up <strong>{business_idea}</strong> — "
+        "your payment is already confirmed, we just need a few more details.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="Continue Setup →", cta_url=resume_url)
+    return _send(email, "You're almost done! Continue setting up your business", body, html_body=html)
 
 
 def send_everything_complete_email(order: dict, order_id: str):

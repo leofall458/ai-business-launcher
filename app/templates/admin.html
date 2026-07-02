@@ -60,6 +60,66 @@
             {% endif %}
         </div>
 
+        <!-- Analytics -->
+        <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
+            <h2 class="text-sm font-semibold text-gray-300 mb-4 uppercase tracking-widest">Analytics</h2>
+
+            <!-- Revenue -->
+            <div class="grid grid-cols-3 gap-3 mb-5">
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">Revenue Today</p>
+                    <p class="text-lg font-bold text-green-400">${{ stats.revenue_today }}</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">This Week</p>
+                    <p class="text-lg font-bold text-green-400">${{ stats.revenue_week }}</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">This Month</p>
+                    <p class="text-lg font-bold text-green-400">${{ stats.revenue_month }}</p>
+                </div>
+            </div>
+
+            <!-- Orders -->
+            <div class="grid grid-cols-3 gap-3 mb-5">
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">Orders Today</p>
+                    <p class="text-xl font-bold text-white">{{ stats.orders_today }}</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">This Week</p>
+                    <p class="text-xl font-bold text-white">{{ stats.orders_week }}</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-500 mb-1">This Month</p>
+                    <p class="text-xl font-bold text-white">{{ stats.orders_month }}</p>
+                </div>
+            </div>
+
+            <!-- Conversion funnel -->
+            <p class="text-xs text-gray-500 uppercase tracking-widest mb-3">Conversion Funnel (all time)</p>
+            <div class="space-y-2">
+                {% set funnel = [
+                    ("Checkout started", stats.funnel_checkout),
+                    ("Payment confirmed", stats.funnel_paid),
+                    ("Intake completed", stats.funnel_intake),
+                    ("Assets generated", stats.funnel_assets),
+                    ("Order complete", stats.funnel_complete),
+                ] %}
+                {% for label, count in funnel %}
+                {% set pct = ((count / stats.funnel_checkout * 100) | int) if stats.funnel_checkout else 0 %}
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-gray-400 w-36 shrink-0">{{ label }}</span>
+                    <div class="flex-1 bg-gray-800 rounded-full h-2">
+                        <div class="bg-blue-500 h-2 rounded-full" style="width:{{ pct }}%"></div>
+                    </div>
+                    <span class="text-xs font-semibold text-white w-6 text-right">{{ count }}</span>
+                    <span class="text-xs text-gray-600 w-8">({{ pct }}%)</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
         <div class="space-y-5">
         {% for order in orders %}
             <div class="bg-gray-900 border border-gray-700 rounded-xl p-5">
@@ -72,6 +132,9 @@
                         {% endif %}
                     </div>
                     <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span class="bg-indigo-900 text-indigo-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap" title="Where the customer is in the checkout/dashboard flow — useful for follow-up if they get stuck">
+                            {{ order.step_label }}
+                        </span>
                         <span class="bg-blue-900 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
                             {{ order.state|default("draft") }}
                         </span>
