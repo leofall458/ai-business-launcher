@@ -98,16 +98,31 @@
         </div>
         {% endif %}
 
-        <!-- Documents (emailed, not downloadable from the dashboard) -->
-        {% if order.get('documents_generated') %}
+        <!-- Articles of Organization + Operating Agreement: emailed, not downloadable -->
+        {% if available_documents.get('articles') or available_documents.get('operating_agreement') %}
         <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
-            <h2 class="font-serif text-lg font-semibold text-[#0e2148] mb-2">📧 Your documents have been sent to {{ email }}</h2>
-            <p class="text-sm text-[#0e2148]/65 leading-relaxed">
-                Check your inbox for your Articles of Organization, Operating Agreement, brand kit, and marketing plan.
+            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-2">📧 Your Articles of Organization and Operating Agreement have been sent to your email.</h2>
+            <p class="text-xs text-[#0e2148]/45">
+                Can't find them? Contact <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] underline">support@launchbridge.ai</a>.
             </p>
-            <p class="text-xs text-[#0e2148]/45 mt-2">
-                Can't find them? Check your spam folder or contact <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] underline">support@launchbridge.ai</a>.
-            </p>
+        </div>
+        {% endif %}
+
+        <!-- Remaining documents (certificate, EIN letter, brand kit, logo) -->
+        {% if has_downloadable_documents %}
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
+            <h2 class="font-serif text-lg font-semibold text-[#0e2148] mb-3">Your Documents</h2>
+            <div class="space-y-2">
+                {% for doc_id, label in document_labels.items() %}
+                {% if available_documents.get(doc_id) %}
+                <a href="/orders/{{ order_id }}/documents/{{ doc_id }}"
+                    class="flex items-center justify-between bg-[#FAF8F3] hover:bg-white border border-[#0e2148]/10 rounded-lg p-3 text-sm transition">
+                    <span class="text-[#0e2148]">{{ label }}</span>
+                    <span class="text-[#c9a227] text-xs font-semibold">Download →</span>
+                </a>
+                {% endif %}
+                {% endfor %}
+            </div>
         </div>
         {% endif %}
 
