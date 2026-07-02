@@ -42,7 +42,7 @@ PRE_PAYMENT_VALIDATED_FIELDS = [
 ]
 
 # Used by /start - the only thing collected before payment now is the idea.
-IDEA_VALIDATED_FIELDS = ["business_idea"]
+IDEA_VALIDATED_FIELDS = ["business_idea", "consent"]
 
 # Used by the post-payment dashboard intake form.
 POST_PAYMENT_VALIDATED_FIELDS = [
@@ -247,6 +247,9 @@ def validate_post_payment_intake(form: dict) -> dict:
 
     if form.get("skip_ein") == "on":
         check("existing_ein", validate_ein, form.get("existing_ein"))
+
+    if form.get("consent_signature") != "on":
+        errors["consent_signature"] = "Please agree to the terms to continue"
 
     return errors
 

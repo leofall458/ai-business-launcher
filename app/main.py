@@ -1634,10 +1634,15 @@ async def start_checkout(request: Request):
     form_raw = await request.form()
     form = dict(form_raw)
 
+    errors = {}
     idea_error = validate_business_idea(form.get("business_idea", ""))
     if idea_error:
+        errors["business_idea"] = idea_error
+    if form.get("consent") != "on":
+        errors["consent"] = "Please agree to the terms to continue"
+    if errors:
         return templates.TemplateResponse(request, "form_errors.html", {
-            "errors": {"business_idea": idea_error},
+            "errors": errors,
             "all_fields": IDEA_VALIDATED_FIELDS,
         })
 
@@ -1658,7 +1663,8 @@ async def start_checkout(request: Request):
     extra = {"lead_id": lead_id} if lead_id else {}
     record_state(order_ref, "draft", business_idea=business_idea, **extra,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
-                 awaiting_intake=True, founding_member=is_founding_member)
+                 awaiting_intake=True, founding_member=is_founding_member,
+                 consent=True, consent_at=firestore.SERVER_TIMESTAMP)
 
     base_url = str(request.base_url)
     try:
@@ -2487,7 +2493,9 @@ async def dashboard_business_submit(
     order_ref.set({**safe_fields, **parsed,
                    "awaiting_intake": False,
                    "intake_at": firestore.SERVER_TIMESTAMP,
-                   "intake_complete_at": firestore.SERVER_TIMESTAMP}, merge=True)
+                   "intake_complete_at": firestore.SERVER_TIMESTAMP,
+                   "consent_signature": True,
+                   "consent_signature_at": firestore.SERVER_TIMESTAMP}, merge=True)
     record_state(order_ref, "intake_complete")
 
     updated_order = order_ref.get().to_dict()
