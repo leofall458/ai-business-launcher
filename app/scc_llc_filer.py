@@ -1,3 +1,5 @@
+import re
+
 from playwright.sync_api import sync_playwright
 from app.secrets import get_secret
 from app.config import SCC_FILING_CARD
@@ -256,11 +258,27 @@ def verify_name_before_filing(business_name: str) -> dict:
             body = page.inner_text("body")
             page.close()
 
-            body_lower = body.lower()
-            if "no records found" in body_lower or "0 records" in body_lower:
+            # "No records found with your search criteria." is SCC's own
+            # exact empty-state text (confirmed by live testing) - the
+            # only reliable "definitely available" signal. Do NOT also
+            # check for something like "0 records": every results page,
+            # match or no match, carries a static footer ("Export
+            # limitation for Word is 5000 records...") that trivially
+            # contains the substring "0 records" - that false-positive
+            # was live-tested and caught before this ever shipped.
+            if "no records found" in body.lower():
                 return {"available": True, "message": f'"{business_name}" appears to be available on Virginia SCC.'}
 
-            if business_name.upper() in body.upper():
+            # SCC's stored entity names use a different punctuation
+            # convention than what customers type (e.g. "SMITH
+            # CONSULTING, L.L.C." vs "Smith Consulting LLC") - strip
+            # commas/periods from both sides before comparing so real
+            # matches aren't missed on formatting alone (confirmed
+            # against a live, real registered entity during testing).
+            def _normalize(s: str) -> str:
+                return re.sub(r"[.,]", "", s).upper()
+
+            if _normalize(business_name) in _normalize(body):
                 return {"available": False, "message": f'"{business_name}" already exists on Virginia SCC.'}
 
             # Results came back but nothing matched the name exactly -
