@@ -1,4 +1,7 @@
 import os
+import re
+import io
+import zipfile
 import secrets
 import hmac
 import hashlib
@@ -13,14 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import (
     FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET,
-    SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, SAMPLE_WEBSITE_URL,
+    APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
     STRIPE_PUBLISHABLE_KEY,
     FOUNDING_MEMBER_DISCOUNT, FOUNDING_MEMBER_MAX, FOUNDING_MEMBER_PRICE_CENTS,
     FOUNDING_MEMBER_SERVICE_FEE_CENTS, FOUNDING_MEMBER_DISCOUNT_PERCENT, FOUNDING_MEMBER_LABEL,
 )
 from app.agents.name_agent import screen_business_name, suggest_alternative_names
 from app.agents.name_check_agent import check_business_name
-from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, SCC_NAME_CHECK_URL
+from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name, SCC_NAME_CHECK_URL
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit
 from app.agents.marketing_agent import generate_marketing_plan
@@ -36,7 +39,7 @@ from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
 from app.agents.website_agent import generate_website
-from app.deployer import deploy_website
+from app.deployer import deploy_website, make_site_id, get_website_html
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
     create_checkout_session,
@@ -85,7 +88,9 @@ app = FastAPI(title="Launch Bridge LLC")
 app.add_middleware(SecurityHeadersMiddleware)
 
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["app_env"] = APP_ENV
 templates.env.globals["google_analytics_id"] = GOOGLE_ANALYTICS_ID
+templates.env.globals["clarity_id"] = CLARITY_ID
 templates.env.globals["sample_website_url"] = SAMPLE_WEBSITE_URL
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -144,9 +149,11 @@ async def on_startup():
 # dashboard lets the admin set filing_confirmed and ein_issued independently
 # of where the automated steps currently are.
 ORDER_STATES = [
-    "draft", "paid", "name_cleared", "review_approved", "filing_submitted",
+    "draft", "paid", "name_selected", "intake_complete",
+    "assets_generating", "assets_complete",
+    "review_approved", "filing_submitted",
     "filing_confirmed", "awaiting_ein_filing", "ein_requested", "ein_issued",
-    "assets_generated", "complete",
+    "finalizing", "complete",
 ]
 ORDER_STATE_INDEX = {s: i for i, s in enumerate(ORDER_STATES)}
 
@@ -172,14 +179,17 @@ def record_state(order_ref, new_state: str, **extra_fields):
 
 STATE_MESSAGES = {
     "draft": "We're waiting for your payment to go through.",
-    "paid": "Payment received! Complete your setup form to get your brand kit, website, and documents started.",
-    "name_cleared": "Business name verified! We're generating your brand kit, website, and documents now.",
+    "paid": "Payment received! Let's pick your business name.",
+    "name_selected": "Business name verified! Finish a few more details so we can start building your business.",
+    "intake_complete": "We're building your business package — brand kit, website, and documents are on the way.",
+    "assets_generating": "We're building your business package — brand kit, website, and documents are on the way.",
+    "assets_complete": "Your brand kit, marketing plan, and business website are ready. We're preparing to file your LLC.",
     "review_approved": "Your brand kit and documents are generating and we're preparing to file your LLC.",
     "filing_submitted": "Your brand kit, website, and documents are ready! Your LLC has been filed with Virginia SCC — approval typically takes 1-3 business days.",
     # filing_confirmed, ein_requested, and ein_issued have dynamic wording -
     # see compute_state_message() below - since they depend on ein_status/
     # next_available_window or the actual EIN value, not just the state name.
-    "assets_generated": "Your brand kit, marketing plan, and business website are ready.",
+    "finalizing": "Your brand kit, marketing plan, and business website are ready.",
     "complete": "Everything is ready — here's your full business package.",
 }
 
@@ -311,7 +321,7 @@ def compute_timeline(order: dict, state: str) -> list:
     elif state == "review_approved":
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
             "description": "Your LLC is being submitted to the Virginia SCC..."})
-    elif reached(state, "name_cleared"):
+    elif reached(state, "name_selected"):
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "current",
             "description": "Our team is reviewing and will file your LLC within 24 hours."})
     else:
@@ -380,7 +390,7 @@ def estimate_completion(order: dict, state: str) -> str:
     today = datetime.date.today()
     if order.get("skip_llc_formation"):
         days_out = 0 if reached(state, "ein_issued") else 1
-    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["name_cleared"]:
+    elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["name_selected"]:
         days_out = 5
     elif ORDER_STATE_INDEX[state] < ORDER_STATE_INDEX["filing_submitted"]:
         days_out = 4
@@ -507,6 +517,15 @@ async def check_name(request: Request):
             '<p class="text-xs text-yellow-400 mt-1">Please wait a moment before checking another name.</p>'
             '</div>',
             status_code=429,
+        )
+
+    desired_name, validation_error = sanitize_business_name(desired_name)
+    if validation_error:
+        return HTMLResponse(
+            f'<div class="p-4 rounded-lg bg-red-900 border border-red-700">'
+            f'<p class="font-semibold text-red-300">⚠️ Invalid business name</p>'
+            f'<p class="text-xs text-red-400 mt-1">{validation_error}</p>'
+            f'</div>'
         )
 
     loop = asyncio.get_event_loop()
@@ -646,10 +665,14 @@ def parse_post_payment_intake(form: dict) -> dict:
     }
 
 def run_name_check(order_id: str):
-    """Runs automatically right after payment. Advances paid -> name_cleared
-    if the business name is available on Virginia SCC; otherwise leaves the
-    order at "paid" with the check result stored for the admin to see and
-    act on (the automated pipeline doesn't know how to fix a taken name).
+    """Defensive/retry-only path (see /admin/{id}/retry-agents) - the main
+    flow now clears the name synchronously in the Step 3 dashboard page
+    (POST /dashboard/orders/{id}/name) before the order ever reaches this
+    function. Kept around to re-verify a name on demand. Advances
+    paid -> name_selected if the business name is available on Virginia SCC;
+    otherwise leaves the order at "paid" with the check result stored for
+    the admin to see and act on (the automated pipeline doesn't know how to
+    fix a taken name).
 
     A status of "UNAVAILABLE" means there was no local Chrome to drive the
     real check (e.g. this ran on Cloud Run, not the machine with CDP
@@ -671,7 +694,7 @@ def run_name_check(order_id: str):
         # so it isn't stranded, and flag it for manual admin verification.
         auto_clear = result.get("available") or result.get("status") in ("UNAVAILABLE", "UNKNOWN")
         if auto_clear:
-            record_state(order_ref, "name_cleared", name_cleared_at=firestore.SERVER_TIMESTAMP)
+            record_state(order_ref, "name_selected", name_selected_at=firestore.SERVER_TIMESTAMP)
             run_document_generation(order_id)
         else:
             print(f"⚠️ Name check did not clear for order {order_id}: {result.get('message')}")
@@ -779,19 +802,30 @@ def run_document_generation(order_id: str):
     order_ref.update(update)
 
 def run_early_assets(order_id: str):
-    """Triggered immediately after post-payment intake is submitted.
-    Generates all deliverables that don't require SCC approval or an EIN:
-    brand kit, marketing plan, LLC docs, business website, and Stripe Connect
-    account. Runs concurrently with run_name_check — both are idempotent, so
-    they can safely overlap without duplicating work.
+    """Triggered immediately after Step 5 (business details) is submitted.
+    The business name is already cleared by Step 3 at this point. Generates
+    all deliverables that don't require SCC approval or an EIN: brand kit,
+    marketing plan, LLC docs, business website, and Stripe Connect account.
 
-    assets_status tracks progress: "generating" → "complete" | "failed"."""
+    assets_status (fine-grained, drives admin error banners) tracks progress:
+    "generating" → "complete" | "failed". record_state's ordinal
+    assets_generating/assets_complete mirror the same milestones for
+    reached()-based comparisons (timeline, poller) — assets_complete is only
+    recorded on success so a failed run can be retried without violating
+    forward-only ordinal semantics."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
         return
 
     order_ref.set({"assets_status": "generating"}, merge=True)
+    # Guarded by reached() - this can be re-triggered by /admin/{id}/retry-agents
+    # on an order that has already advanced well past this milestone (e.g. to
+    # retry just the website after filing/EIN already succeeded), and
+    # record_state has no built-in ordinal check - an unconditional call here
+    # would silently regress a later state backward.
+    if not reached(order["state"], "assets_generating"):
+        record_state(order_ref, "assets_generating")
 
     try:
         # Brand kit, marketing plan, LLC docs — idempotent, skips already-done steps
@@ -828,6 +862,7 @@ def run_early_assets(order_id: str):
                     for i in (1, 2, 3)
                 ]
                 photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+                _site_id = make_site_id(business_name, order_id)
                 result = generate_website(
                     business_name, business_idea, target_customer, email, phone, principal_address,
                     template_name=order.get("website_template", "professional"),
@@ -843,6 +878,7 @@ def run_early_assets(order_id: str):
                     custom_primary_color=order.get("custom_primary_color", ""),
                     payment_link_url=None,  # Added after EIN + Stripe onboarding completes
                     order_id=order_id,
+                    site_url=f"https://{_site_id}.web.app",
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
@@ -859,12 +895,21 @@ def run_early_assets(order_id: str):
         flag_update: dict = {
             "early_assets_done": True,
             "early_assets_done_at": firestore.SERVER_TIMESTAMP,
+            "assets_at": firestore.SERVER_TIMESTAMP if all_succeeded else None,
             "assets_status": "complete" if all_succeeded else "failed",
             "asset_generation_error": asset_error if asset_error else firestore.DELETE_FIELD,
         }
         if website_url:
             flag_update["website_url"] = website_url
         order_ref.set(flag_update, merge=True)
+
+        # Only advance the ordinal state on success, and only if it hasn't
+        # already moved further ahead (same retry-safety concern as above) -
+        # a failed run leaves the state at intake_complete so a retry can
+        # still reach assets_complete later without a backward jump.
+        current_state = order_ref.get().to_dict().get("state", "intake_complete")
+        if all_succeeded and not reached(current_state, "assets_complete"):
+            record_state(order_ref, "assets_complete")
 
         order = {**order, "website_url": website_url, "stripe_connect_account_id": connect_account_id}
         send_early_assets_email(order, order_id)
@@ -881,7 +926,7 @@ def run_early_assets(order_id: str):
 
 SCC_FILED_STATES = {
     "filing_submitted", "filing_confirmed", "awaiting_ein_filing",
-    "ein_requested", "ein_issued", "assets_generated", "complete",
+    "ein_requested", "ein_issued", "finalizing", "complete",
 }
 
 # An order is only eligible to have an EIN application filed once the SCC
@@ -1298,6 +1343,7 @@ def run_asset_generation(order_id: str):
                     for i in (1, 2, 3)
                 ]
                 photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+                _site_id = make_site_id(business_name, order_id)
                 result = generate_website(
                     business_name, business_idea, target_customer, email, phone, principal_address,
                     template_name=order.get("website_template", "professional"),
@@ -1313,24 +1359,20 @@ def run_asset_generation(order_id: str):
                     custom_primary_color=order.get("custom_primary_color", ""),
                     payment_link_url=payment_link_url,
                     order_id=order_id,
+                    site_url=f"https://{_site_id}.web.app",
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
                     website_url = deployed["url"]
                     order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
                 else:
-                    # deploy_website returns None (not a raise) on a failed
-                    # GitHub push/Pages call - this was previously silent, with
-                    # nothing recorded anywhere and the order advancing to
-                    # "complete" regardless. See the website-deploy log output
-                    # for the actual GitHub API error.
-                    print(f"⚠️ Website deploy returned no URL for order {order_id} - check logs above for the GitHub API error.")
+                    print(f"⚠️ Website deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
                     asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
             except Exception as e:
                 print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
                 asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed unexpectedly: {e}"
 
-        record_state(order_ref, "assets_generated",
+        record_state(order_ref, "finalizing",
             website_url=website_url,
             stripe_connect_account_id=connect_account_id,
             stripe_payment_link_url=payment_link_url,
@@ -1342,7 +1384,7 @@ def run_asset_generation(order_id: str):
         # Stripe or website failure must never be masked by a state that
         # tells the customer everything is ready.
         if website_url:
-            record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP)
+            record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP, complete_at=firestore.SERVER_TIMESTAMP)
             order["website_url"] = website_url
             order["stripe_connect_account_id"] = connect_account_id
             if not order.get("early_assets_done"):
@@ -1380,6 +1422,7 @@ def run_website_regeneration(order_id: str):
             for i in (1, 2, 3)
         ]
         photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+        _site_id = make_site_id(business_name, order_id)
         result = generate_website(
             business_name, business_idea, target_customer, email, phone, principal_address,
             template_name=order.get("website_template", "professional"),
@@ -1395,6 +1438,7 @@ def run_website_regeneration(order_id: str):
             custom_primary_color=order.get("custom_primary_color", ""),
             payment_link_url=order.get("stripe_payment_link_url"),
             order_id=order_id,
+            site_url=f"https://{_site_id}.web.app",
         )
         deployed = deploy_website(business_name, result["html"], order_id=order_id)
         if deployed:
@@ -1404,7 +1448,7 @@ def run_website_regeneration(order_id: str):
             }, merge=True)
             print(f"✅ Website regenerated for order {order_id}: {deployed['url']}")
         else:
-            print(f"⚠️ Website regeneration deploy returned no URL for order {order_id} - check logs above for the GitHub API error.")
+            print(f"⚠️ Website regeneration deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
             order_ref.set({"asset_generation_error": "Could not redeploy your business website - check server logs, then retry."}, merge=True)
     except Exception as e:
         print(f"⚠️ Website regeneration crashed for order {order_id}: {e}")
@@ -1748,10 +1792,13 @@ async def success(request: Request, background_tasks: BackgroundTasks,
     # first magic link arrives via the order-received email instead (see
     # send_order_received_email), sent from inside process_paid_order
     # above.
+    is_founding = order.get("founding_member", False)
     return templates.TemplateResponse(request, "success_interstitial.html", {
         "email": order.get("email", ""),
         "order_id": resolved_order_id,
         "business_name": order.get("business_name", ""),
+        "founding_member": is_founding,
+        "amount_paid": 200 if is_founding else 350,
     })
 
 @app.post("/webhook")
@@ -2024,6 +2071,7 @@ def _dashboard_order_context(
             doc_id: _document_object_name(order, order_id, doc_id) is not None
             for doc_id in DOCUMENT_LABELS
         },
+        "ga_event": request.query_params.get("ga_event", ""),
     }
 
 @app.get("/dashboard/orders/{order_id}", response_class=HTMLResponse)
@@ -2139,6 +2187,7 @@ async def dashboard_complete_intake(
 
     order_ref.set({**safe_fields, **parsed, **photo_data,
                    "awaiting_intake": False,
+                   "intake_at": firestore.SERVER_TIMESTAMP,
                    "intake_complete_at": firestore.SERVER_TIMESTAMP}, merge=True)
 
     updated_order = order_ref.get().to_dict()
@@ -2169,6 +2218,24 @@ async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_
         **status_context(order_id, order),
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
     })
+
+@app.get("/dashboard/orders/{order_id}/download-website")
+async def dashboard_download_website(request: Request, owned: tuple = Depends(get_owned_order)):
+    order_ref, order, _ = owned
+    order_id = order_ref.id
+    html = get_website_html(order_id)
+    if not html:
+        raise HTTPException(status_code=404, detail="Website file not found.")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("index.html", html)
+    buf.seek(0)
+    slug = re.sub(r"[^a-z0-9]+", "-", order.get("business_name", "website").lower()).strip("-")
+    return Response(
+        content=buf.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{slug}-website.zip"'},
+    )
 
 DOCUMENT_LABELS = {
     "certificate": "Certificate of Organization",
@@ -2273,6 +2340,34 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         order["id"] = doc.id
         orders.append(order)
 
+    # ── Analytics stats from Firestore ────────────────────────────────────
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - datetime.timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+
+    def _ts(v):
+        if v is None:
+            return None
+        if hasattr(v, "tzinfo"):
+            return v if v.tzinfo else v.replace(tzinfo=datetime.timezone.utc)
+        return None
+
+    paid_orders = [o for o in orders if o.get("state") not in ("draft", None)]
+    stats = {
+        "orders_today": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= today_start),
+        "orders_week": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= week_start),
+        "orders_month": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= month_start),
+        "revenue_today": sum((200 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= today_start),
+        "revenue_week": sum((200 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= week_start),
+        "revenue_month": sum((200 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= month_start),
+        "funnel_checkout": sum(1 for o in orders if o.get("checkout_at")),
+        "funnel_paid": sum(1 for o in orders if o.get("paid_at")),
+        "funnel_intake": sum(1 for o in orders if o.get("intake_complete_at")),
+        "funnel_assets": sum(1 for o in orders if o.get("assets_status") == "complete"),
+        "funnel_complete": sum(1 for o in orders if o.get("state") == "complete"),
+    }
+
     irs_open = is_irs_open()
     irs_next_window_eta = None if irs_open else format_eta(next_irs_open())
 
@@ -2305,6 +2400,7 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "processed_scc_emails": processed_scc_emails,
         "founding_member_count": fm_admin_status["spots_taken"],
         "founding_member_max": FOUNDING_MEMBER_MAX,
+        "stats": stats,
     })
 
 @app.post("/admin/{order_id}/approve")
@@ -2465,6 +2561,75 @@ async def admin_migrate_assets(background_tasks: BackgroundTasks, authorized: bo
         f"<p><strong>Already done ({len(already_done)}):</strong> {len(already_done)} orders skipped</p>"
         f"<p><strong>Skipped — awaiting intake ({len(skipped_no_intake)}):</strong> "
         f"{', '.join(skipped_no_intake) or 'none'}</p>"
+        "<p><a href='/admin'>← Back to Admin</a></p>"
+        "</body></html>"
+    )
+    return HTMLResponse(html)
+
+@app.post("/admin/migrate-to-firebase", response_class=HTMLResponse)
+async def admin_migrate_to_firebase(background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+    """One-time migration: re-deploys all GitHub Pages sites to Firebase Hosting.
+    Finds orders where website_url contains 'github.io', regenerates the HTML
+    from stored content, and deploys to Firebase. Safe to re-run — skips orders
+    already on Firebase (website_hosting == 'firebase')."""
+    from app.agents.website_agent import render_website_html
+
+    def _migrate_one(order_id: str, order: dict):
+        business_name = order.get("business_name", "")
+        content = order.get("website_content")
+        template_name = order.get("website_template", "professional")
+        if not content or not business_name:
+            print(f"[migrate] Skipping {order_id} — missing content or business_name")
+            return
+        try:
+            _site_id = make_site_id(business_name, order_id)
+            html = render_website_html(
+                content, business_name,
+                email=order.get("email", ""),
+                phone=order.get("phone", ""),
+                address=order.get("principal_address", ""),
+                template_name=template_name,
+                payment_link_url=order.get("stripe_payment_link_url"),
+                hours=order.get("business_hours"),
+                instagram_url=order.get("instagram_url"),
+                facebook_url=order.get("facebook_url"),
+                tiktok_url=order.get("tiktok_url"),
+                order_id=order_id,
+                site_url=f"https://{_site_id}.web.app",
+            )
+            deployed = deploy_website(business_name, html, order_id=order_id)
+            if deployed:
+                print(f"[migrate] ✅ {order_id} ({business_name}) → {deployed['url']}")
+            else:
+                print(f"[migrate] ⚠️ {order_id} ({business_name}) — deploy failed")
+        except Exception as e:
+            print(f"[migrate] ⚠️ {order_id} ({business_name}) — crashed: {e}")
+
+    triggered, skipped_firebase, skipped_no_site, skipped_no_content = [], [], [], []
+    for doc in ORDERS.stream():
+        order = doc.to_dict()
+        order_id = doc.id
+        if order.get("website_hosting") == "firebase":
+            skipped_firebase.append(order_id)
+            continue
+        url = order.get("website_url", "")
+        if not url:
+            skipped_no_site.append(order_id)
+            continue
+        if not order.get("website_content"):
+            skipped_no_content.append(order_id)
+            continue
+        triggered.append(f"{order_id} ({order.get('business_name', '?')})")
+        background_tasks.add_task(_migrate_one, order_id, order)
+
+    html = (
+        "<html><body style='font-family:sans-serif;padding:32px;'>"
+        "<h2>Firebase Hosting Migration</h2>"
+        f"<p><strong>Migrating ({len(triggered)}):</strong> {', '.join(triggered) or 'none'}</p>"
+        f"<p><strong>Already on Firebase ({len(skipped_firebase)}):</strong> {len(skipped_firebase)} skipped</p>"
+        f"<p><strong>No site yet ({len(skipped_no_site)}):</strong> {', '.join(skipped_no_site) or 'none'}</p>"
+        f"<p><strong>No stored content ({len(skipped_no_content)}):</strong> {', '.join(skipped_no_content) or 'none'}</p>"
+        "<p>Check Cloud Run logs for per-order results.</p>"
         "<p><a href='/admin'>← Back to Admin</a></p>"
         "</body></html>"
     )

@@ -14,16 +14,12 @@ hook, so this is safe to run standalone alongside (or instead of) the
 deployed app.
 
 Deliberately does NOT also poll "paid" orders to run the SCC name check
-itself - that already happens automatically wherever the payment webhook
-fires (normally Cloud Run). It has no CDP access there either, but
-run_name_check already treats that as an expected "UNAVAILABLE" result
-and advances the order to name_cleared anyway (see app/agents/
-scc_name_check.py) rather than leaving it stuck - the real, authoritative
-name check still happens for real inside file_llc_on_scc's own Step 3,
-right before filing, which this loop does drive with real CDP access.
-Polling "paid" here too would almost never even fire (Cloud Run's webhook
-wins that race in well under a second) and would just add a redundant,
-confusing second code path for the same thing.
+itself - the customer clears their own name synchronously in the Step 3
+dashboard page (POST /dashboard/orders/{id}/name, using check_name_on_scc
+directly) before the order ever reaches "paid" with no name. The real,
+authoritative name check still happens for real inside file_llc_on_scc's
+own Step 3, right before filing, which this loop does drive with real CDP
+access.
 
 Run with: python3 -m app.local_filing_poller
 """
@@ -47,13 +43,13 @@ def _state_now(order_id: str) -> str:
     return snap.to_dict().get("state") if snap.exists else None
 
 def process_once():
-    # Retry any order that's already past name_cleared (review_approved)
-    # but never actually got filed - most commonly because the admin
-    # clicked "Approve" on the live (Cloud Run) site instead of this
-    # running, so run_scc_filing crashed trying to reach a CDP address
-    # that only exists on this machine. Queried before the name_cleared
-    # loop below so an order this same tick auto-approves doesn't also
-    # get retried a second time in the same pass.
+    # Retry any order that's already past intake (review_approved) but never
+    # actually got filed - most commonly because the admin clicked "Approve"
+    # on the live (Cloud Run) site instead of this running, so run_scc_filing
+    # crashed trying to reach a CDP address that only exists on this machine.
+    # Queried before the intake_complete loop below so an order this same
+    # tick auto-approves doesn't also get retried a second time in the same
+    # pass.
     for doc in ORDERS.where("state", "==", "review_approved").stream():
         order_id = doc.id
         business_name = doc.to_dict().get("business_name", order_id)
@@ -66,7 +62,14 @@ def process_once():
             print(f"⚠️ run_scc_filing crashed for {order_id}: {e}")
             traceback.print_exc()
 
-    for doc in ORDERS.where("state", "==", "name_cleared").stream():
+    # Auto-approve orders that have finished intake (Step 5) and are ready to
+    # file - name is already cleared back in Step 3. Queried as all three
+    # "reached intake_complete but not yet review_approved" states, not just
+    # "intake_complete" exactly, because run_early_assets (fired the same
+    # moment Step 5 submits) races this poller and can advance the order to
+    # assets_generating/assets_complete before the next tick - an exact-match
+    # query on "intake_complete" alone would then miss it entirely.
+    for doc in ORDERS.where("state", "in", ["intake_complete", "assets_generating", "assets_complete"]).stream():
         order_id = doc.id
         business_name = doc.to_dict().get("business_name", order_id)
         print(f"📋 Auto-approving order {order_id} for SCC filing...")
