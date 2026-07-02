@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen flex items-center justify-center py-12">
+    <div class="max-w-md w-full mx-auto px-6 text-center space-y-6">
+        <div class="eyebrow justify-center">Launch Bridge LLC</div>
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148]">{{ message }}</h1>
+
+        <div class="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <a href="/"
+                class="inline-flex items-center justify-center bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-3 px-6 rounded-full transition text-sm shadow-md shadow-[#c9a227]/25">
+                Return to homepage
+            </a>
+            <a href="mailto:{{ support_email }}"
+                class="inline-flex items-center justify-center bg-white border border-[#0e2148]/20 hover:border-[#c9a227] text-[#0e2148] font-semibold py-3 px-6 rounded-full transition text-sm">
+                Contact support
+            </a>
+        </div>
+    </div>
+</body>
+</html>

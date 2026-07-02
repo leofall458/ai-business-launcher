@@ -63,6 +63,34 @@
             {% endif %}
         </div>
 
+        <!-- Errors -->
+        {% if recent_errors %}
+        <div class="bg-gray-900 border border-red-900 rounded-xl p-4 mb-6">
+            <h2 class="text-red-400 font-semibold text-sm mb-3">⚠️ Unresolved Errors ({{ recent_errors|length }})</h2>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+                {% for err in recent_errors %}
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 flex items-start justify-between gap-3 flex-wrap">
+                    <div class="min-w-0">
+                        <p class="text-sm text-white font-mono">{{ err.error_type }}</p>
+                        <p class="text-xs text-gray-400 truncate">{{ err.url }}</p>
+                        <p class="text-xs text-red-300 mt-1">{{ err.error_message }}</p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            {{ err.timestamp_display or "just now" }}
+                            {% if err.order_id %}· order <span class="font-mono">{{ err.order_id }}</span>{% endif %}
+                        </p>
+                    </div>
+                    <form method="post" action="/admin/errors/{{ err.id }}/resolve">
+                        <button type="submit"
+                            class="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                            Mark resolved
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Analytics -->
         <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
             <h2 class="text-sm font-semibold text-gray-300 mb-4 uppercase tracking-widest">Analytics</h2>

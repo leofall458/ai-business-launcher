@@ -10,6 +10,8 @@ import datetime
 from urllib.parse import quote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -98,6 +100,90 @@ db = firestore.Client(project=FIREBASE_PROJECT_ID)
 ORDERS = db.collection(ORDERS_COLLECTION)
 LEADS = db.collection("leads")
 DOCUMENT_ACCESS_LOG = db.collection("document_access_log")
+ERRORS = db.collection("errors")
+
+# The one message every customer-facing error path collapses to - never
+# stack traces, HTTP codes, or raw exception/library text. Admins still see
+# full detail via the Errors section on /admin (see log_customer_error
+# below) and the existing raw order.*_error fields there.
+CUSTOMER_FRIENDLY_ERROR = f"We're working on your request. If you have any questions contact {SUPPORT_EMAIL}."
+NOT_FOUND_MESSAGE = "We couldn't find that page."
+
+def _is_htmx_request(request: Request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+def log_customer_error(request: Request, exc: Exception) -> None:
+    """Records every unhandled/500-level error to Firestore (see the
+    Errors section on /admin) and pages the admin - the only place a
+    customer ever sees the real exception is here, in a place only admins
+    can read. order_id is best-effort (most order-scoped routes carry it
+    as a path param; not every route has one)."""
+    order_id = request.path_params.get("order_id")
+    try:
+        ERRORS.add({
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "url": str(request.url),
+            "error_type": type(exc).__name__,
+            "error_message": str(exc)[:2000],
+            "order_id": order_id,
+            "user_agent": request.headers.get("user-agent", ""),
+            "resolved": False,
+        })
+    except Exception as log_err:
+        print(f"⚠️ Could not log error to Firestore: {log_err}")
+
+    print(f"🔥 {type(exc).__name__} on {request.url.path}: {exc}")
+    try:
+        send_admin_sms(f"⚠️ Error on Launch Bridge: {request.url.path} - check Firestore errors collection")
+    except Exception as sms_err:
+        print(f"⚠️ Could not send admin SMS for error: {sms_err}")
+
+def friendly_error_response(request: Request, message: str, status_code: int, headers: dict = None):
+    """Every error response a customer can see funnels through here - a
+    full branded page for a normal page load, or a small inline snippet
+    for an htmx partial request (returning the full page would get
+    injected into whatever fragment htmx was targeting, which looks
+    broken - see Part 7 of the error-handling rework).
+
+    headers must be forwarded through, not dropped - a 401 with no
+    WWW-Authenticate header looks identical to any other error page, but
+    browsers won't prompt for Basic Auth credentials without it, which
+    would silently lock the admin out of /admin entirely."""
+    if _is_htmx_request(request):
+        return templates.TemplateResponse(request, "_error_snippet.html",
+            {"message": message}, status_code=status_code, headers=headers)
+    return templates.TemplateResponse(request, "error_friendly.html",
+        {"message": message, "support_email": SUPPORT_EMAIL}, status_code=status_code, headers=headers)
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Covers every deliberate `raise HTTPException(...)` in the app, plus
+    Starlette's own 404 for unmatched routes. Only 5xx is treated as a
+    real, unexpected error worth paging the admin over - a 404 or a 403
+    from a bad/expired link is normal traffic, not an incident."""
+    if exc.status_code >= 500:
+        log_customer_error(request, exc)
+        message = "We hit a small snag. Our team has been notified and will fix it shortly."
+    elif exc.status_code == 404:
+        message = NOT_FOUND_MESSAGE
+    else:
+        message = CUSTOMER_FRIENDLY_ERROR
+    return friendly_error_response(request, message, exc.status_code, headers=exc.headers)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """FastAPI's default 422 response body is a raw, field-by-field
+    Pydantic validation dump - technical detail no customer should see."""
+    return friendly_error_response(request, CUSTOMER_FRIENDLY_ERROR, 422)
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """The actual crash backstop - anything that reaches here is a genuine
+    bug (unlike the deliberate HTTPExceptions above), so it's always
+    logged and always pages the admin."""
+    log_customer_error(request, exc)
+    return friendly_error_response(
+        request, "We hit a small snag. Our team has been notified and will fix it shortly.", 500)
 
 def get_founding_member_status() -> dict:
     """Returns current founding-member discount availability by counting
@@ -320,7 +406,7 @@ def compute_timeline(order: dict, state: str) -> list:
             "description": f"Articles of Organization, Operating Agreement, brand kit, and marketing plan created{on_date(order.get('documents_generated_at'))}"})
     elif order.get("documents_error"):
         steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "on_hold",
-            "description": order["documents_error"]})
+            "description": CUSTOMER_FRIENDLY_ERROR})
     elif intake_done:
         steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "current",
             "description": "AI is generating your brand kit, documents, and marketing plan — usually 2-3 minutes..."})
@@ -335,7 +421,7 @@ def compute_timeline(order: dict, state: str) -> list:
             "description": f"Your website is live at {website_url}", "url": website_url})
     elif order.get("asset_generation_error") and intake_done:
         steps.append({"key": "website", "name": "Business Website Live", "status": "on_hold",
-            "description": order["asset_generation_error"]})
+            "description": CUSTOMER_FRIENDLY_ERROR})
     elif intake_done:
         steps.append({"key": "website", "name": "Business Website Live", "status": "current",
             "description": "Building and deploying your business website..."})
@@ -366,7 +452,7 @@ def compute_timeline(order: dict, state: str) -> list:
             "description": "Skipped — using your existing LLC"})
     elif order.get("filing_error"):
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "on_hold",
-            "description": order["filing_error"]})
+            "description": CUSTOMER_FRIENDLY_ERROR})
     elif reached(state, "filing_submitted"):
         steps.append({"key": "filed", "name": "LLC Filed with Virginia SCC", "status": "complete",
             "description": f"Filed with the Virginia SCC{on_date(order.get('filing_submitted_at'))}"})
@@ -402,7 +488,7 @@ def compute_timeline(order: dict, state: str) -> list:
             desc = f"EIN {ein} issued by IRS{on_date(order.get('ein_issued_at'))}"
         steps.append({"key": "ein", "name": "EIN Issued", "status": "complete", "description": desc})
     elif order.get("ein_error"):
-        steps.append({"key": "ein", "name": "EIN Issued", "status": "on_hold", "description": order["ein_error"]})
+        steps.append({"key": "ein", "name": "EIN Issued", "status": "on_hold", "description": CUSTOMER_FRIENDLY_ERROR})
     elif ein_status == "queued" and order.get("next_available_window"):
         window = order["next_available_window"]
         if isinstance(window, str):
@@ -590,7 +676,8 @@ async def check_name(request: Request):
     # Each check must stand on its own - a Gemini hiccup shouldn't blank out
     # a working SCC result, and vice versa.
     if isinstance(scc_result, Exception):
-        scc_result = {"available": None, "status": "ERROR", "message": str(scc_result), "conflicts": [], "raw": ""}
+        print(f"⚠️ /check-name crashed for '{desired_name}': {scc_result}")
+        scc_result = {"available": None, "status": "ERROR", "message": CUSTOMER_FRIENDLY_ERROR, "conflicts": [], "raw": ""}
     if isinstance(gemini_result, Exception):
         gemini_result = {
             "status": "error", "domain": "", "domain_available": None,
@@ -1758,7 +1845,10 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         try:
             session = retrieve_checkout_session(session_id)
         except Exception as e:
-            return HTMLResponse(f"<p>Could not verify payment: {e}</p>", status_code=400)
+            # A customer just paid and we can't confirm it - worth a page,
+            # not just a quiet log line.
+            log_customer_error(request, e)
+            return friendly_error_response(request, CUSTOMER_FRIENDLY_ERROR, 400)
 
         resolved_order_id = session.client_reference_id
         if not resolved_order_id:
@@ -2706,6 +2796,23 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
 
     fm_admin_status = get_founding_member_status()
 
+    # Filtered in Python rather than a Firestore .where("resolved", "==",
+    # False).order_by("timestamp", ...) query - that combination needs a
+    # composite index that doesn't exist for this brand-new collection, and
+    # error volume is low enough that fetching a recent window and
+    # filtering here is simpler than provisioning one.
+    recent_errors = []
+    error_query = ERRORS.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(50)
+    for doc in error_query.stream():
+        entry = doc.to_dict()
+        if entry.get("resolved"):
+            continue
+        entry["id"] = doc.id
+        entry["timestamp_display"] = fmt_datetime(entry.get("timestamp"))
+        recent_errors.append(entry)
+        if len(recent_errors) >= 25:
+            break
+
     return templates.TemplateResponse(request, "admin.html", {
         "orders": orders,
         "irs_open": irs_open,
@@ -2716,7 +2823,13 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "founding_member_count": fm_admin_status["spots_taken"],
         "founding_member_max": FOUNDING_MEMBER_MAX,
         "stats": stats,
+        "recent_errors": recent_errors,
     })
+
+@app.post("/admin/errors/{error_id}/resolve")
+async def admin_resolve_error(error_id: str, authorized: bool = Depends(verify_admin)):
+    ERRORS.document(error_id).set({"resolved": True, "resolved_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    return RedirectResponse(url="/admin", status_code=303)
 
 def _approve_and_trigger_filing(order_ref, order_id: str, background_tasks: BackgroundTasks) -> None:
     """Shared by both the "name verified" and "admin manually confirmed"

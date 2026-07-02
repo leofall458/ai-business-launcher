@@ -517,7 +517,8 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
                 "message": "Could not determine whether this LLC exists. Please check the Virginia SCC website directly.",
             }
     except Exception as e:
+        print(f"⚠️ check_llc_exists_on_scc crashed for '{business_name}': {e}")
         return {
             "exists": None,
-            "message": f"Could not connect to Virginia SCC: {str(e)}",
+            "message": "Could not connect to Virginia SCC right now. Please check the Virginia SCC website directly.",
         }
