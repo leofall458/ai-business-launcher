@@ -2165,11 +2165,6 @@ def _dashboard_order_context(
         "intake_errors": intake_errors or {},
         "intake_form_data": intake_form_data or {},
         "csrf_token": make_csrf_token(session_id),
-        "document_labels": DOCUMENT_LABELS,
-        "available_documents": {
-            doc_id: _document_object_name(order, order_id, doc_id) is not None
-            for doc_id in DOCUMENT_LABELS
-        },
         "ga_event": request.query_params.get("ga_event", ""),
     }
 
@@ -2693,30 +2688,32 @@ def _check_document_access_anomaly(session_id: str, customer_id: str):
     if len(distinct_customers) > 1:
         send_admin_sms(f"⚠️ SECURITY: session {session_id[:8]}... accessed documents as multiple customers: {distinct_customers}")
 
-@app.get("/orders/{order_id}/documents/{doc_id}")
-async def get_order_document(request: Request, doc_id: str, owned: tuple = Depends(get_owned_order)):
-    order_ref, order, customer_id = owned
-    order_id = order_ref.id
-
-    if doc_id not in DOCUMENT_LABELS:
-        raise HTTPException(status_code=404)
-
-    object_name = _document_object_name(order, order_id, doc_id)
-    if not object_name:
-        raise HTTPException(status_code=404)
-
-    url = generate_signed_url(object_name)
-
-    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
-    DOCUMENT_ACCESS_LOG.add({
-        "customer_id": customer_id, "doc_id": doc_id, "order_id": order_id,
-        "session_id": session_id, "at": firestore.SERVER_TIMESTAMP,
-    })
-    _check_document_access_anomaly(session_id, customer_id)
-
-    # Never logged - this redirect is the only place the signed URL
-    # itself ever exists outside of document_store.generate_signed_url.
-    return RedirectResponse(url=url, status_code=302)
+# Document downloads removed - docs are emailed to customers
+# Can be re-enabled later if needed
+# @app.get("/orders/{order_id}/documents/{doc_id}")
+# async def get_order_document(request: Request, doc_id: str, owned: tuple = Depends(get_owned_order)):
+#     order_ref, order, customer_id = owned
+#     order_id = order_ref.id
+#
+#     if doc_id not in DOCUMENT_LABELS:
+#         raise HTTPException(status_code=404)
+#
+#     object_name = _document_object_name(order, order_id, doc_id)
+#     if not object_name:
+#         raise HTTPException(status_code=404)
+#
+#     url = generate_signed_url(object_name)
+#
+#     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+#     DOCUMENT_ACCESS_LOG.add({
+#         "customer_id": customer_id, "doc_id": doc_id, "order_id": order_id,
+#         "session_id": session_id, "at": firestore.SERVER_TIMESTAMP,
+#     })
+#     _check_document_access_anomaly(session_id, customer_id)
+#
+#     # Never logged - this redirect is the only place the signed URL
+#     # itself ever exists outside of document_store.generate_signed_url.
+#     return RedirectResponse(url=url, status_code=302)
 
 @app.get("/cancel")
 async def cancel():
