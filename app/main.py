@@ -2628,7 +2628,11 @@ async def dashboard_autosave(request: Request, owned: tuple = Depends(get_owned_
     if field not in _AUTOSAVE_ALLOWED_FIELDS:
         raise HTTPException(status_code=400, detail="Field not autosavable")
 
-    order_ref.set({field: form.get("value", "")}, merge=True)
+    # hx-include="this" sends the field's own name as the key (e.g.
+    # address=123 Main St), not a literal "value" key - form.get("value")
+    # was always empty, so every autosave call silently wrote "" over
+    # whatever the customer had just typed, on every keystroke pause.
+    order_ref.set({field: form.get(field, "")}, merge=True)
     return templates.TemplateResponse(request, "_autosave_indicator.html", {"field": field})
 
 
