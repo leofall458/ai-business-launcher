@@ -141,6 +141,13 @@
       <div>
         <h2 class="display text-3xl font-bold mb-6">Come Say Hello</h2>
         <p class="text-lg font-semibold mb-6">Fill out the form — we'll be in touch soon.</p>
+        {% if contact_phone or contact_email or contact_address %}
+        <div class="space-y-1.5 mb-6 text-sm font-semibold">
+          {% if contact_phone %}<p>📞 <a href="tel:{{ contact_phone }}" class="underline">{{ contact_phone }}</a></p>{% endif %}
+          {% if contact_email %}<p>✉️ <a href="mailto:{{ contact_email }}" class="underline">{{ contact_email }}</a></p>{% endif %}
+          {% if contact_address %}<p>📍 {{ contact_address }}</p>{% endif %}
+        </div>
+        {% endif %}
         {% if instagram_url or facebook_url or tiktok_url %}
         <div class="flex gap-5 text-sm font-bold">
           {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="underline">Instagram</a>{% endif %}

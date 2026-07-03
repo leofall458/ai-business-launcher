@@ -99,16 +99,25 @@ def _merge_services(customer_services: list, ai_services: list) -> list:
         merged.append({"name": name, "description": description})
     return merged
 
-def render_website_html(content: dict, business_name: str, email: str, phone: str, address: str,
+def render_website_html(content: dict, business_name: str,
                          template_name: str, payment_link_url: str = None,
                          hero_photo: str = None, gallery_photos: list = None,
                          hours: str = None, instagram_url: str = None,
                          facebook_url: str = None, tiktok_url: str = None,
                          order_id: str = None, site_url: str = None,
-                         service_area: str = "Virginia") -> str:
+                         service_area: str = "Virginia",
+                         contact_phone: str = None, contact_email: str = None,
+                         contact_address: str = None) -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
-    caller)."""
+    caller).
+
+    contact_phone/email/address are the customer's own opt-in choice of what
+    to publish in the site's Contact section - see generate_website, which
+    is the only caller and the single place that decides whether these are
+    even non-None. Nothing else about the customer (their account email,
+    personal phone, or the private address used for LLC filing) is ever
+    passed into a public website template."""
     if template_name not in TEMPLATE_FILES:
         template_name = "professional"
 
@@ -133,11 +142,13 @@ def render_website_html(content: dict, business_name: str, email: str, phone: st
         site_url=site_url or "",
         service_area=service_area or "Virginia",
         contact_endpoint="https://app.launchbridge.ai/contact",
+        contact_phone=contact_phone,
+        contact_email=contact_email,
+        contact_address=contact_address,
     )
 
 def generate_website(
     business_name: str, business_idea: str, target_customer: str,
-    email: str, phone: str, address: str,
     template_name: str = "professional",
     tagline: str = None, description: str = None,
     services: list = None,
@@ -146,12 +157,22 @@ def generate_website(
     instagram_url: str = None, facebook_url: str = None, tiktok_url: str = None,
     color_preference: str = "default", custom_primary_color: str = None,
     payment_link_url: str = None, order_id: str = None, site_url: str = None,
+    show_contact: bool = False, contact_phone: str = None,
+    contact_email: str = None, contact_address: str = None,
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
     (tagline, description, services, colors) with Gemini-generated content,
     field by field rather than all-or-nothing. cta_text and faq have no
-    customer-provided equivalent, so Gemini is always called for those."""
+    customer-provided equivalent, so Gemini is always called for those.
+
+    show_contact gates contact_phone/email/address in one place: unless the
+    customer explicitly opted in on the website customization step, all
+    three are forced to None here regardless of what's stored on the order,
+    so a public site can never end up displaying contact details the
+    customer didn't choose to publish."""
+    if not show_contact:
+        contact_phone = contact_email = contact_address = None
     if template_name not in TEMPLATE_FILES:
         template_name = "professional"
 
@@ -185,7 +206,7 @@ def generate_website(
 
     photos = [p for p in (photos or []) if p]
     html = render_website_html(
-        content, business_name, email, phone, address,
+        content, business_name,
         template_name=template_name,
         payment_link_url=payment_link_url,
         hero_photo=photos[0] if photos else None,
@@ -196,6 +217,9 @@ def generate_website(
         tiktok_url=(tiktok_url or "").strip() or None,
         order_id=order_id,
         site_url=site_url,
+        contact_phone=(contact_phone or "").strip() or None,
+        contact_email=(contact_email or "").strip() or None,
+        contact_address=(contact_address or "").strip() or None,
     )
 
     return {"html": html, "template": template_name, "content": content}

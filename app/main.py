@@ -906,7 +906,7 @@ def run_early_assets(order_id: str):
                 photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
                 _site_id = make_site_id(business_name, order_id)
                 result = generate_website(
-                    business_name, business_idea, target_customer, email, phone, principal_address,
+                    business_name, business_idea, target_customer,
                     template_name=order.get("website_template", "professional"),
                     tagline=order.get("website_tagline", ""),
                     description=order.get("website_description", ""),
@@ -921,6 +921,10 @@ def run_early_assets(order_id: str):
                     payment_link_url=None,  # Added after EIN + Stripe onboarding completes
                     order_id=order_id,
                     site_url=f"https://{_site_id}.web.app",
+                    show_contact=bool(order.get("website_contact_show")),
+                    contact_phone=order.get("website_contact_phone", ""),
+                    contact_email=order.get("website_contact_email", ""),
+                    contact_address=order.get("website_contact_address", ""),
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
@@ -1432,7 +1436,7 @@ def run_asset_generation(order_id: str):
                 photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
                 _site_id = make_site_id(business_name, order_id)
                 result = generate_website(
-                    business_name, business_idea, target_customer, email, phone, principal_address,
+                    business_name, business_idea, target_customer,
                     template_name=order.get("website_template", "professional"),
                     tagline=order.get("website_tagline", ""),
                     description=order.get("website_description", ""),
@@ -1447,6 +1451,10 @@ def run_asset_generation(order_id: str):
                     payment_link_url=payment_link_url,
                     order_id=order_id,
                     site_url=f"https://{_site_id}.web.app",
+                    show_contact=bool(order.get("website_contact_show")),
+                    contact_phone=order.get("website_contact_phone", ""),
+                    contact_email=order.get("website_contact_email", ""),
+                    contact_address=order.get("website_contact_address", ""),
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
@@ -1501,9 +1509,6 @@ def run_website_regeneration(order_id: str):
         business_name = order["business_name"]
         business_idea = order["business_idea"]
         target_customer = order["target_customer"]
-        principal_address = order["principal_address"]
-        email = order["email"]
-        phone = order["phone"]
         services = [
             {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
             for i in (1, 2, 3)
@@ -1511,7 +1516,7 @@ def run_website_regeneration(order_id: str):
         photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
         _site_id = make_site_id(business_name, order_id)
         result = generate_website(
-            business_name, business_idea, target_customer, email, phone, principal_address,
+            business_name, business_idea, target_customer,
             template_name=order.get("website_template", "professional"),
             tagline=order.get("website_tagline", ""),
             description=order.get("website_description", ""),
@@ -1526,6 +1531,10 @@ def run_website_regeneration(order_id: str):
             payment_link_url=order.get("stripe_payment_link_url"),
             order_id=order_id,
             site_url=f"https://{_site_id}.web.app",
+            show_contact=bool(order.get("website_contact_show")),
+            contact_phone=order.get("website_contact_phone", ""),
+            contact_email=order.get("website_contact_email", ""),
+            contact_address=order.get("website_contact_address", ""),
         )
         deployed = deploy_website(business_name, result["html"], order_id=order_id)
         if deployed:
@@ -2507,6 +2516,7 @@ _STEP6_WEBSITE_SIMPLE_FIELDS = [
     "service_3_name", "service_3_desc",
     "business_hours", "instagram_url", "facebook_url", "tiktok_url",
     "color_preference", "custom_primary_color",
+    "website_contact_phone", "website_contact_email", "website_contact_address",
 ]
 
 @app.get("/dashboard/orders/{order_id}/website", response_class=HTMLResponse)
@@ -2565,6 +2575,10 @@ async def dashboard_website_submit(
         }, status_code=400)
 
     safe_fields = {k: form[k] for k in _STEP6_WEBSITE_SIMPLE_FIELDS if form.get(k)}
+    # Explicit bool rather than the truthy-only filter above: an unchecked
+    # checkbox sends no form field at all, so this is the only way to let a
+    # customer who opted in turn contact info back off again.
+    safe_fields["website_contact_show"] = bool(form.get("website_contact_show"))
     order_ref.set({**safe_fields, **photo_data}, merge=True)
 
     # If run_early_assets already deployed a default site, redeploy with

@@ -196,6 +196,9 @@
       </div>
       <div>
         <p class="text-gray-300 font-semibold mb-2">Contact</p>
+        {% if contact_phone %}<p><a href="tel:{{ contact_phone }}" class="hover:text-white">{{ contact_phone }}</a></p>{% endif %}
+        {% if contact_email %}<p><a href="mailto:{{ contact_email }}" class="hover:text-white">{{ contact_email }}</a></p>{% endif %}
+        {% if contact_address %}<p class="text-gray-500">{{ contact_address }}</p>{% endif %}
         <a href="#contact" class="text-gray-400 hover:text-white">Send Us a Message</a>
       </div>
       <div>

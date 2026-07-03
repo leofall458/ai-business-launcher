@@ -221,7 +221,13 @@
         <h2 class="display text-3xl font-bold mb-4">Ready When You Are</h2>
         <p class="text-gray-400 mb-8">Reach out — we respond fast.</p>
         <div class="space-y-3 text-gray-300">
+          {% if contact_phone or contact_email or contact_address %}
+          {% if contact_phone %}<p>📞 <a href="tel:{{ contact_phone }}" class="hover:text-white">{{ contact_phone }}</a></p>{% endif %}
+          {% if contact_email %}<p>✉️ <a href="mailto:{{ contact_email }}" class="hover:text-white">{{ contact_email }}</a></p>{% endif %}
+          {% if contact_address %}<p>📍 {{ contact_address }}</p>{% endif %}
+          {% else %}
           <p>Use the form to get in touch — we respond quickly.</p>
+          {% endif %}
         </div>
       </div>
       <form method="post" action="{{ contact_endpoint }}" class="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-3">

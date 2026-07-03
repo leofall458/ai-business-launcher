@@ -105,6 +105,28 @@
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
         </div>
 
+        <div class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-lg p-4">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" id="contact-show" name="website_contact_show" onchange="toggleWebsiteContact()"
+                    {% if order.get('website_contact_show') %}checked{% endif %}
+                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                <span class="text-sm font-semibold text-[#0e2148]">Show contact info on my website</span>
+            </label>
+            <p class="text-xs text-[#0e2148]/45 leading-relaxed mt-2">
+                Optional — only what you enter below is ever shown, in your site's Contact section.
+                We never publish your account email, personal phone, or the address used for LLC
+                filing unless you type it in here yourself.
+            </p>
+            <div id="website-contact-fields" class="{% if not order.get('website_contact_show') %}hidden{% endif %} mt-3 space-y-2">
+                <input name="website_contact_phone" type="text" value="{{ order.get('website_contact_phone', '') }}" placeholder="Business phone (optional)"
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <input name="website_contact_email" type="email" value="{{ order.get('website_contact_email', '') }}" placeholder="Business email (optional)"
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+                <input name="website_contact_address" type="text" value="{{ order.get('website_contact_address', '') }}" placeholder="Business address (optional)"
+                    class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            </div>
+        </div>
+
         <button type="submit"
             class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
             Customize my website →
@@ -119,6 +141,9 @@
             card.classList.toggle('border-[#c9a227]', selected);
             card.classList.toggle('border-[#0e2148]/12', !selected);
         });
+    }
+    function toggleWebsiteContact() {
+        document.getElementById('website-contact-fields').classList.toggle('hidden', !document.getElementById('contact-show').checked);
     }
 </script>
 </body>
