@@ -14,19 +14,19 @@
 <body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
 <div class="max-w-xl mx-auto px-4 sm:px-8">
 
-    <a href="/dashboard/orders/{{ order_id }}/business" class="inline-block text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 transition mb-3">← Back to previous step</a>
+    <a href="/dashboard/orders/{{ order_id }}/business" class="inline-block text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 transition mb-3">← Back to business details</a>
 
     {% set wizard_step = 4 %}
     {% include "_wizard_progress.html" %}
 
     <div class="text-center mb-6">
-        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Customize your website 🌐</h1>
-        <p class="text-[#0e2148]/55 text-sm">Everything here is optional — leave it blank and our AI will fill it in for you.</p>
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">🌐 Customize Your Website</h1>
+        <p class="text-[#0e2148]/55 text-sm">Tell us about your business and we'll build your website. Leave anything blank and our AI will fill it in.</p>
     </div>
 
-    <a href="/dashboard/orders/{{ order_id }}"
-        class="block text-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-bold py-4 rounded-full text-base transition shadow-md mb-6">
-        Skip — AI will customize for me →
+    <a href="/dashboard/orders/{{ order_id }}/complete"
+        class="block text-center w-full bg-transparent border-2 border-[#c9a227] hover:bg-[#c9a227]/10 text-[#b8860b] font-bold py-4 rounded-full text-base transition mb-6">
+        ⚡ Skip — AI will customize everything for me →
     </a>
 
     {% if website_errors %}
@@ -42,7 +42,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
 
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-2">Template</label>
+            <label class="block text-xs text-[#0e2148]/55 mb-2">🎨 Choose Your Template</label>
             <div class="grid grid-cols-3 gap-2">
                 {% for tmpl, label, desc, gradient in [
                     ('professional','Professional','Clean corporate look','from-slate-700 to-slate-400'),
@@ -60,17 +60,17 @@
         </div>
 
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-1">Tagline <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">✏️ Your Tagline <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
             <input name="website_tagline" type="text" value="{{ order.get('website_tagline', '') }}" placeholder="Premium grooming for busy pet owners"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
         </div>
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-1">Business Description <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">📝 About Your Business <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
             <textarea name="website_description" rows="2" placeholder="What do you do, who do you serve, what makes you special?"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm resize-none focus:border-[#c9a227] focus:outline-none">{{ order.get('website_description', '') }}</textarea>
         </div>
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-1.5">Services <span class="font-normal text-[#0e2148]/35">(up to 3, optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55 mb-1.5">🛠️ Your Services <span class="font-normal text-[#0e2148]/35">(up to 3, optional)</span></label>
             {% for i in [1,2,3] %}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-1.5">
                 <input name="service_{{ i }}_name" type="text" value="{{ order.get('service_' ~ i ~ '_name', '') }}" placeholder="Service {{ i }} name"
@@ -81,12 +81,12 @@
             {% endfor %}
         </div>
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-1">Business Hours <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">🕐 Business Hours <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
             <input name="business_hours" type="text" value="{{ order.get('business_hours', '') }}" placeholder="Monday–Friday 9am–5pm"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2.5 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
         </div>
         <div>
-            <label class="block text-xs text-[#0e2148]/55 mb-1">Photos <span class="font-normal text-[#0e2148]/35">(up to 3, max 5MB each, optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55 mb-1">📸 Photos <span class="font-normal text-[#0e2148]/35">(up to 3, max 5MB each, optional)</span></label>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {% for i in [1,2,3] %}
                 <input name="photo_{{ i }}" type="file" accept="image/jpeg,image/png,image/webp"
@@ -96,12 +96,14 @@
             </div>
         </div>
         <div class="space-y-1.5">
-            <label class="block text-xs text-[#0e2148]/55">Social Media <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
+            <label class="block text-xs text-[#0e2148]/55">📱 Social Media Links <span class="font-normal text-[#0e2148]/35">(optional)</span></label>
             <input name="instagram_url" type="url" value="{{ order.get('instagram_url', '') }}" placeholder="Instagram URL"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
             <input name="facebook_url" type="url" value="{{ order.get('facebook_url', '') }}" placeholder="Facebook URL"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
             <input name="tiktok_url" type="url" value="{{ order.get('tiktok_url', '') }}" placeholder="TikTok URL"
+                class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
+            <input name="linkedin_url" type="url" value="{{ order.get('linkedin_url', '') }}" placeholder="LinkedIn URL"
                 class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-2 text-[#0e2148] placeholder-[#0e2148]/30 text-sm focus:border-[#c9a227] focus:outline-none"/>
         </div>
 
@@ -110,7 +112,7 @@
                 <input type="checkbox" id="contact-show" name="website_contact_show" onchange="toggleWebsiteContact()"
                     {% if order.get('website_contact_show') %}checked{% endif %}
                     class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
-                <span class="text-sm font-semibold text-[#0e2148]">Show contact info on my website</span>
+                <span class="text-sm font-semibold text-[#0e2148]">📞 Show contact info on my website</span>
             </label>
             <p class="text-xs text-[#0e2148]/45 leading-relaxed mt-2">
                 Optional — only what you enter below is ever shown, in your site's Contact section.
@@ -129,9 +131,13 @@
 
         <button type="submit"
             class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25">
-            Customize my website →
+            Save &amp; Continue →
         </button>
     </form>
+
+    <a href="/dashboard/orders/{{ order_id }}/complete" class="block text-center text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 transition mt-4">
+        Skip this step →
+    </a>
 </div>
 
 <script>

@@ -32,7 +32,6 @@
       <nav class="hidden md:flex gap-8 text-sm text-gray-600">
         <a href="#about" class="hover:text-gray-900">About</a>
         <a href="#services" class="hover:text-gray-900">Services</a>
-        <a href="#testimonials" class="hover:text-gray-900">Testimonials</a>
         {% if gallery_photos %}<a href="#gallery" class="hover:text-gray-900">Gallery</a>{% endif %}
         <a href="#contact" class="hover:text-gray-900">Contact</a>
       </nav>
@@ -96,27 +95,6 @@
           </div>
           <h3 class="serif text-lg font-semibold mb-2 text-gray-900">{{ service.name }}</h3>
           <p class="text-sm text-gray-600 leading-relaxed">{{ service.description }}</p>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-
-  <!-- Testimonials -->
-  <!-- Replace these placeholders with real customer testimonials as you collect them. -->
-  <section id="testimonials" class="border-t border-gray-200">
-    <div class="max-w-5xl mx-auto px-6 py-20">
-      <h2 class="serif text-2xl font-bold mb-10 text-gray-900 text-center">What Clients Say</h2>
-      <div class="grid md:grid-cols-3 gap-8">
-        {% for quote, who in [
-          ("Working with " ~ business_name ~ " was a great experience from start to finish. Highly recommend.", "Happy Client"),
-          ("Professional, responsive, and exactly what we needed. We'll be back.", "Satisfied Customer"),
-          ("They took the time to understand what we wanted and delivered.", "Local Business Owner"),
-        ] %}
-        <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
-          <div class="gold-text mb-3 text-lg">★★★★★</div>
-          <p class="text-sm text-gray-600 leading-relaxed italic mb-4">"{{ quote }}"</p>
-          <p class="text-xs font-semibold text-gray-500">— {{ who }}</p>
         </div>
         {% endfor %}
       </div>
@@ -203,11 +181,12 @@
       </div>
       <div>
         <p class="text-gray-300 font-semibold mb-2">Follow Us</p>
-        {% if instagram_url or facebook_url or tiktok_url %}
+        {% if instagram_url or facebook_url or tiktok_url or linkedin_url %}
         <div class="flex gap-4">
           {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="hover:text-white">Instagram</a>{% endif %}
           {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" class="hover:text-white">Facebook</a>{% endif %}
           {% if tiktok_url %}<a href="{{ tiktok_url }}" target="_blank" class="hover:text-white">TikTok</a>{% endif %}
+          {% if linkedin_url %}<a href="{{ linkedin_url }}" target="_blank" class="hover:text-white">LinkedIn</a>{% endif %}
         </div>
         {% else %}
         <p class="text-gray-600">Coming soon</p>

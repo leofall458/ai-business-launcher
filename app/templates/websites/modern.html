@@ -251,11 +251,12 @@
   </section>
 
   <footer class="border-t border-gray-800 py-8 text-center text-xs text-gray-500">
-    {% if instagram_url or facebook_url or tiktok_url %}
+    {% if instagram_url or facebook_url or tiktok_url or linkedin_url %}
     <div class="flex justify-center gap-4 mb-3 text-sm">
       {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="text-gray-400 hover:text-white">Instagram</a>{% endif %}
       {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" class="text-gray-400 hover:text-white">Facebook</a>{% endif %}
       {% if tiktok_url %}<a href="{{ tiktok_url }}" target="_blank" class="text-gray-400 hover:text-white">TikTok</a>{% endif %}
+      {% if linkedin_url %}<a href="{{ linkedin_url }}" target="_blank" class="text-gray-400 hover:text-white">LinkedIn</a>{% endif %}
     </div>
     {% endif %}
     © <span id="year"></span> {{ business_name }} · Built in Virginia

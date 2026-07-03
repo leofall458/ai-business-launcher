@@ -82,6 +82,7 @@ from app.sms import send_admin_sms
 from app.dashboard_auth import (
     create_magic_link, redeem_magic_link, create_session,
     verify_and_touch_session, delete_session, SESSION_ABSOLUTE_SECONDS,
+    BASE_URL as DASHBOARD_BASE_URL,
 )
 from app.dashboard_security import SecurityHeadersMiddleware, make_csrf_token, verify_csrf_token
 
@@ -916,6 +917,7 @@ def run_early_assets(order_id: str):
                     instagram_url=order.get("instagram_url", ""),
                     facebook_url=order.get("facebook_url", ""),
                     tiktok_url=order.get("tiktok_url", ""),
+                    linkedin_url=order.get("linkedin_url", ""),
                     color_preference=order.get("color_preference", "default"),
                     custom_primary_color=order.get("custom_primary_color", ""),
                     payment_link_url=None,  # Added after EIN + Stripe onboarding completes
@@ -1446,6 +1448,7 @@ def run_asset_generation(order_id: str):
                     instagram_url=order.get("instagram_url", ""),
                     facebook_url=order.get("facebook_url", ""),
                     tiktok_url=order.get("tiktok_url", ""),
+                    linkedin_url=order.get("linkedin_url", ""),
                     color_preference=order.get("color_preference", "default"),
                     custom_primary_color=order.get("custom_primary_color", ""),
                     payment_link_url=payment_link_url,
@@ -1526,6 +1529,7 @@ def run_website_regeneration(order_id: str):
             instagram_url=order.get("instagram_url", ""),
             facebook_url=order.get("facebook_url", ""),
             tiktok_url=order.get("tiktok_url", ""),
+            linkedin_url=order.get("linkedin_url", ""),
             color_preference=order.get("color_preference", "default"),
             custom_primary_color=order.get("custom_primary_color", ""),
             payment_link_url=order.get("stripe_payment_link_url"),
@@ -2527,7 +2531,7 @@ _STEP6_WEBSITE_SIMPLE_FIELDS = [
     "website_template", "website_tagline", "website_description",
     "service_1_name", "service_1_desc", "service_2_name", "service_2_desc",
     "service_3_name", "service_3_desc",
-    "business_hours", "instagram_url", "facebook_url", "tiktok_url",
+    "business_hours", "instagram_url", "facebook_url", "tiktok_url", "linkedin_url",
     "color_preference", "custom_primary_color",
     "website_contact_phone", "website_contact_email", "website_contact_address",
 ]
@@ -2601,7 +2605,19 @@ async def dashboard_website_submit(
     if order.get("website_url"):
         background_tasks.add_task(run_website_regeneration, order_id)
 
-    return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
+    return RedirectResponse(url=f"/dashboard/orders/{order_id}/complete", status_code=303)
+
+@app.get("/dashboard/orders/{order_id}/complete", response_class=HTMLResponse)
+async def dashboard_wizard_complete(request: Request, owned: tuple = Depends(get_owned_order)):
+    """Shown once after Step 6 (whether submitted or skipped) - the wizard
+    itself is done at this point, but asset generation is still running in
+    the background, so this buys a beat before sending the customer to
+    their (still-populating) order dashboard and reminds them the magic
+    link in their inbox is the durable way back in, not just this session
+    cookie."""
+    return templates.TemplateResponse(request, "wizard_complete_interstitial.html", {
+        "base_url": DASHBOARD_BASE_URL,
+    })
 
 # ── Auto-save (Steps 4-6) ────────────────────────────────────────────────────
 
@@ -3107,17 +3123,18 @@ async def admin_migrate_to_firebase(background_tasks: BackgroundTasks, authorize
             _site_id = make_site_id(business_name, order_id)
             html = render_website_html(
                 content, business_name,
-                email=order.get("email", ""),
-                phone=order.get("phone", ""),
-                address=order.get("principal_address", ""),
                 template_name=template_name,
                 payment_link_url=order.get("stripe_payment_link_url"),
                 hours=order.get("business_hours"),
                 instagram_url=order.get("instagram_url"),
                 facebook_url=order.get("facebook_url"),
                 tiktok_url=order.get("tiktok_url"),
+                linkedin_url=order.get("linkedin_url"),
                 order_id=order_id,
                 site_url=f"https://{_site_id}.web.app",
+                contact_phone=order.get("website_contact_phone") if order.get("website_contact_show") else None,
+                contact_email=order.get("website_contact_email") if order.get("website_contact_show") else None,
+                contact_address=order.get("website_contact_address") if order.get("website_contact_show") else None,
             )
             deployed = deploy_website(business_name, html, order_id=order_id)
             if deployed:

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You're All Set - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+    {% include "_ga4.html" %}
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen flex items-center justify-center py-12">
+    <div class="max-w-md w-full mx-auto px-6 text-center space-y-4">
+        <div class="eyebrow justify-center mb-1">Launch Bridge LLC</div>
+        <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">🎉 You're all set!</h1>
+        <p class="text-[#0e2148]/65 text-sm">
+            We're building your business package now. This takes about 2-3 minutes.
+        </p>
+        <p class="text-[#0e2148]/65 text-sm">
+            📧 Check your email — we've sent you a link to your dashboard where you can track
+            progress and access everything once it's ready.
+        </p>
+        <p class="text-xs text-[#0e2148]/45">
+            Your dashboard: <a href="{{ base_url }}/dashboard" class="text-[#c9a227] underline">{{ base_url }}/dashboard</a><br/>
+            Enter your email to sign in.
+        </p>
+        <p class="text-[#0e2148]/65 text-sm">
+            We'll also email you when everything is complete.
+        </p>
+        <a href="{{ base_url }}/dashboard" id="continue-link" class="inline-block text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 underline pt-4">
+            Go to sign-in now →
+        </a>
+    </div>
+    <script>
+        setTimeout(() => { window.location.href = document.getElementById('continue-link').href; }, 5000);
+    </script>
+</body>
+</html>

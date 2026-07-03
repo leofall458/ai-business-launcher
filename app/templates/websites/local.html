@@ -102,27 +102,6 @@
   </section>
   {% endif %}
 
-  <!-- Reviews -->
-  <!-- Replace these placeholders with real customer reviews as you collect them. -->
-  <section class="bg-white">
-    <div class="max-w-5xl mx-auto px-6 py-20">
-      <h2 class="display text-3xl font-bold mb-10 text-center" style="color:{{ primary_color }}">What Our Neighbors Say</h2>
-      <div class="grid md:grid-cols-3 gap-6">
-        {% for quote, who in [
-          (business_name ~ " feels like family. We're customers for life.", "Local Regular"),
-          ("So glad we found this place — friendly faces and great service every time.", "Community Member"),
-          ("Exactly the kind of business our neighborhood needed.", "Nearby Resident"),
-        ] %}
-        <div class="bg-orange-50 rounded-2xl p-6 text-center">
-          <div class="text-amber-500 mb-3">⭐⭐⭐⭐⭐</div>
-          <p class="text-sm text-gray-700 leading-relaxed italic mb-3">"{{ quote }}"</p>
-          <p class="text-xs font-bold brown-text">— {{ who }}</p>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-
   <!-- Pay / Book Now -->
   <section class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="display text-3xl font-bold mb-3" style="color:{{ primary_color }}">Ready to Book?</h2>
@@ -148,11 +127,12 @@
           {% if contact_address %}<p>📍 {{ contact_address }}</p>{% endif %}
         </div>
         {% endif %}
-        {% if instagram_url or facebook_url or tiktok_url %}
+        {% if instagram_url or facebook_url or tiktok_url or linkedin_url %}
         <div class="flex gap-5 text-sm font-bold">
           {% if instagram_url %}<a href="{{ instagram_url }}" target="_blank" class="underline">Instagram</a>{% endif %}
           {% if facebook_url %}<a href="{{ facebook_url }}" target="_blank" class="underline">Facebook</a>{% endif %}
           {% if tiktok_url %}<a href="{{ tiktok_url }}" target="_blank" class="underline">TikTok</a>{% endif %}
+          {% if linkedin_url %}<a href="{{ linkedin_url }}" target="_blank" class="underline">LinkedIn</a>{% endif %}
         </div>
         {% endif %}
       </div>
