@@ -444,6 +444,30 @@ def send_website_live_email(order: dict, order_id: str):
     html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
     _send(email, f"Your Business Website is Live! - {business_name}", body, html_body=html)
 
+def send_payment_button_live_email(order: dict, order_id: str, website_url: str):
+    """Sent by stripe_service.check_and_update_website the first time it
+    regenerates the customer's site with a real payment link - distinct
+    from send_website_live_email (Email 6), which fires when the site
+    first goes live, often before Stripe onboarding is even finished."""
+    email = order.get("email", "")
+    name = order.get("full_name", "") or "there"
+    business_name = order.get("business_name", "your business")
+    body = (
+        f"Hi {name},\n\n"
+        f"Your payment button is now live on your website: {website_url}\n\n"
+        "Customers can pay you directly from your site.\n\n"
+        f"Questions? Contact {SUPPORT_EMAIL}.\n\n"
+        "- Launch Bridge LLC"
+    )
+    html_inner = (
+        f"<p>Hi {name},</p>"
+        f"<p>🎉 Your payment button is now live on your website: <a href=\"{website_url}\">{website_url}</a></p>"
+        "<p>Customers can pay you directly from your site.</p>"
+        f"<p>Questions? Contact <a href=\"mailto:{SUPPORT_EMAIL}\">{SUPPORT_EMAIL}</a>.</p>"
+    )
+    html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
+    _send(email, f"Your payment button is now live! - {business_name}", body, html_body=html)
+
 def send_visitor_message_email(business_name: str, visitor_name: str, visitor_email: str, message: str, to_email: str):
     """A lead from a deployed customer website's contact form (see the
     website templates' contact sections) - sent both to our own support

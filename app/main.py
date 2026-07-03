@@ -49,6 +49,7 @@ from app.stripe_service import (
     create_account_link,
     create_pay_what_you_want_payment_link,
     is_account_active,
+    check_and_update_website,
     construct_webhook_event,
 )
 from app.config import LLC_FORMATION_PRICE_CENTS
@@ -227,6 +228,7 @@ async def on_startup():
     # Pure Firestore/KMS work, no Playwright/CDP involved - safe to run
     # everywhere (Cloud Run included), unlike the scheduler above.
     asyncio.create_task(ssn_expiry_scheduler())
+    asyncio.create_task(stripe_activation_scheduler())
     asyncio.create_task(abandoned_cart_scheduler())
 
 # Canonical order of the order state machine. An order's "state" field is
@@ -433,12 +435,15 @@ def compute_timeline(order: dict, state: str) -> list:
     # 5. Stripe Payment Account (created immediately after intake)
     connect_id = order.get("stripe_connect_account_id")
     if connect_id:
-        if is_account_active(connect_id):
+        if order.get("payment_button_live"):
             steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "complete",
-                "description": "✅ Your payment account is active — you can accept payments"})
+                "description": "✅ Payments are live on your website!"})
+        elif is_account_active(connect_id):
+            steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
+                "description": "✅ Your Stripe account is active - adding your payment button to your website now..."})
         else:
             steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
-                "description": "Your Stripe account is ready — finish setup to start accepting payments",
+                "description": "⏳ Complete your Stripe setup to activate payments on your website",
                 "onboarding": True})
     elif intake_done:
         steps.append({"key": "stripe", "name": "Stripe Payment Account", "status": "current",
@@ -1310,6 +1315,34 @@ async def ssn_expiry_scheduler():
             print(f"⚠️ SSN expiry sweep tick failed: {e}")
         await asyncio.sleep(3600)
 
+async def stripe_activation_scheduler():
+    """Runs every hour. check_and_update_website already handles the fast
+    path (payment_button_live already set) as a cheap no-op, so this scans
+    every order rather than needing a composite Firestore index for
+    "has a Stripe account, isn't live yet, and has reached ein_issued" -
+    same tradeoff ssn_expiry_scheduler makes, and order volume is small
+    enough that it's not worth provisioning one.
+
+    This is the backstop, not the primary path: a customer who reopens
+    their dashboard after finishing Stripe onboarding gets picked up
+    immediately by ensure_payment_link + the admin's manual "Check Stripe
+    Status" button - this just catches anyone who doesn't."""
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            for doc in ORDERS.stream():
+                order = doc.to_dict()
+                if not order.get("stripe_connect_account_id") or order.get("payment_button_live"):
+                    continue
+                if not reached(order.get("state", "draft"), "ein_issued"):
+                    continue
+                result = await loop.run_in_executor(None, check_and_update_website, doc.id)
+                if result.get("updated"):
+                    print(f"💳 Payment button activated for order {doc.id}: {result.get('url')}")
+        except Exception as e:
+            print(f"⚠️ Stripe activation sweep tick failed: {e}")
+        await asyncio.sleep(3600)
+
 async def abandoned_cart_scheduler():
     """Runs every 30 minutes. Two separate recovery paths:
 
@@ -2176,7 +2209,7 @@ def _dashboard_order_context(
     }
 
 @app.get("/dashboard/orders/{order_id}", response_class=HTMLResponse)
-async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_order)):
+async def dashboard_order(request: Request, background_tasks: BackgroundTasks, owned: tuple = Depends(get_owned_order)):
     order_ref, order, customer_id = owned
     order_id = order_ref.id
     # A magic link, bookmark, or the order-list resolution above can land
@@ -2187,6 +2220,15 @@ async def dashboard_order(request: Request, owned: tuple = Depends(get_owned_ord
     if next_step:
         return RedirectResponse(url=next_step, status_code=303)
     order = ensure_payment_link(order_ref, order)
+    # Background, not synchronous: a real Gemini call + Firebase deploy is
+    # too slow to block this page load, but firing it here (rather than
+    # waiting for stripe_activation_scheduler's hourly sweep) means a
+    # customer who just finished Stripe onboarding usually sees their
+    # payment button go live within seconds of landing back on this page,
+    # not up to an hour later. check_and_update_website is a fast no-op if
+    # there's nothing to do (no Stripe account, not active yet, or already live).
+    if order.get("stripe_connect_account_id") and not order.get("payment_button_live"):
+        background_tasks.add_task(check_and_update_website, order_id)
     return templates.TemplateResponse(request, "dashboard_order.html", _dashboard_order_context(request, order_ref, order))
 
 # ── Step 3: name selection ──────────────────────────────────────────────────
@@ -3085,6 +3127,36 @@ async def admin_regenerate_website(request: Request, order_id: str, authorized: 
     result = run_website_regeneration(order_id)
     return templates.TemplateResponse(request, "_admin_regenerate_result.html", {
         "order_id": order_id, **result,
+    })
+
+@app.get("/admin/{order_id}/stripe-check-button", response_class=HTMLResponse)
+async def admin_stripe_check_button(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    return templates.TemplateResponse(request, "_admin_stripe_check_button.html", {"order_id": order_id})
+
+@app.post("/admin/{order_id}/check-stripe-status", response_class=HTMLResponse)
+async def admin_check_stripe_status(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    """Manual trigger for check_and_update_website - same idempotent
+    Stripe-check-then-regenerate as the hourly stripe_activation_scheduler,
+    just synchronous so the admin sees the real result immediately instead
+    of waiting up to an hour."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return templates.TemplateResponse(request, "_admin_stripe_check_result.html", {
+            "order_id": order_id, "message": "❌ Order not found.",
+        })
+
+    result = check_and_update_website(order_id)
+    if result.get("updated"):
+        message = f"✅ Payments active - website updated: {result['url']}"
+    elif not order.get("stripe_connect_account_id"):
+        message = "⏳ No Stripe account yet for this order."
+    elif order.get("payment_button_live"):
+        message = "✅ Payments active - website updated"
+    else:
+        message = "⏳ Customer hasn't completed Stripe setup yet"
+    return templates.TemplateResponse(request, "_admin_stripe_check_result.html", {
+        "order_id": order_id, "message": message,
     })
 
 @app.get("/admin/migrate-assets", response_class=HTMLResponse)

@@ -1,7 +1,15 @@
 import stripe
-from app.config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS
+from google.cloud import firestore
+from app.config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS, FIREBASE_PROJECT_ID, ORDERS_COLLECTION
 
 stripe.api_key = STRIPE_SECRET_KEY
+
+# Own Firestore client (same pattern as app/dashboard_auth.py) so
+# check_and_update_website can look up an order without app.main having to
+# import this module in a circular loop - main.py already imports several
+# functions from here at module load time.
+_db = firestore.Client(project=FIREBASE_PROJECT_ID)
+_ORDERS = _db.collection(ORDERS_COLLECTION)
 
 def construct_webhook_event(payload: bytes, sig_header: str):
     """Verifies the Stripe-Signature header against the raw request body
@@ -146,3 +154,67 @@ def create_pay_what_you_want_payment_link(connect_account_id: str, business_name
         stripe_account=connect_account_id,
     )
     return payment_link.url
+
+def check_and_update_website(order_id: str) -> dict:
+    """Checks whether a customer's connected Stripe account has finished
+    onboarding (charges_enabled) and, if so, makes sure their live website
+    actually shows a working payment button - not just that Firestore has
+    a payment link on file.
+
+    Reuses create_pay_what_you_want_payment_link (a customer-priced "pay
+    what you want" link scoped to the customer's own connected account,
+    already used elsewhere in this codebase) rather than creating a
+    separate fixed-price Payment Link on the platform account - a flat,
+    unexplained $100 charge makes no sense for most of these businesses,
+    and having two different payment-link mechanisms for the same button
+    would be confusing and easy to get out of sync.
+
+    Idempotent via the payment_button_live flag: once the website has
+    actually been regenerated with a real payment link, later calls (e.g.
+    the hourly scheduler, or the admin's manual check) are a fast no-op
+    instead of re-running Gemini + a Firebase deploy every time.
+
+    Returns {"updated": bool, "url"/"reason": ...} - callers (the hourly
+    scheduler, the admin "Check Stripe Status" button) use this to report
+    what happened without needing to know the internals."""
+    order_ref = _ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return {"updated": False, "reason": "Order not found."}
+
+    connect_id = order.get("stripe_connect_account_id")
+    if not connect_id:
+        return {"updated": False, "reason": "No Stripe account yet."}
+
+    if order.get("payment_button_live"):
+        return {"updated": False, "reason": "Already up to date."}
+
+    if not is_account_active(connect_id):
+        return {"updated": False, "reason": "Customer hasn't completed Stripe setup yet."}
+
+    payment_link_url = order.get("stripe_payment_link_url")
+    if not payment_link_url:
+        try:
+            payment_link_url = create_pay_what_you_want_payment_link(connect_id, order.get("business_name", ""))
+            order_ref.set({"stripe_payment_link_url": payment_link_url}, merge=True)
+            order["stripe_payment_link_url"] = payment_link_url
+        except Exception as e:
+            return {"updated": False, "reason": f"Could not create payment link: {e}"}
+
+    # Deferred import: app.main imports several functions from this module
+    # at load time, so importing it back at the top of this file would be
+    # a circular import. By the time this function actually runs, both
+    # modules have finished loading.
+    from app.main import run_website_regeneration
+    result = run_website_regeneration(order_id)
+    if not result.get("success"):
+        return {"updated": False, "reason": result.get("error", "Website regeneration failed.")}
+
+    order_ref.set({"payment_button_live": True}, merge=True)
+    from app.email_service import send_payment_button_live_email
+    try:
+        send_payment_button_live_email(order, order_id, result["url"])
+    except Exception as e:
+        print(f"⚠️ Could not send payment-button-live email for order {order_id}: {e}")
+
+    return {"updated": True, "url": result["url"]}

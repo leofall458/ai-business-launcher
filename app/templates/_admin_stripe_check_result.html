@@ -1,0 +1,11 @@
+<div id="stripe-check-area-{{ order_id }}">
+    <div class="bg-white border border-[#0e2148]/10 rounded-lg p-3 text-sm text-[#0e2148] flex items-center justify-between gap-3 flex-wrap">
+        <span>{{ message }}</span>
+        <button type="button"
+            hx-get="/admin/{{ order_id }}/stripe-check-button"
+            hx-target="#stripe-check-area-{{ order_id }}" hx-swap="outerHTML"
+            class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline whitespace-nowrap">
+            Check again
+        </button>
+    </div>
+</div>

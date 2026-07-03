@@ -170,6 +170,10 @@
                     {% with order_id = order.id %}{% include "_admin_regenerate_button.html" %}{% endwith %}
                     {% endif %}
 
+                    {% if order.stripe_connect_account_id and not order.payment_button_live %}
+                    {% with order_id = order.id %}{% include "_admin_stripe_check_button.html" %}{% endwith %}
+                    {% endif %}
+
                     <a href="/admin/{{ order.id }}/view-dashboard" target="_blank"
                         class="bg-[#0e2148] hover:bg-[#0e2148]/90 text-white text-sm font-semibold px-4 py-2 rounded-lg transition self-center">
                         View Customer Dashboard →
