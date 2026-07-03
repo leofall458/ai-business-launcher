@@ -48,10 +48,16 @@
                         {{ step.description }}
                     </p>
                     {% if step.url %}
-                    <a href="{{ step.url }}" target="_blank"
-                        class="inline-block mt-2 text-xs font-semibold bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] px-3 py-1.5 rounded-full transition">
-                        View Website →
-                    </a>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <a href="{{ step.url }}" target="_blank"
+                            class="inline-block text-xs font-semibold bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] px-3 py-1.5 rounded-full transition">
+                            View Website →
+                        </a>
+                        <a href="/dashboard/orders/{{ order_id }}/download-website"
+                            class="inline-block text-xs font-semibold bg-white border border-[#0e2148]/20 hover:border-[#c9a227] text-[#0e2148] px-3 py-1.5 rounded-full transition">
+                            ⬇ Download Code
+                        </a>
+                    </div>
                     {% endif %}
                     {% if step.onboarding and onboarding_url %}
                     <a href="{{ onboarding_url }}"
