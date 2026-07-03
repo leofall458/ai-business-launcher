@@ -156,13 +156,30 @@
                 if (c.types.includes('postal_code')) zip = c.long_name;
                 if (c.types.includes('administrative_area_level_2')) county = c.long_name.replace(/ County$/, '');
             }
-            if (streetNumber && route) input.value = `${streetNumber} ${route}`;
+            // Setting .value directly doesn't fire the change/keyup events
+            // htmx's autosave listens for, so without dispatching one here
+            // the last thing actually saved to the order is whatever was
+            // typed before a suggestion was picked (e.g. a partial/misspelled
+            // street name), not the corrected address below.
+            if (streetNumber && route) {
+                input.value = `${streetNumber} ${route}`;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
             const cityEl = document.getElementById('address-city');
             const zipEl = document.getElementById('address-zip');
             const countyEl = document.getElementById('address-county');
-            if (cityEl && city) cityEl.value = city;
-            if (zipEl && zip) zipEl.value = zip;
-            if (countyEl && county) countyEl.value = county;
+            if (cityEl && city) {
+                cityEl.value = city;
+                cityEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (zipEl && zip) {
+                zipEl.value = zip;
+                zipEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (countyEl && county) {
+                countyEl.value = county;
+                countyEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         });
     }
 </script>
