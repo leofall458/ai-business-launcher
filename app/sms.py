@@ -15,11 +15,20 @@ background task (payment, filing, EIN) that triggered the alert.
 import smtplib
 from email.message import EmailMessage
 
-from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, ADMIN_PHONE_EMAIL
+from app.config import APP_ENV, GMAIL_USER, GMAIL_APP_PASSWORD, ADMIN_PHONE_EMAIL
 
 SMS_MAX_LENGTH = 160
 
 def send_admin_sms(message: str) -> bool:
+    # Every admin text gets an environment tag so a staging test never gets
+    # mistaken for a real customer/payment - callers that already build
+    # their own [LIVE]/[TEST] wording (see the payment-confirmed and
+    # signup-complete alerts in main.py) are left alone rather than tagged
+    # twice.
+    if "[LIVE]" not in message and "[TEST]" not in message:
+        prefix = "🧪 [TEST] " if APP_ENV == "staging" else "💰 [LIVE] "
+        message = prefix + message
+
     if not GMAIL_USER or not GMAIL_APP_PASSWORD or not ADMIN_PHONE_EMAIL:
         print(f"⚠️ Admin SMS not configured - skipping alert: {message}")
         return False

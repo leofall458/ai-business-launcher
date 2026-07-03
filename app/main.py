@@ -1709,10 +1709,16 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     # post-payment) - business_idea is the only descriptive field known
     # this early, captured back at Step 1.
     amount_paid = FOUNDING_MEMBER_PRICE_CENTS // 100 if order.get("founding_member") else LLC_FORMATION_PRICE_CENTS // 100
-    send_admin_sms(
-        f"💰 New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
-        f"Order: {order_id[:8]}. Admin: app.launchbridge.ai/admin"
-    )
+    if APP_ENV == "staging":
+        send_admin_sms(
+            f"🧪 [TEST] New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
+            "Staging order - not real money."
+        )
+    else:
+        send_admin_sms(
+            f"💰 [LIVE] New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
+            f"Order: {order_id[:8]}. Admin: app.launchbridge.ai/admin"
+        )
 
     # Check if this is the 10th founding member — if so, notify admin that
     # the discount period has ended and future checkouts revert to $350.
@@ -2487,11 +2493,18 @@ async def dashboard_business_submit(
     record_state(order_ref, "intake_complete")
 
     updated_order = order_ref.get().to_dict()
-    send_admin_sms(
-        f"📋 Signup complete! {updated_order.get('business_name', '')} - "
-        f"{updated_order.get('first_name', '')} {updated_order.get('last_name', '')} finished all steps. "
-        f"Ready to file. Admin: app.launchbridge.ai/admin"
-    )
+    if APP_ENV == "staging":
+        send_admin_sms(
+            f"🧪 [TEST] Signup complete! {updated_order.get('business_name', '')} - "
+            f"{updated_order.get('first_name', '')} {updated_order.get('last_name', '')}. "
+            "Staging only - do not file."
+        )
+    else:
+        send_admin_sms(
+            f"📋 [LIVE] Signup complete! {updated_order.get('business_name', '')} - "
+            f"{updated_order.get('first_name', '')} {updated_order.get('last_name', '')} finished all steps. "
+            f"Ready to file. Admin: app.launchbridge.ai/admin"
+        )
 
     # Asset generation starts immediately on intake completion — brand kit,
     # website, docs, and Stripe Connect don't require the SSN or EIN. Name
