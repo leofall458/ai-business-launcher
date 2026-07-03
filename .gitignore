@@ -8,8 +8,6 @@ firebase-adminsdk*.json
 *.key
 .playwright/
 scc_session.json
-gmail_credentials.json
-gmail_token.json
 
 # Debug screenshots from app/scc_llc_filer.py and app/ein_filer.py - these
 # capture real customer data (legal name, address, phone, last-4 SSN) the

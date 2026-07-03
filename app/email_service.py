@@ -262,31 +262,10 @@ def send_llc_approved_email(order: dict, order_id: str, confirmation_number: str
     html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
     return _send(email, f"🎉 Your LLC is Approved! - {business_name}", body, html_body=html)
 
-def forward_scc_approval_email(order: dict, order_id: str) -> bool:
-    """Sent by app/gmail_poller.py the moment it matches a real SCC
-    approval email to an order - distinct from send_llc_approved_email
-    (used by the admin's manual fallback and the hourly name-search
-    poller, see app/check_scc_status.py), which has its own already-
-    shipped wording. This one uses the exact text requested for the
-    email-forwarding flow specifically.
-
-    No longer attaches the certificate - see send_llc_approved_email."""
-    email = order.get("email", "")
-    customer_name = order.get("full_name", "") or "there"
-    url = create_magic_link(email)
-    body = (
-        f"Dear {customer_name}, Great news! Your LLC has been approved by the Virginia State "
-        "Corporation Commission. Your Certificate of Organization is available on your dashboard. "
-        f"Our team will now proceed with your EIN application.\n\n{url}\n\n- Launch Bridge LLC"
-    )
-    html_inner = (
-        f"<p>Dear {customer_name},</p>"
-        "<p>Great news! Your LLC has been approved by the Virginia State Corporation Commission. "
-        "Your Certificate of Organization is available on your dashboard. Our team will now proceed "
-        "with your EIN application.</p>"
-    )
-    html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
-    return _send(email, "Your LLC is approved!", body, html_body=html)
+# Gmail poller removed - SCC approval emails go directly to customers
+# Admin manually marks LLC as approved in the admin dashboard
+# (forward_scc_approval_email, its only caller, was removed with it -
+# send_llc_approved_email above covers the same notification now)
 
 def send_ein_issued_email(order: dict, order_id: str, ein: str):
     """Email 5 (Part 4): sent once the EIN is issued by the IRS (or

@@ -23,10 +23,10 @@ live against the real CIS site (not guessed) before writing this:
   correspondence pages - so it's scraped separately, keyed by entity name.
 
 Cross-references each "Approved" entity name against Firestore orders
-still in filing_submitted - the same target state app/gmail_poller.py
-also watches. Whichever of the two notices a real approval first wins;
-advance_past_filing_confirmed is idempotent, so the other is a safe
-no-op rather than a double-send.
+still in filing_submitted. The admin dashboard's manual "Mark Approved
+by SCC" fallback watches the same target state; advance_past_filing_confirmed
+is idempotent, so whichever notices a real approval first is a safe
+no-op for the other rather than a double-send.
 
 Requires the same local Chrome/CDP access as everything else here (see
 CDP_URL below), so it has to run on this machine, not on Cloud Run.

@@ -990,12 +990,11 @@ def advance_past_filing_confirmed(order_ref, order) -> bool:
     caller should trigger run_asset_generation as a background task.
 
     Idempotent: a no-op if the order has already passed filing_confirmed.
-    Two independent detectors can both notice the same real-world SCC
-    approval - the hourly name-search poller (app/check_scc_status.py)
-    and the 5-minute Gmail poller (app/gmail_poller.py) - and either one
-    might win the race to call this first. Without this guard the loser
-    would re-send the approved/EIN-issued email and re-run asset
-    generation a second time."""
+    The hourly name-search poller (app/check_scc_status.py) and the
+    admin's manual "Mark Approved by SCC" fallback can both notice the
+    same real-world SCC approval and both call this. Without this guard
+    the loser would re-send the approved/EIN-issued email and re-run
+    asset generation a second time."""
     if reached(order.get("state", "draft"), "filing_confirmed"):
         return False
 
@@ -2776,16 +2775,8 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
     def fmt_datetime(ts) -> str:
         return ts.strftime("%B %-d, %Y %I:%M %p").replace(" 0", " ") if ts else None
 
-    gmail_poller_status = db.collection("system").document("gmail_poller").get().to_dict() or {}
-    gmail_poller_status["last_checked_display"] = fmt_datetime(gmail_poller_status.get("last_checked_at"))
-
-    processed_scc_emails = []
-    email_log_query = db.collection("processed_scc_emails").order_by("processed_at", direction=firestore.Query.DESCENDING).limit(15)
-    for doc in email_log_query.stream():
-        entry = doc.to_dict()
-        entry["id"] = doc.id
-        entry["processed_display"] = fmt_datetime(entry.get("processed_at"))
-        processed_scc_emails.append(entry)
+    # Gmail poller removed - SCC approval emails go directly to customers
+    # Admin manually marks LLC as approved in the admin dashboard
 
     fm_admin_status = get_founding_member_status()
 
@@ -2818,8 +2809,6 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "irs_open": irs_open,
         "irs_next_window_eta": irs_next_window_eta,
         "warning": request.query_params.get("warning"),
-        "gmail_poller_status": gmail_poller_status,
-        "processed_scc_emails": processed_scc_emails,
         "founding_member_count": fm_admin_status["spots_taken"],
         "founding_member_max": FOUNDING_MEMBER_MAX,
         "stats": stats,

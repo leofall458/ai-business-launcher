@@ -35,34 +35,8 @@
         </div>
         {% endif %}
 
-        <!-- Gmail Poller Status -->
-        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap shadow-sm">
-            <div class="flex items-center gap-2 text-sm">
-                {% if gmail_poller_status.last_checked_display %}
-                    {% if gmail_poller_status.status == "error" %}
-                    <span class="text-red-600">🔴 Gmail poller last checked {{ gmail_poller_status.last_checked_display }} - error: {{ gmail_poller_status.last_error }}</span>
-                    {% else %}
-                    <span class="text-emerald-600">🟢 Gmail poller last checked {{ gmail_poller_status.last_checked_display }}</span>
-                    {% endif %}
-                {% else %}
-                <span class="text-[#0e2148]/45">⚪ Gmail poller has not run yet - start it with <code class="text-[#0e2148]/60">python3 -m app.gmail_poller</code></span>
-                {% endif %}
-            </div>
-            {% if processed_scc_emails %}
-            <details class="text-xs">
-                <summary class="text-[#c9a227] cursor-pointer hover:text-[#b8860b]">View {{ processed_scc_emails|length }} processed SCC email{{ "s" if processed_scc_emails|length != 1 else "" }}</summary>
-                <div class="mt-3 space-y-2 max-h-64 overflow-y-auto">
-                    {% for entry in processed_scc_emails %}
-                    <div class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-lg p-2">
-                        <p class="text-[#0e2148]/70">{{ entry.processed_display }} · <span class="{{ 'text-emerald-600' if entry.matched else 'text-amber-600' }}">{{ "Matched" if entry.matched else "No match" }}</span>{% if entry.forwarded %} · <span class="text-emerald-600">Forwarded</span>{% endif %}</p>
-                        <p class="text-[#0e2148]/40 truncate">"{{ entry.subject }}"{% if entry.business_name %} → {{ entry.business_name }}{% endif %}</p>
-                        {% if entry.error %}<p class="text-red-600">{{ entry.error }}</p>{% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-            </details>
-            {% endif %}
-        </div>
+        {# Gmail poller removed - SCC approval emails go directly to customers #}
+        {# Admin manually marks LLC as approved in the admin dashboard #}
 
         <!-- Errors -->
         {% if recent_errors %}
@@ -274,7 +248,7 @@
 
                     {% if order.state == "filing_submitted" %}
                     <div class="w-full bg-[#FAF8F3] border border-dashed border-[#0e2148]/15 rounded-lg p-2 flex items-start gap-2 flex-wrap">
-                        <span class="text-xs text-[#0e2148]/45 whitespace-nowrap">Manual fallback (normally automatic via Gmail poller):</span>
+                        <span class="text-xs text-[#0e2148]/45 whitespace-nowrap">Manual fallback (normally automatic via the SCC status poller):</span>
                         <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2 flex-wrap w-full">
                             <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
                                 value="{{ order.scc_confirmation_number or '' }}" required
