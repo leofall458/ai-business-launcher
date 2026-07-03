@@ -2463,12 +2463,18 @@ async def dashboard_business_submit(
                 safe_fields[f"extra_sig_{suffix}_{i}"] = v
         i += 1
 
+    # skip_ein is first collected here, but awaiting_ssn was already set at
+    # payment time (needs_ssn(order) had no skip_ein to check yet) - clear
+    # it now so a customer who already has an EIN is never asked for an SSN.
+    skip_ein_now = bool(safe_fields.get("skip_ein"))
+
     order_ref.set({**safe_fields, **parsed,
                    "awaiting_intake": False,
                    "intake_at": firestore.SERVER_TIMESTAMP,
                    "intake_complete_at": firestore.SERVER_TIMESTAMP,
                    "consent_signature": True,
-                   "consent_signature_at": firestore.SERVER_TIMESTAMP}, merge=True)
+                   "consent_signature_at": firestore.SERVER_TIMESTAMP,
+                   **({"awaiting_ssn": False} if skip_ein_now else {})}, merge=True)
     record_state(order_ref, "intake_complete")
 
     updated_order = order_ref.get().to_dict()

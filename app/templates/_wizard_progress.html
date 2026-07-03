@@ -1,5 +1,5 @@
-<!-- Shared post-payment step progress bar. Include with:
-     {% set wizard_step = 1 %} (1-5, see WIZARD_STEPS below) before including. -->
+<!-- Shared post-payment step progress bar. Include with wizard_step set to
+     a value 1-5 (see wizard_steps below) before including. -->
 {% set wizard_steps = ["Name", "Your Info", "Business", "Website", "Done"] %}
 <div class="mb-6">
     <p class="text-xs text-[#0e2148]/45 font-semibold mb-2">Step {{ wizard_step }} of {{ wizard_steps|length }}</p>
