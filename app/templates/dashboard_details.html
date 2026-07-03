@@ -6,11 +6,15 @@
     <title>Your Info - Launch Bridge LLC</title>
     {% include "_brand.html" %}
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    {% if google_places_api_key %}
-    <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key={{ google_places_api_key }}&libraries=places&callback=initPlacesAutocomplete">
-    </script>
-    {% endif %}
+    {# Google Places Autocomplete disabled: the Places API isn't enabled for
+       this project's API key (ApiNotActivatedMapError), and the widget's
+       error handling blurs the address input mid-typing when its async
+       predictions request fails - confirmed live, it made the field stop
+       accepting keystrokes after 1-2 characters. That's a Google Cloud
+       Console fix (enable the Places API), not something patchable here -
+       the field works fine as a plain input with native browser
+       autocomplete in the meantime. Re-add the script tag + callback in
+       the head, and initPlacesAutocomplete() below, once that's fixed. #}
     {% include "_ga4.html" %}
     <style>
         .autosave-flash { animation: fadeInOut 2s ease; }
