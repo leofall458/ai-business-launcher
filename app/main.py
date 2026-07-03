@@ -1496,17 +1496,22 @@ def run_asset_generation(order_id: str):
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
 
-def run_website_regeneration(order_id: str):
+def run_website_regeneration(order_id: str) -> dict:
     """Admin-triggered (see /admin/{order_id}/regenerate-website) - unlike
     run_asset_generation, this always re-generates and re-deploys the
     website even if order.website_url is already set, since the whole
     point is to redo a website the admin wasn't happy with. Deliberately
     only touches the website - Stripe Connect/payment link are untouched,
-    so this never risks creating a second Connect account."""
+    so this never risks creating a second Connect account.
+
+    Returns {"success": True, "url": ...} or {"success": False, "error": ...}
+    so the admin's synchronous regenerate button can show a real result -
+    the Firestore side effects below are unchanged and still happen either
+    way, this return value is additive."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
-        return
+        return {"success": False, "error": "Order not found."}
 
     try:
         business_name = order["business_name"]
@@ -1547,12 +1552,17 @@ def run_website_regeneration(order_id: str):
                 "website_url": deployed["url"], "asset_generation_error": firestore.DELETE_FIELD,
             }, merge=True)
             print(f"✅ Website regenerated for order {order_id}: {deployed['url']}")
+            return {"success": True, "url": deployed["url"]}
         else:
+            error = "Could not redeploy your business website - check server logs, then retry."
             print(f"⚠️ Website regeneration deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
-            order_ref.set({"asset_generation_error": "Could not redeploy your business website - check server logs, then retry."}, merge=True)
+            order_ref.set({"asset_generation_error": error}, merge=True)
+            return {"success": False, "error": error}
     except Exception as e:
+        error = f"Website regeneration crashed unexpectedly: {e}. Check server logs."
         print(f"⚠️ Website regeneration crashed for order {order_id}: {e}")
-        order_ref.set({"asset_generation_error": f"Website regeneration crashed unexpectedly: {e}. Check server logs."}, merge=True)
+        order_ref.set({"asset_generation_error": error}, merge=True)
+        return {"success": False, "error": error}
 
 @app.get("/start", response_class=HTMLResponse)
 async def start(request: Request):
@@ -3055,17 +3065,27 @@ async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, a
         background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
-@app.post("/admin/{order_id}/regenerate-website")
-async def admin_regenerate_website(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
+@app.post("/admin/{order_id}/regenerate-website", response_class=HTMLResponse)
+async def admin_regenerate_website(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
     """Force-redeploys just the website, even if one already exists - for
     when the admin isn't happy with what generated and wants a fresh
-    attempt. Never touches Stripe Connect/payment link."""
+    attempt. Never touches Stripe Connect/payment link.
+
+    Synchronous (blocking this one admin request), same as the SCC
+    verify-and-approve button - a real Gemini call plus a Firebase deploy
+    takes real time, which is fine for a single manual click and is the
+    only way to show the admin the actual new URL (or actual error)
+    instead of firing a background task and hoping they refresh later."""
     order_ref = ORDERS.document(order_id)
     if not order_ref.get().exists:
-        return RedirectResponse(url="/admin", status_code=303)
+        return templates.TemplateResponse(request, "_admin_regenerate_result.html", {
+            "order_id": order_id, "success": False, "error": "Order not found.",
+        })
 
-    background_tasks.add_task(run_website_regeneration, order_id)
-    return RedirectResponse(url="/admin", status_code=303)
+    result = run_website_regeneration(order_id)
+    return templates.TemplateResponse(request, "_admin_regenerate_result.html", {
+        "order_id": order_id, **result,
+    })
 
 @app.get("/admin/migrate-assets", response_class=HTMLResponse)
 async def admin_migrate_assets(background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):

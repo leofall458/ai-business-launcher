@@ -167,12 +167,7 @@
                     {% endif %}
 
                     {% if order.website_url %}
-                    <form method="post" action="/admin/{{ order.id }}/regenerate-website">
-                        <button type="submit"
-                            class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                            🔄 Regenerate Website
-                        </button>
-                    </form>
+                    {% with order_id = order.id %}{% include "_admin_regenerate_button.html" %}{% endwith %}
                     {% endif %}
 
                     <a href="/admin/{{ order.id }}/view-dashboard" target="_blank"
