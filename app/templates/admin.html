@@ -125,193 +125,30 @@
             </div>
         </div>
 
-        <div class="space-y-5">
-        {% for order in orders %}
-            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 shadow-sm">
-                <div class="flex items-start justify-between mb-3 gap-3">
-                    <div>
-                        <h2 class="font-serif text-lg font-semibold text-[#0e2148]">{{ order.business_name or "(no business name)" }}</h2>
-                        <p class="text-xs text-[#0e2148]/40 font-mono">{{ order.id }}</p>
-                        {% if order.website_url %}
-                        <a href="{{ order.website_url }}" target="_blank" class="text-xs text-[#c9a227] hover:text-[#b8860b] hover:underline">🌐 {{ order.website_url }}</a>
-                        {% endif %}
-                    </div>
-                    <div class="flex flex-col items-end gap-1 shrink-0">
-                        <span class="bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap" title="Where the customer is in the checkout/dashboard flow — useful for follow-up if they get stuck">
-                            {{ order.step_label }}
-                        </span>
-                        <span class="bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
-                            {{ order.state|default("draft") }}
-                        </span>
-                        {% if order.founding_member %}
-                        <span class="bg-[#c9a227]/15 border border-[#c9a227]/40 text-[#b8860b] text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">💰 Founding Member ($250)</span>
-                        {% endif %}
-                        {% if order.assets_status == "complete" or order.early_assets_done %}
-                        <span class="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ✅ Ready</span>
-                        {% elif order.assets_status == "generating" %}
-                        <span class="bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ⏳ Generating</span>
-                        {% elif order.assets_status == "failed" or order.asset_generation_error %}
-                        <span class="bg-red-50 border border-red-100 text-red-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ❌ Failed</span>
-                        {% elif not order.awaiting_intake %}
-                        <span class="bg-[#0e2148]/5 border border-[#0e2148]/10 text-[#0e2148]/45 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ⏳ Pending</span>
-                        {% endif %}
-                    </div>
-                </div>
+        <div class="flex gap-2 mb-5">
+            <button type="button" id="tab-btn-live" onclick="showOrderTab('live')"
+                class="flex-1 sm:flex-none px-5 py-2.5 rounded-lg text-sm font-bold transition bg-[#0e2148] text-[#c9a227]">
+                Live Orders ({{ live_orders|length }})
+            </button>
+            <button type="button" id="tab-btn-test" onclick="showOrderTab('test')"
+                class="flex-1 sm:flex-none px-5 py-2.5 rounded-lg text-sm font-semibold transition bg-white text-[#0e2148] border border-[#0e2148]/10">
+                Test Orders ({{ test_orders|length }})
+            </button>
+        </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-[#0e2148]/60 mb-4">
-                    <p>Name: <span class="text-[#0e2148] font-medium">{{ order.full_name }}</span></p>
-                    <p>Email: <span class="text-[#0e2148] font-medium">{{ order.email }}</span></p>
-                    <p>Phone: <span class="text-[#0e2148] font-medium">{{ order.phone }}</span></p>
-                    <p>County: <span class="text-[#0e2148] font-medium">{{ order.county }}</span></p>
-                    <p>RA: <span class="text-[#0e2148] font-medium">{{ "Leo Fall" if order.registered_agent_choice|default("launchbridge") == "launchbridge" else "Self" }}</span></p>
-                    {% if order.ein %}
-                    <p>EIN: <span class="text-[#0e2148] font-mono font-medium">{{ order.ein }}</span></p>
-                    {% endif %}
-                    {% if order.scc_confirmation_number %}
-                    <p>SCC Confirmation #: <span class="text-[#0e2148] font-mono font-medium">{{ order.scc_confirmation_number }}</span></p>
-                    {% endif %}
-                </div>
-
-                <div class="flex gap-2 mb-4">
-                    <span class="bg-[#0e2148]/5 border border-[#0e2148]/10 text-[#0e2148]/70 text-xs font-semibold px-3 py-1 rounded-full">
-                        LLC: {{ "Existing" if order.skip_llc_formation else "New" }}
-                    </span>
-                    <span class="bg-[#0e2148]/5 border border-[#0e2148]/10 text-[#0e2148]/70 text-xs font-semibold px-3 py-1 rounded-full">
-                        EIN: {{ "Provided" if order.skip_ein else "Pending" }}
-                    </span>
-                </div>
-
-                {% if order.name_check %}
-                    {% if order.name_check.status == "TAKEN" %}
-                    <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                        <p class="text-xs text-red-600">🚫 Name conflict: {{ order.name_check.message }}</p>
-                    </div>
-                    {% elif order.name_check.status in ("UNAVAILABLE", "UNKNOWN", "ERROR") %}
-                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-                        <p class="text-xs text-amber-700">⚠️ Name unverified — manually check before approving. {{ order.name_check.message }}</p>
-                    </div>
-                    {% endif %}
-                {% endif %}
-
-                {% if order.documents_error %}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-red-600">⚠️ Document generation error: {{ order.documents_error }}</p>
-                </div>
-                {% endif %}
-
-                {% if order.filing_error %}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-red-600">⚠️ Filing error: {{ order.filing_error }}</p>
-                </div>
-                {% endif %}
-
-                {% if order.ein_error %}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-red-600">⚠️ EIN error: {{ order.ein_error }}</p>
-                </div>
-                {% endif %}
-
-                {% if order.asset_generation_error %}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-red-600">⚠️ Asset generation error: {{ order.asset_generation_error }}</p>
-                </div>
-                {% endif %}
-
-                {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and order.ein_status == "queued" %}
-                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-indigo-700">⏳ EIN queued - IRS opens {{ order.next_available_window_eta }}. Will auto-submit then.</p>
-                </div>
-                {% endif %}
-
-                {% if order.ein_submitted_to_irs and order.state in ("filing_confirmed", "awaiting_ein_filing") %}
-                <div class="bg-red-50 border border-red-300 rounded-lg p-3 mb-3">
-                    <p class="text-xs text-red-700">🚫 A real EIN was already submitted to the IRS for this order but the number wasn't read back automatically - check the screenshot/email, then enter it below. Do NOT click Apply for EIN again.</p>
-                </div>
-                {% endif %}
-
-                {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and not order.skip_ein and not order.ein and not order.ein_submitted_to_irs and order.ein_status != "queued" and irs_open %}
-                <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
-                    <p class="text-xs text-emerald-700">🔔 EIN ready to file for {{ order.business_name }}</p>
-                    <form method="post" action="/admin/{{ order.id }}/apply-ein">
-                        <button type="submit"
-                            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap">
-                            Apply for EIN →
-                        </button>
-                    </form>
-                </div>
-                {% endif %}
-
-                <div class="flex flex-wrap gap-2 pt-2 border-t border-[#0e2148]/10">
-                    {% if not order.skip_llc_formation %}
-                    {% with order_id = order.id %}{% include "_admin_approve_button.html" %}{% endwith %}
-
-                    {% if order.state == "filing_submitted" %}
-                    <div class="w-full bg-[#FAF8F3] border border-dashed border-[#0e2148]/15 rounded-lg p-2 flex items-start gap-2 flex-wrap">
-                        <span class="text-xs text-[#0e2148]/45 whitespace-nowrap">Manual fallback (normally automatic via the SCC status poller):</span>
-                        <form method="post" action="/admin/{{ order.id }}/mark-filed" class="flex gap-2 flex-wrap w-full">
-                            <input name="scc_confirmation_number" type="text" placeholder="SCC confirmation # (required)"
-                                value="{{ order.scc_confirmation_number or '' }}" required
-                                class="bg-white border border-[#0e2148]/20 rounded-lg px-3 py-2 text-sm text-[#0e2148] placeholder-[#0e2148]/30 flex-1 min-w-0"/>
-                            <button type="submit"
-                                class="bg-[#0e2148] hover:bg-[#0e2148]/90 text-white text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap w-full sm:w-auto">
-                                Mark Approved by SCC
-                            </button>
-                        </form>
-                    </div>
-                    {% endif %}
-                    {% endif %}
-
-                    {% if order.state in ("filing_confirmed", "awaiting_ein_filing") and not order.skip_ein and not order.ein_submitted_to_irs %}
-                        {% if irs_open %}
-                        <form method="post" action="/admin/{{ order.id }}/apply-ein">
-                            <button type="submit"
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                                Apply for EIN
-                            </button>
-                        </form>
-                        {% else %}
-                        <button type="button" disabled title="IRS EIN assistant is closed right now"
-                            class="bg-[#0e2148]/10 text-[#0e2148]/40 text-sm font-semibold px-4 py-2 rounded-lg cursor-not-allowed whitespace-nowrap">
-                            IRS opens {{ irs_next_window_eta }}
-                        </button>
-                        {% endif %}
-                    {% endif %}
-
-                    <form method="post" action="/admin/{{ order.id }}/mark-ein" class="flex gap-2 flex-wrap">
-                        <input name="ein" type="text" placeholder="XX-XXXXXXX" value="{{ order.ein or '' }}"
-                            class="bg-white border border-[#0e2148]/20 rounded-lg px-3 py-2 text-sm text-[#0e2148] placeholder-[#0e2148]/30 flex-1 min-w-0"/>
-                        <button type="submit"
-                            class="bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] text-sm font-semibold px-4 py-2 rounded-lg transition whitespace-nowrap w-full sm:w-auto">
-                            Mark EIN Received
-                        </button>
-                    </form>
-
-                    {% if order.documents_error or order.asset_generation_error or order.assets_status == "failed" %}
-                    <form method="post" action="/admin/{{ order.id }}/retry-agents">
-                        <button type="submit"
-                            class="bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                            🔁 Retry Assets
-                        </button>
-                    </form>
-                    {% endif %}
-
-                    {% if order.website_url %}
-                    <form method="post" action="/admin/{{ order.id }}/regenerate-website">
-                        <button type="submit"
-                            class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-                            🔄 Regenerate Website
-                        </button>
-                    </form>
-                    {% endif %}
-
-                    <a href="/admin/{{ order.id }}/view-dashboard" target="_blank"
-                        class="bg-[#0e2148] hover:bg-[#0e2148]/90 text-white text-sm font-semibold px-4 py-2 rounded-lg transition self-center">
-                        View Customer Dashboard →
-                    </a>
-                </div>
-            </div>
+        <div id="live-orders" class="space-y-5">
+        {% for order in live_orders %}
+            {% include "_admin_order_card.html" %}
         {% else %}
-            <p class="text-[#0e2148]/40 text-sm">No orders yet.</p>
+            <p class="text-[#0e2148]/40 text-sm">No live orders yet.</p>
+        {% endfor %}
+        </div>
+
+        <div id="test-orders" class="space-y-5 hidden">
+        {% for order in test_orders %}
+            {% include "_admin_order_card.html" %}
+        {% else %}
+            <p class="text-[#0e2148]/40 text-sm">No test orders.</p>
         {% endfor %}
         </div>
 
@@ -325,5 +162,27 @@
         </div>
 
     </div>
+    <script>
+        function showOrderTab(tab) {
+            const showLive = tab === 'live';
+            document.getElementById('live-orders').classList.toggle('hidden', !showLive);
+            document.getElementById('test-orders').classList.toggle('hidden', showLive);
+
+            const activeClasses = ['bg-[#0e2148]', 'text-[#c9a227]'];
+            const inactiveClasses = ['bg-white', 'text-[#0e2148]', 'border', 'border-[#0e2148]/10'];
+            const liveBtn = document.getElementById('tab-btn-live');
+            const testBtn = document.getElementById('tab-btn-test');
+            const activeBtn = showLive ? liveBtn : testBtn;
+            const inactiveBtn = showLive ? testBtn : liveBtn;
+            activeBtn.classList.remove(...inactiveClasses);
+            activeBtn.classList.add(...activeClasses);
+            activeBtn.classList.add('font-bold');
+            activeBtn.classList.remove('font-semibold');
+            inactiveBtn.classList.remove(...activeClasses);
+            inactiveBtn.classList.add(...inactiveClasses);
+            inactiveBtn.classList.add('font-semibold');
+            inactiveBtn.classList.remove('font-bold');
+        }
+    </script>
 </body>
 </html>

@@ -2760,6 +2760,20 @@ async def connect_onboard(owned: tuple = Depends(get_owned_order)):
     )
     return RedirectResponse(url=url)
 
+_TEST_EMAIL_MARKERS = ("test", "example", "e2e")
+
+def _is_test_order(order: dict) -> bool:
+    """True for orders the admin dashboard should file under "Test Orders"
+    rather than "Live Orders": never-completed checkouts (draft),
+    payments that failed outright, or anything with a giveaway email
+    (our own e2e/test-script runs, or *@example.com placeholders) -
+    regardless of state, since a test script can still walk an order all
+    the way to "complete"."""
+    if order.get("state") in ("draft", "payment_failed"):
+        return True
+    email = (order.get("email") or "").lower()
+    return any(marker in email for marker in _TEST_EMAIL_MARKERS)
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, authorized: bool = Depends(verify_admin)):
     orders = []
@@ -2769,6 +2783,12 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         order["id"] = doc.id
         order["step_label"] = step_label(order)
         orders.append(order)
+
+    # Every order lands in exactly one tab: test_orders is the actual
+    # predicate, live_orders is everything else - not two independently
+    # overlapping filters - so the two counts always add up to len(orders).
+    test_orders = [o for o in orders if _is_test_order(o)]
+    live_orders = [o for o in orders if not _is_test_order(o)]
 
     # ── Analytics stats from Firestore ────────────────────────────────────
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -2839,6 +2859,8 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
 
     return templates.TemplateResponse(request, "admin.html", {
         "orders": orders,
+        "live_orders": live_orders,
+        "test_orders": test_orders,
         "irs_open": irs_open,
         "irs_next_window_eta": irs_next_window_eta,
         "warning": request.query_params.get("warning"),
