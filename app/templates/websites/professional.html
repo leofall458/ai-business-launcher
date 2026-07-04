@@ -11,7 +11,11 @@
 {% if hero_image_url %}<meta property="og:image" content="{{ hero_image_url }}">{% endif %}
 {% if site_url %}<meta property="og:url" content="{{ site_url }}">
 <link rel="canonical" href="{{ site_url }}/">{% endif %}
+{% if favicon_data_uri %}
+<link rel="icon" type="image/svg+xml" href="{{ favicon_data_uri }}">
+{% else %}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='{{ primary_color }}'/><text y='.9em' font-size='70' x='50%' text-anchor='middle' dominant-baseline='auto' fill='white' font-family='sans-serif'>{{ business_name[0] | upper }}</text></svg>">
+{% endif %}
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -46,7 +50,13 @@
   <!-- Sticky Nav -->
   <header class="sticky top-0 z-50 navy-bg shadow-md">
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      {% if logo_data_uri %}
+      <span class="bg-white/95 rounded-md px-3 py-1.5 inline-flex items-center">
+        <img src="{{ logo_data_uri }}" alt="{{ business_name }}" class="h-8 w-auto"/>
+      </span>
+      {% else %}
       <span class="serif text-xl font-bold gold-text">{{ business_name }}</span>
+      {% endif %}
       <nav class="hidden md:flex items-center gap-8 text-sm text-white/90">
         <a href="#about" class="hover:text-white transition">About</a>
         <a href="#services" class="hover:text-white transition">Services</a>
@@ -71,6 +81,11 @@
     {% if hero_image_url %}style="background-image:url('{{ hero_image_url }}');"{% else %}style="background: linear-gradient(135deg, {{ primary_color }} 0%, #0c1a2b 100%);"{% endif %}>
     <div class="absolute inset-0" style="background: linear-gradient(180deg, rgba(14,33,72,0.88) 0%, rgba(14,33,72,0.78) 50%, rgba(14,33,72,0.92) 100%);"></div>
     <div class="max-w-4xl mx-auto relative z-10 px-6 py-28 md:py-40">
+      {% if logo_data_uri %}
+      <div class="inline-block bg-white/95 rounded-lg px-5 py-3 mb-6">
+        <img src="{{ logo_data_uri }}" alt="{{ business_name }}" class="h-16 w-auto mx-auto"/>
+      </div>
+      {% endif %}
       <p class="text-sm font-semibold tracking-[0.2em] uppercase mb-5 gold-text">{{ service_area }}</p>
       <h1 class="serif text-4xl md:text-6xl font-bold leading-tight mb-2 text-white">{{ business_name }}</h1>
       <div class="w-20 h-1 gold-bg mx-auto my-6 rounded-full"></div>
@@ -248,7 +263,11 @@
   <footer class="bg-[#0a1730] text-gray-400 py-12 border-t border-white/10">
     <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-3 gap-8 text-sm">
       <div>
+        {% if logo_data_uri %}
+        <img src="{{ logo_data_uri }}" alt="{{ business_name }}" class="h-10 w-auto mb-2" style="filter: brightness(0) invert(1);"/>
+        {% else %}
         <p class="serif text-lg font-semibold gold-text mb-2">{{ business_name }}</p>
+        {% endif %}
         <p class="text-gray-500">{{ tagline }}</p>
       </div>
       <div>

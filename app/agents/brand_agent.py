@@ -1,4 +1,6 @@
+import base64
 import json
+import xml.etree.ElementTree as ET
 from google.genai import types
 from app.agents import get_client
 from app.agents.brand_pdf import build_brand_kit_pdf
@@ -133,6 +135,153 @@ def _generate_logo_svg(business_name: str, business_idea: str, primary_hex: str,
     except Exception as e:
         print(f"⚠️ Logo generation failed (non-fatal, falling back to a generated monogram): {e}")
         return ""
+
+def _is_well_formed_svg(svg: str) -> bool:
+    """Gemini's plain-text output can look right at a glance (starts with
+    <svg, ends with </svg>) while still being truncated or malformed mid-
+    document - actually parsing it as XML catches that before it ever
+    reaches a browser."""
+    try:
+        ET.fromstring(svg)
+        return True
+    except ET.ParseError:
+        return False
+
+def _generate_svg_from_prompt(prompt: str) -> str:
+    """Shared plain-text-call-then-validate path for every logo/favicon
+    variant below - same non-blocking philosophy as _generate_logo_svg:
+    returns "" on any failure rather than ever raising, so a bad logo
+    response can never block the rest of website/asset generation."""
+    try:
+        client = get_client()
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        svg = _strip_code_fence(response.text or "")
+        if svg.startswith("<svg") and svg.endswith("</svg>") and _is_well_formed_svg(svg):
+            return svg
+        print("⚠️ Gemini logo response wasn't valid SVG markup.")
+    except Exception as e:
+        print(f"⚠️ Logo SVG generation failed: {e}")
+    return ""
+
+def generate_logo(business_name: str, primary_color: str, secondary_color: str, industry: str = "") -> str:
+    """Wide-format (400x120) SVG logo with an icon AND the business name
+    text, meant to actually be embedded on the customer's live website
+    (nav/hero/footer) - distinct from _generate_logo_svg's icon-only
+    monogram (200x200, no text), which stays as-is for the downloadable
+    brand kit PDF. Takes the website's own resolved primary/secondary
+    colors (whatever color_preference the customer picked - default,
+    brand_kit, or custom) rather than brand_agent's independently-chosen
+    palette, so the logo always visually matches the actual site it
+    appears on."""
+    display_name = _strip_entity_suffix(business_name)
+    prompt = f"""
+    Create a professional SVG logo for {business_name}.
+    Industry: {industry or "general small business"}
+    Primary color: {primary_color}
+    Secondary color: {secondary_color}
+
+    Requirements:
+    - Clean, modern, professional design
+    - Must work at small sizes (favicon) and large sizes (header)
+    - Include both an icon/symbol AND the business name text
+    - Icon should be simple and memorable - geometric shapes, initials, or simple symbol
+    - Use the provided colors
+    - SVG viewBox should be "0 0 400 120" (wide format for headers)
+    - Use "{display_name}" as the logo text (not the full legal name with its entity
+      suffix - real logos almost never include "LLC"/"Inc"/etc.), in a clean sans-serif
+      font. "{display_name}" is {len(display_name)} characters - pick a font-size small
+      enough that it fits within the viewBox width without being clipped (estimate
+      roughly 0.6x font-size per character, leaving room for the icon). Never let text
+      extend past x="390"
+    - Return ONLY the SVG code, nothing else, no markdown fences, no explanation
+    """
+    return _generate_svg_from_prompt(prompt)
+
+def generate_logo_square(business_name: str, primary_color: str, secondary_color: str, industry: str = "") -> str:
+    """Square format (icon above name) - fits a compact card or square
+    social-profile-style placement better than the wide horizontal logo."""
+    display_name = _strip_entity_suffix(business_name)
+    prompt = f"""
+    Create a professional SVG logo for {business_name}, square/stacked layout.
+    Industry: {industry or "general small business"}
+    Primary color: {primary_color}
+    Secondary color: {secondary_color}
+
+    Requirements:
+    - SVG viewBox should be "0 0 240 280" (tall square format)
+    - Icon/symbol centered near the top, "{display_name}" centered below it as the logo
+      text (not the full legal name with its entity suffix - real logos almost never
+      include "LLC"/"Inc"/etc.), sized to fit within the viewBox width without clipping
+    - Clean, modern, professional design using the provided colors
+    - Icon should be simple and memorable - geometric shapes, initials, or simple symbol
+    - Return ONLY the SVG code, nothing else, no markdown fences, no explanation
+    """
+    return _generate_svg_from_prompt(prompt)
+
+def _strip_entity_suffix(business_name: str) -> str:
+    """Every business name in this app ends in a mandatory entity suffix
+    (LLC, and occasionally Inc/Corp for pre-existing entities) - real logos
+    (and initials derived from them) almost never include it, so every
+    logo/favicon/initials generator works from this stripped display name
+    instead of the full legal name."""
+    import re
+    name = re.sub(r"\b(LLC|L\.L\.C\.|Inc|Incorporated|Corp|Corporation|Co)\.?\s*$", "", business_name, flags=re.IGNORECASE).strip()
+    return name or business_name
+
+def _initials(business_name: str) -> str:
+    name = _strip_entity_suffix(business_name)
+    letters = [w[0].upper() for w in name.split() if w and w[0].isalpha()]
+    return "".join(letters[:3]) or (business_name[:1].upper() or "?")
+
+def generate_logo_initials(business_name: str, primary_color: str, secondary_color: str) -> str:
+    """Compact initials-only mark - the tightest format, good for
+    favicon-adjacent use or anywhere the full name doesn't fit."""
+    initials = _initials(business_name)
+    prompt = f"""
+    Create a simple, professional SVG monogram logo using the initials "{initials}"
+    for a business called {business_name}.
+    Primary color: {primary_color}
+    Secondary color: {secondary_color}
+
+    Requirements:
+    - SVG viewBox should be "0 0 120 120" (compact square format)
+    - Just the initials "{initials}" in a clean geometric mark (a circle, rounded
+      square, or simple shape) - no other text
+    - Must be legible at very small sizes
+    - Return ONLY the SVG code, nothing else, no markdown fences, no explanation
+    """
+    return _generate_svg_from_prompt(prompt)
+
+def generate_logo_variations(business_name: str, primary_color: str, secondary_color: str, industry: str = "") -> dict:
+    """Generates all 3 logo formats. The website always uses "horizontal"
+    as its embedded logo; "square" and "initials" are stored for the
+    dashboard's brand kit display and future use (e.g. social profile
+    photos) rather than picked between - each format serves a different
+    placement, not a single "best" choice."""
+    return {
+        "horizontal": generate_logo(business_name, primary_color, secondary_color, industry),
+        "square": generate_logo_square(business_name, primary_color, secondary_color, industry),
+        "initials": generate_logo_initials(business_name, primary_color, secondary_color),
+    }
+
+def generate_favicon_svg(business_name: str, primary_color: str) -> str:
+    """Deterministic, no Gemini call needed - a favicon is just the
+    business's first 1-2 initials on a solid rounded square, so there's
+    no reason to pay for/wait on an AI call for it."""
+    initials = _initials(business_name)[:2]
+    return (
+        f'<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">'
+        f'<rect width="32" height="32" rx="6" fill="{primary_color}"/>'
+        f'<text x="16" y="22" font-family="Arial" font-weight="bold" font-size="18" '
+        f'fill="white" text-anchor="middle">{initials}</text></svg>'
+    )
+
+def svg_to_data_uri(svg: str) -> str:
+    """"" in, "" out - callers can pass a possibly-empty generated SVG
+    straight through without a separate truthiness check first."""
+    if not svg:
+        return ""
+    return f"data:image/svg+xml;base64,{base64.b64encode(svg.encode()).decode()}"
 
 def generate_brand_kit(business_name: str, business_idea: str, target_customer: str,
                         full_name: str = "", email: str = "", phone: str = "",

@@ -1,0 +1,11 @@
+<div id="regenerate-logo-area-{{ order_id }}">
+    {% if success %}
+    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-700">
+        ✅ Logo regenerated{% if url %} - website updated: <a href="{{ url }}" target="_blank" class="underline font-semibold">{{ url }}</a>{% endif %}
+    </div>
+    {% else %}
+    <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+        ❌ Failed: {{ error }}
+    </div>
+    {% endif %}
+</div>

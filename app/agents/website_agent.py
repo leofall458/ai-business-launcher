@@ -3,6 +3,7 @@ import json
 from jinja2 import Environment, FileSystemLoader
 from google.genai import types
 from app.agents import get_client
+from app.agents.brand_agent import generate_logo_variations, generate_favicon_svg, svg_to_data_uri
 
 MODEL = "gemini-2.5-flash"
 
@@ -209,7 +210,8 @@ def render_website_html(content: dict, business_name: str,
                          order_id: str = None, site_url: str = None,
                          service_area: str = "Virginia",
                          contact_phone: str = None, contact_email: str = None,
-                         contact_address: str = None) -> str:
+                         contact_address: str = None,
+                         logo_data_uri: str = None, favicon_data_uri: str = None) -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
     caller).
@@ -258,6 +260,8 @@ def render_website_html(content: dict, business_name: str,
         contact_phone=contact_phone,
         contact_email=contact_email,
         contact_address=contact_address,
+        logo_data_uri=logo_data_uri,
+        favicon_data_uri=favicon_data_uri,
     )
 
 def generate_website(
@@ -274,6 +278,7 @@ def generate_website(
     show_contact: bool = False, contact_phone: str = None,
     contact_email: str = None, contact_address: str = None,
     industry: str = None,
+    logo_data_uri: str = None, favicon_data_uri: str = None,
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
@@ -281,6 +286,15 @@ def generate_website(
     Gemini-generated content, field by field rather than all-or-nothing.
     cta_text, faq, differentiators, and why_choose_us have no
     customer-provided equivalent, so Gemini is always called for those.
+
+    logo_data_uri/favicon_data_uri are deliberately inputs here, not
+    generated internally - the logo should stay stable across repeated
+    "Regenerate Website" calls (a business's identity shouldn't change
+    every time someone tweaks a service description), and generating the
+    3 logo variations is its own cacheable step (see brand_agent.
+    generate_logo_variations and main.py's run_logo_regeneration) so an
+    admin can refresh just the logo without paying for/waiting on a full
+    content regeneration.
 
     show_contact gates contact_phone/email/address in one place: unless the
     customer explicitly opted in on the website customization step, all
@@ -324,6 +338,27 @@ def generate_website(
         "secondary_color": secondary_color,
     }
 
+    # Generated once, the first time a website is generated for this order
+    # (logo_data_uri/favicon_data_uri not yet passed in) - a business's
+    # logo shouldn't change every time the website is regenerated, so
+    # every later call (run_website_regeneration, a customer edit) reads
+    # the already-stored value back in via these same params instead of
+    # regenerating. generated_logo is returned below so the first caller
+    # can persist it for all future calls to reuse.
+    generated_logo = None
+    if logo_data_uri is None:
+        logo_variations = generate_logo_variations(business_name, primary_color, secondary_color, industry)
+        favicon_svg = generate_favicon_svg(business_name, primary_color)
+        logo_data_uri = svg_to_data_uri(logo_variations["horizontal"])
+        favicon_data_uri = svg_to_data_uri(favicon_svg)
+        generated_logo = {
+            "logo_svg": logo_variations["horizontal"],
+            "logo_variations": logo_variations,
+            "logo_data_uri": logo_data_uri,
+            "logo_variations_data_uri": {k: svg_to_data_uri(v) for k, v in logo_variations.items()},
+            "favicon_data_uri": favicon_data_uri,
+        }
+
     photos = [p for p in (photos or []) if p]
     html = render_website_html(
         content, business_name,
@@ -343,6 +378,8 @@ def generate_website(
         contact_phone=(contact_phone or "").strip() or None,
         contact_email=(contact_email or "").strip() or None,
         contact_address=(contact_address or "").strip() or None,
+        logo_data_uri=logo_data_uri,
+        favicon_data_uri=favicon_data_uri,
     )
 
-    return {"html": html, "template": template_name, "content": content}
+    return {"html": html, "template": template_name, "content": content, "generated_logo": generated_logo}

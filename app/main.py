@@ -26,7 +26,7 @@ from app.config import (
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name
 from app.agents.llc_agent import generate_llc_paperwork
-from app.agents.brand_agent import generate_brand_kit
+from app.agents.brand_agent import generate_brand_kit, generate_logo_variations, generate_favicon_svg, svg_to_data_uri
 from app.agents.marketing_agent import generate_marketing_plan
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTakenError
@@ -39,7 +39,7 @@ from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTa
 from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
-from app.agents.website_agent import generate_website
+from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS
 from app.deployer import deploy_website, make_site_id, get_website_html
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
@@ -849,6 +849,16 @@ def run_document_generation(order_id: str):
     # field names containing dots) by .update().
     order_ref.update(update)
 
+def _persist_generated_logo(order_ref, result: dict) -> None:
+    """generate_website only actually generates a logo the first time (see
+    its own docstring) and reports that back via result["generated_logo"] -
+    this saves it so every later call reads the same logo back in via
+    order.get("logo_data_uri")/("favicon_data_uri") instead of generating a
+    new one. A no-op on every regeneration after the first."""
+    generated_logo = result.get("generated_logo")
+    if generated_logo:
+        order_ref.set(generated_logo, merge=True)
+
 def run_early_assets(order_id: str):
     """Triggered immediately after Step 5 (business details) is submitted.
     The business name is already cleared by Step 3 at this point. Generates
@@ -932,11 +942,14 @@ def run_early_assets(order_id: str):
                     contact_phone=order.get("website_contact_phone", ""),
                     contact_email=order.get("website_contact_email", ""),
                     contact_address=order.get("website_contact_address", ""),
+                    logo_data_uri=order.get("logo_data_uri"),
+                    favicon_data_uri=order.get("favicon_data_uri"),
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
                     website_url = deployed["url"]
                     order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
+                    _persist_generated_logo(order_ref, result)
                 else:
                     print(f"⚠️ Early website deploy returned no URL for order {order_id}")
                     asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
@@ -1491,11 +1504,14 @@ def run_asset_generation(order_id: str):
                     contact_phone=order.get("website_contact_phone", ""),
                     contact_email=order.get("website_contact_email", ""),
                     contact_address=order.get("website_contact_address", ""),
+                    logo_data_uri=order.get("logo_data_uri"),
+                    favicon_data_uri=order.get("favicon_data_uri"),
                 )
                 deployed = deploy_website(business_name, result["html"], order_id=order_id)
                 if deployed:
                     website_url = deployed["url"]
                     order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
+                    _persist_generated_logo(order_ref, result)
                 else:
                     print(f"⚠️ Website deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
                     asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
@@ -1577,6 +1593,8 @@ def run_website_regeneration(order_id: str) -> dict:
             contact_phone=order.get("website_contact_phone", ""),
             contact_email=order.get("website_contact_email", ""),
             contact_address=order.get("website_contact_address", ""),
+            logo_data_uri=order.get("logo_data_uri"),
+            favicon_data_uri=order.get("favicon_data_uri"),
         )
         deployed = deploy_website(business_name, result["html"], order_id=order_id)
         if deployed:
@@ -1584,6 +1602,7 @@ def run_website_regeneration(order_id: str) -> dict:
                 "website_template": result["template"], "website_content": result["content"],
                 "website_url": deployed["url"], "asset_generation_error": firestore.DELETE_FIELD,
             }, merge=True)
+            _persist_generated_logo(order_ref, result)
             print(f"✅ Website regenerated for order {order_id}: {deployed['url']}")
             return {"success": True, "url": deployed["url"]}
         else:
@@ -1595,6 +1614,74 @@ def run_website_regeneration(order_id: str) -> dict:
         error = f"Website regeneration crashed unexpectedly: {e}. Check server logs."
         print(f"⚠️ Website regeneration crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": error}, merge=True)
+        return {"success": False, "error": error}
+
+def run_logo_regeneration(order_id: str) -> dict:
+    """Admin-triggered (see /admin/{order_id}/regenerate-logo) - for an
+    order whose brand_result predates the logo feature, or where the AI
+    logo just didn't come out well. Deliberately does NOT call
+    generate_website_content/get_image_keywords again (no Gemini calls for
+    tagline/about/services/hero photo) - only regenerates the logo itself,
+    then redeploys the already-generated website content with the new logo
+    swapped in. Returns {"success": True, "url": ...} or
+    {"success": False, "error": ...}, same shape as run_website_regeneration."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return {"success": False, "error": "Order not found."}
+
+    try:
+        business_name = order.get("business_name", "")
+        content = order.get("website_content") or {}
+        template_name = order.get("website_template", "professional")
+        if content.get("primary_color") and content.get("secondary_color"):
+            primary_color, secondary_color = content["primary_color"], content["secondary_color"]
+        else:
+            primary_color, secondary_color = TEMPLATE_DEFAULT_COLORS.get(template_name, TEMPLATE_DEFAULT_COLORS["professional"])
+        industry_label = INDUSTRY_CODE_LABELS.get(order.get("industry_code", "0"), "General Business")
+
+        logo_variations = generate_logo_variations(business_name, primary_color, secondary_color, industry_label)
+        favicon_svg = generate_favicon_svg(business_name, primary_color)
+        logo_update = {
+            "logo_svg": logo_variations["horizontal"],
+            "logo_variations": logo_variations,
+            "logo_data_uri": svg_to_data_uri(logo_variations["horizontal"]),
+            "logo_variations_data_uri": {k: svg_to_data_uri(v) for k, v in logo_variations.items()},
+            "favicon_data_uri": svg_to_data_uri(favicon_svg),
+        }
+        order_ref.set(logo_update, merge=True)
+
+        if not content or not order.get("website_url"):
+            # No website deployed yet to redeploy - the new logo is saved
+            # and will be picked up whenever the website is first generated.
+            return {"success": True, "url": order.get("website_url", "")}
+
+        _site_id = make_site_id(business_name, order_id)
+        html = render_website_html(
+            content, business_name, template_name,
+            payment_link_url=order.get("stripe_payment_link_url"),
+            hours=order.get("business_hours"),
+            instagram_url=order.get("instagram_url"),
+            facebook_url=order.get("facebook_url"),
+            tiktok_url=order.get("tiktok_url"),
+            linkedin_url=order.get("linkedin_url"),
+            order_id=order_id,
+            site_url=f"https://{_site_id}.web.app",
+            contact_phone=order.get("website_contact_phone") if order.get("website_contact_show") else None,
+            contact_email=order.get("website_contact_email") if order.get("website_contact_show") else None,
+            contact_address=order.get("website_contact_address") if order.get("website_contact_show") else None,
+            logo_data_uri=logo_update["logo_data_uri"],
+            favicon_data_uri=logo_update["favicon_data_uri"],
+        )
+        deployed = deploy_website(business_name, html, order_id=order_id)
+        if deployed:
+            print(f"✅ Logo regenerated and redeployed for order {order_id}: {deployed['url']}")
+            return {"success": True, "url": deployed["url"]}
+        error = "Logo saved, but could not redeploy the website - check server logs, then retry."
+        return {"success": False, "error": error}
+    except Exception as e:
+        error = f"Logo regeneration crashed unexpectedly: {e}. Check server logs."
+        print(f"⚠️ Logo regeneration crashed for order {order_id}: {e}")
         return {"success": False, "error": error}
 
 @app.get("/start", response_class=HTMLResponse)
@@ -3129,6 +3216,23 @@ async def admin_regenerate_website(request: Request, order_id: str, authorized: 
         "order_id": order_id, **result,
     })
 
+@app.post("/admin/{order_id}/regenerate-logo", response_class=HTMLResponse)
+async def admin_regenerate_logo(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    """Regenerates just the logo (see run_logo_regeneration) - for orders
+    whose brand_result predates this feature, or where the admin just
+    wants a fresh attempt without paying for/waiting on a full content
+    regeneration. Synchronous, same rationale as regenerate-website."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return templates.TemplateResponse(request, "_admin_regenerate_logo_result.html", {
+            "order_id": order_id, "success": False, "error": "Order not found.",
+        })
+
+    result = run_logo_regeneration(order_id)
+    return templates.TemplateResponse(request, "_admin_regenerate_logo_result.html", {
+        "order_id": order_id, **result,
+    })
+
 @app.get("/admin/{order_id}/stripe-check-button", response_class=HTMLResponse)
 async def admin_stripe_check_button(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
     return templates.TemplateResponse(request, "_admin_stripe_check_button.html", {"order_id": order_id})
@@ -3202,7 +3306,6 @@ async def admin_migrate_to_firebase(background_tasks: BackgroundTasks, authorize
     Finds orders where website_url contains 'github.io', regenerates the HTML
     from stored content, and deploys to Firebase. Safe to re-run — skips orders
     already on Firebase (website_hosting == 'firebase')."""
-    from app.agents.website_agent import render_website_html
 
     def _migrate_one(order_id: str, order: dict):
         business_name = order.get("business_name", "")
@@ -3227,6 +3330,8 @@ async def admin_migrate_to_firebase(background_tasks: BackgroundTasks, authorize
                 contact_phone=order.get("website_contact_phone") if order.get("website_contact_show") else None,
                 contact_email=order.get("website_contact_email") if order.get("website_contact_show") else None,
                 contact_address=order.get("website_contact_address") if order.get("website_contact_show") else None,
+                logo_data_uri=order.get("logo_data_uri"),
+                favicon_data_uri=order.get("favicon_data_uri"),
             )
             deployed = deploy_website(business_name, html, order_id=order_id)
             if deployed:
