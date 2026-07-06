@@ -2397,14 +2397,15 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
             "business_name": order.get("business_name", ""),
         }, status_code=400)
 
-    # Automated SCC checking doesn't work from Cloud Run anymore (Virginia
-    # SCC added reCAPTCHA v3 to entity search - see app/agents/
-    # scc_name_check.py's check_name_public docstring). The customer
-    # self-certifies via this checkbox instead of a live/blocking check;
-    # our own Playwright-driven verify_name_before_filing (real Chrome, not
-    # plain HTTP, so reCAPTCHA isn't an issue) still re-verifies before
+    # check_name_on_scc below is automated and (as of the
+    # CheckEntityDistinguishableCheckForOnline rewrite - see
+    # app/agents/scc_name_check.py) reliable again, but it's still
+    # best-effort/non-blocking rather than gating submission on it: the
+    # customer self-certifies via this checkbox regardless, and our own
+    # Playwright-driven verify_name_before_filing re-verifies before
     # anything is actually filed - see admin approve flow and
-    # run_scc_filing.
+    # run_scc_filing. Kept as defense in depth rather than trusting a
+    # single automated check to gate a real SCC filing.
     if not scc_confirmed:
         return render_error(
             "Please confirm you checked Virginia SCC availability before continuing.",

@@ -13,6 +13,16 @@ SCC_NAME_CHECK_URL = "https://cis.scc.virginia.gov/Account/NameCheckAvailability
 SCC_ENTITY_SEARCH_URL = "https://cis.scc.virginia.gov/EntitySearch/Index"
 SCC_COOKIE_CONSENT_URL = "https://cis.scc.virginia.gov/Cookie/StoreCookieConsent"
 
+# Unauthenticated JSON/AJAX endpoints behind SCC_NAME_CHECK_URL's own "Name
+# Check" button (see Checkeavailability()/GetEntitySearchResults() in that
+# page's <script>) - unlike SCC_ENTITY_SEARCH_URL, these are not gated by
+# reCAPTCHA v3. Confirmed by hand: real filed LLCs (prod customers "Paws
+# LLC", "Govcon Ramp LLC") correctly come back not-distinguishable, a
+# nonsense name and a staging-only order that was never actually filed
+# ("Nova Cloud Consulting LLC") correctly come back distinguishable.
+SCC_CHECK_DISTINGUISHABLE_URL = "https://cis.scc.virginia.gov/DocumentProcessingHelper/CheckEntityDistinguishableCheckForOnline"
+SCC_EXACT_MATCH_URL = "https://cis.scc.virginia.gov/DocumentProcessingHelper/EntitySearchExactMatchNameAvail"
+
 _SCC_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -176,12 +186,62 @@ _UNAVAILABLE = {
 }
 
 
-def check_name_public(business_name: str) -> dict:
-    """Search the SCC public entity database via plain HTTP — no Chrome or login.
-    Less precise than the logged-in distinguishability endpoint but works from
-    any server including Cloud Run.
+def _get_name_check_token(client: httpx.Client) -> str:
+    """Accepts the cookie-consent gate then GETs SCC_NAME_CHECK_URL for a
+    fresh anti-forgery token - every DocumentProcessingHelper POST below
+    needs one in an __RequestVerificationToken header (matching what the
+    page's own JS does via beforeSend/headers), even though testing found
+    the endpoint doesn't actually reject a request missing it - sending it
+    anyway matches real browser behavior and costs nothing."""
+    client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+    resp = client.get(SCC_NAME_CHECK_URL)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    token_input = soup.find("input", {"name": "__RequestVerificationToken"})
+    if not token_input or not token_input.get("value"):
+        raise RuntimeError("no __RequestVerificationToken on SCC_NAME_CHECK_URL")
+    return token_input["value"]
 
-    Retries up to 3 times with 2-second delays (5 s per-attempt timeout).
+
+def _get_exact_match_conflicts(client: httpx.Client, token: str, business_name: str) -> list[str]:
+    """Follow-up call the page's own JS also makes after a distinguishability
+    check (GetEntitySearchResults) - returns an HTML table of the matching
+    entities, purely for display; the availability verdict itself already
+    came from _get_name_check_token's sibling call and doesn't depend on
+    this succeeding, so any failure here is non-fatal (returns [])."""
+    try:
+        resp = client.post(SCC_EXACT_MATCH_URL, data={
+            "searchIdValue": "", "searchNameValue": business_name,
+        }, headers={
+            "__RequestVerificationToken": token,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": SCC_NAME_CHECK_URL,
+        })
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        conflicts = []
+        for row in soup.select("#grid_businessList tbody tr"):
+            cells = row.find_all("td")
+            if len(cells) >= 2:
+                name = cells[1].get_text(strip=True)
+                if name and name not in conflicts:
+                    conflicts.append(name)
+        return conflicts[:5]
+    except Exception as e:
+        print(f"[name-check] Could not fetch conflict list for '{business_name}': {e}")
+        return []
+
+
+def check_name_public(business_name: str) -> dict:
+    """Checks Virginia SCC name distinguishability via the same
+    unauthenticated JSON endpoint SCC_NAME_CHECK_URL's own "Name Check"
+    button calls (CheckEntityDistinguishableCheckForOnline) - unlike
+    SCC_ENTITY_SEARCH_URL (see the old _parse_scc_form/_parse_scc_results
+    below, kept only in case this ever needs a fallback), this one is not
+    gated by reCAPTCHA v3 and needs no login. Works from any server
+    including Cloud Run.
+
+    Retries up to 3 times with 2-second delays (10 s per-attempt timeout).
     Successful AVAILABLE/TAKEN results are cached for 1 hour.
     """
     cached = _cache_get(business_name)
@@ -192,98 +252,55 @@ def check_name_public(business_name: str) -> dict:
 
     for attempt in range(1, 4):
         try:
-            with httpx.Client(timeout=5.0, follow_redirects=True,
+            with httpx.Client(timeout=10.0, follow_redirects=True,
                               headers={"User-Agent": _SCC_UA}) as client:
-                # SCC now gates every page behind a cookie-consent redirect
-                # (added after this scraper was written) - GET without this
-                # lands on /Cookie/CookieConsent instead of the search form,
-                # with no anti-forgery token to find. This POST is what the
-                # page's own "Accept" button does client-side
-                # (function acceptCookies() -> $.ajax POST here); it sets a
-                # cookiesAccepted cookie in this client's jar that the
-                # subsequent GET below then carries.
-                client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+                token = _get_name_check_token(client)
 
-                resp = client.get(SCC_ENTITY_SEARCH_URL)
-                print(f"[name-check] GET {SCC_ENTITY_SEARCH_URL} → {resp.status_code} "
-                      f"({len(resp.text)} bytes) attempt {attempt}/3")
+                resp = client.post(SCC_CHECK_DISTINGUISHABLE_URL, data={
+                    "searchNameValue": business_name, "businessTypeName": "",
+                    "Filingtype": "", "IsOnline": "true", "IsExternalCheckAvailability": "true",
+                }, headers={
+                    "__RequestVerificationToken": token,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": SCC_NAME_CHECK_URL,
+                })
+                print(f"[name-check] POST {SCC_CHECK_DISTINGUISHABLE_URL} → {resp.status_code} "
+                      f"attempt {attempt}/3")
                 resp.raise_for_status()
+                data = resp.json()
+                result_data = data.get("Result") or {}
+                is_distinguished = result_data.get("IsDistinguished")
+                message = data.get("Message") or ""
+                print(f"[name-check] result for '{business_name}': IsDistinguished={is_distinguished} "
+                      f"Message={message!r}")
 
-                post_data, name_field, logic_field = _parse_scc_form(resp.text)
-                print(f"[name-check] name_field={name_field!r} logic_field={logic_field!r} "
-                      f"post_data keys={list(post_data.keys())}")
-
-                if not name_field:
-                    # SCC's business-name input has no `name` attribute at all
-                    # as of this rewrite (JS reads .val() directly and builds
-                    # a JSON payload) - this is now the *expected* outcome,
-                    # not a transient parse failure, so don't burn retries on
-                    # it. See the reCAPTCHA note below for why there's no
-                    # plain-HTTP field-name fix to fall back to.
-                    last_error = "SCC search form has no named business-name input (site now requires reCAPTCHA v3 - see check_name_public docstring)"
-                    print(f"[name-check] {last_error} for '{business_name}'")
-                    break
-
-                post_data[name_field] = business_name
-                if logic_field:
-                    post_data[logic_field] = "3"  # Exact Match
-
-                resp2 = client.post(SCC_ENTITY_SEARCH_URL, data=post_data)
-                print(f"[name-check] POST → {resp2.status_code} ({len(resp2.text)} bytes)")
-                resp2.raise_for_status()
-
-                if len(resp2.text) == 0:
-                    # SCC's search POST now requires a server-verified Google
-                    # reCAPTCHA v3 token (POSTed to
-                    # /GoogleCaptchaHelper/VerifyReCaptcha first) - without one,
-                    # the search endpoint silently 200s with an empty body
-                    # instead of erroring. Treating this as "no exact match"
-                    # would misreport UNKNOWN/no-conflicts as if a real search
-                    # ran. No plain-HTTP client can solve reCAPTCHA v3; this
-                    # needs a real browser (see _check_name_chrome) or a
-                    # paid solving service - neither wired up here.
-                    last_error = "SCC search returned an empty body - reCAPTCHA v3 verification required and not solvable via plain HTTP"
-                    print(f"[name-check] {last_error} for '{business_name}'")
-                    break
-
-                available, conflicts = _parse_scc_results(resp2.text, business_name)
-                print(f"[name-check] result for '{business_name}': available={available} "
-                      f"conflicts={conflicts}")
-
-                if available is True:
+                if is_distinguished is True:
                     result = {
                         "available": True,
                         "status": "AVAILABLE",
-                        "message": f'"{business_name}" appears to be available on Virginia SCC.',
+                        "message": f'"{business_name}" is available on Virginia SCC.',
                         "conflicts": [],
                         "raw": "",
                     }
                     _cache_set(business_name, result)
                     return result
 
-                if available is False:
+                if is_distinguished is False:
+                    conflicts = _get_exact_match_conflicts(client, token, business_name)
                     result = {
                         "available": False,
                         "status": "TAKEN",
-                        "message": f'"{business_name}" already exists on Virginia SCC.',
+                        "message": message or f'"{business_name}" already exists on Virginia SCC.',
                         "conflicts": conflicts,
                         "raw": "",
                     }
                     _cache_set(business_name, result)
                     return result
 
-                # available is None — similar names found but no exact match
-                return {
-                    "available": None,
-                    "status": "UNKNOWN",
-                    "message": (
-                        "Similar names exist on Virginia SCC. "
-                        "Our team will confirm your name's availability before filing."
-                    ),
-                    "link": SCC_ENTITY_SEARCH_URL,
-                    "conflicts": conflicts,
-                    "raw": "",
-                }
+                # IsDistinguished missing/None - unexpected response shape,
+                # worth a retry rather than trusting a result we don't understand.
+                last_error = f"unexpected response shape (no IsDistinguished): {data}"
+                print(f"[name-check] {last_error} for '{business_name}'")
 
         except httpx.TimeoutException as e:
             last_error = f"timeout on attempt {attempt}/3"
@@ -410,53 +427,42 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
     """Verifies an LLC a customer claims to already have is actually on the
     Virginia SCC's public Business Entity Search. Tries public HTTP first,
     then Chrome CDP."""
-    # Try public search first
+    # Try public search first - same unauthenticated, non-reCAPTCHA-gated
+    # endpoint as check_name_public (see its docstring); "distinguishable"
+    # here just means "not found", i.e. exists=False.
     try:
         with httpx.Client(timeout=10.0, follow_redirects=True,
                           headers={"User-Agent": _SCC_UA}) as client:
-            # See check_name_public's comment on the same call - SCC now
-            # redirects every page to a cookie-consent gate first.
-            client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+            token = _get_name_check_token(client)
 
-            resp = client.get(SCC_ENTITY_SEARCH_URL)
-            print(f"[llc-exists] GET {SCC_ENTITY_SEARCH_URL} → {resp.status_code} ({len(resp.text)} bytes)")
+            resp = client.post(SCC_CHECK_DISTINGUISHABLE_URL, data={
+                "searchNameValue": business_name, "businessTypeName": "",
+                "Filingtype": "", "IsOnline": "true", "IsExternalCheckAvailability": "true",
+            }, headers={
+                "__RequestVerificationToken": token,
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": SCC_NAME_CHECK_URL,
+            })
+            print(f"[llc-exists] POST {SCC_CHECK_DISTINGUISHABLE_URL} → {resp.status_code}")
             resp.raise_for_status()
+            data = resp.json()
+            is_distinguished = (data.get("Result") or {}).get("IsDistinguished")
+            print(f"[llc-exists] result for '{business_name}': IsDistinguished={is_distinguished}")
 
-            post_data, name_field, logic_field = _parse_scc_form(resp.text)
+            if is_distinguished is True:
+                return {
+                    "exists": False,
+                    "message": (
+                        "We could not find this LLC in the Virginia SCC database. "
+                        "Please double check the name or uncheck this box to form a new LLC."
+                    ),
+                }
 
-            if name_field:
-                post_data[name_field] = business_name
-                if logic_field:
-                    post_data[logic_field] = "3"  # Exact Match
-
-                resp2 = client.post(SCC_ENTITY_SEARCH_URL, data=post_data)
-                print(f"[llc-exists] POST → {resp2.status_code} ({len(resp2.text)} bytes)")
-                resp2.raise_for_status()
-
-                if len(resp2.text) == 0:
-                    # Same reCAPTCHA v3 gating as check_name_public - fall
-                    # through to the Chrome CDP attempt below instead of
-                    # parsing an empty body as a result.
-                    print(f"[llc-exists] SCC search returned an empty body for '{business_name}' "
-                          "- reCAPTCHA v3 verification required, falling through to Chrome CDP")
-                    raise RuntimeError("SCC search gated by reCAPTCHA v3")
-
-                available, _ = _parse_scc_results(resp2.text, business_name)
-
-                if available is True:
-                    return {
-                        "exists": False,
-                        "message": (
-                            "We could not find this LLC in the Virginia SCC database. "
-                            "Please double check the name or uncheck this box to form a new LLC."
-                        ),
-                    }
-
-                if available is False:
-                    return {
-                        "exists": True,
-                        "message": f"{business_name} found in Virginia SCC records",
-                    }
+            if is_distinguished is False:
+                return {
+                    "exists": True,
+                    "message": f"{business_name} found in Virginia SCC records",
+                }
     except Exception as e:
         print(f"⚠️ check_llc_exists_on_scc public HTTP failed: {e}")
 
