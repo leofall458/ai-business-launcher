@@ -2671,7 +2671,15 @@ async def dashboard_business_submit(
         if trigger_assets:
             background_tasks.add_task(run_asset_generation, order_id)
 
-    return RedirectResponse(url=f"/dashboard/orders/{order_id}?ga_event=intake_complete", status_code=303)
+    # Sends the customer to Step 6 (website customization) - previously
+    # this redirected straight to the status dashboard, silently skipping
+    # it for every customer despite the wizard's own step indicator
+    # advertising a "Website" step. Asset generation (run_early_assets,
+    # just above) already runs independently of whether/when this page is
+    # visited - dashboard_website_submit redeploys with these preferences
+    # if early assets already finished by the time the customer submits,
+    # otherwise run_early_assets picks the fields up itself once it runs.
+    return RedirectResponse(url=f"/dashboard/orders/{order_id}/website?ga_event=intake_complete", status_code=303)
 
 # ── Step 6: website customization (optional) ────────────────────────────────
 

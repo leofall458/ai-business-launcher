@@ -152,5 +152,16 @@
         document.getElementById('website-contact-fields').classList.toggle('hidden', !document.getElementById('contact-show').checked);
     }
 </script>
+{% if google_analytics_id %}
+<script>
+    (function() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('ga_event') === 'intake_complete') {
+            try { gtag('event', 'intake_complete', {}); } catch(e) {}
+            history.replaceState(null, '', window.location.pathname);
+        }
+    })();
+</script>
+{% endif %}
 </body>
 </html>
