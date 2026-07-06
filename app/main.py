@@ -27,7 +27,7 @@ from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit, generate_logo_variations, generate_favicon_svg, svg_to_data_uri
-from app.agents.marketing_agent import generate_marketing_plan
+from app.agents.marketing_agent import generate_marketing_plan, build_marketing_plan_pdf
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTakenError
 
@@ -810,8 +810,12 @@ def run_document_generation(order_id: str):
     if not order.get("marketing_plan_html"):
         try:
             industry_label = INDUSTRY_CODE_LABELS.get(order.get("industry_code", "0"), "General Business")
-            update["marketing_plan_html"] = generate_marketing_plan(
+            marketing_result = generate_marketing_plan(
                 business_name, business_idea, target_customer, industry_label, location="Virginia")
+            update["marketing_plan_html"] = marketing_result["html"]
+            pdf_bytes = build_marketing_plan_pdf(marketing_result["plan"], business_name)
+            object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
+            update["documents.marketing_plan"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
         except Exception as e:
             print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
             errors["marketing_result"] = f"Marketing plan: {e}"
@@ -2830,6 +2834,7 @@ DOCUMENT_LABELS = {
     "operating_agreement": "Operating Agreement",
     "brand_kit": "Brand Kit",
     "logo": "Logo (SVG)",
+    "marketing_plan": "Starter Marketing Plan (PDF)",
 }
 
 # Orders uploaded before document_store.py existed have no "documents"

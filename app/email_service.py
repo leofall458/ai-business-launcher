@@ -375,7 +375,7 @@ def send_early_assets_email(order: dict, order_id: str):
         "While your LLC is being filed, here's everything we've already built for you:\n\n"
         "✅ Your brand kit is ready — view it on your dashboard\n"
         f"{website_line}\n"
-        "✅ Your 30-day marketing plan is included below (see the HTML version of this email)\n"
+        "✅ Your Starter Marketing Plan is included below (see the HTML version of this email)\n"
         "✅ Your LLC documents are ready — view them on your dashboard\n"
         f"{stripe_line}\n\n"
         "We are filing your LLC with Virginia SCC within 72 hours.\n"
@@ -401,7 +401,7 @@ def send_early_assets_email(order: dict, order_id: str):
         "<ul style='margin:0 0 16px;padding-left:20px;line-height:2;'>"
         "<li>✅ Your brand kit is ready — view it on your dashboard</li>"
         f"{website_html}"
-        "<li>✅ Your 30-day marketing plan is included below</li>"
+        "<li>✅ Your Starter Marketing Plan is included below</li>"
         "<li>✅ Your LLC documents are ready — view them on your dashboard</li>"
         f"{stripe_html}"
         "</ul>"
@@ -567,7 +567,10 @@ def send_abandoned_cart_email_1h(lead: dict, is_founding_member: bool = False) -
         "You started forming your Virginia LLC but didn't complete your order.\n\n"
         f"Your business name ({business_name}) is still available to check.\n\n"
         f"Finish your order — {price_line}:\n"
-        "• Virginia SCC filing\n• EIN with the IRS\n• Brand kit\n• Business website\n• Stripe setup\n\n"
+        "• We prepare and file your Virginia Articles of Organization on your behalf\n"
+        "• We apply for your federal EIN for you\n• Brand kit\n"
+        "• A professional website, ready for customers\n"
+        "• Accept payments immediately with a checkout that's wired up and ready\n\n"
         f"Continue here: {url}\n\n"
         "Questions? Just reply to this email.\n\n- Launch Bridge LLC"
     )
@@ -578,9 +581,11 @@ def send_abandoned_cart_email_1h(lead: dict, is_founding_member: bool = False) -
         "finish before someone else takes the name.</p>"
         f"<p><strong>{price_line} — everything included:</strong></p>"
         "<ul style='margin:0 0 16px;padding-left:20px;'>"
-        "<li>Virginia SCC filing</li><li>EIN with the IRS</li>"
-        "<li>AI-generated brand kit</li><li>Business website, live in days</li>"
-        "<li>Stripe payment account setup</li>"
+        "<li>We prepare and file your Virginia Articles of Organization on your behalf</li>"
+        "<li>We apply for your federal EIN for you</li>"
+        "<li>AI-generated brand kit</li>"
+        "<li>A professional website, ready for customers</li>"
+        "<li>Accept payments immediately with a checkout that's wired up and ready</li>"
         "</ul>"
     )
     html = _wrap_html(html_inner, cta_text="Continue My LLC Setup →", cta_url=url)
@@ -611,11 +616,11 @@ def send_abandoned_cart_email_24h(lead: dict, is_founding_member: bool = False) 
         "<p>Most people spend weeks figuring this out on their own. "
         "Launch Bridge handles everything in days — for one flat fee.</p>"
         + _info_table([
-            ("LLC filing", "Virginia SCC — we file it"),
-            ("EIN", "IRS application — we handle it"),
+            ("LLC filing", "We prepare and file your Virginia Articles of Organization on your behalf"),
+            ("EIN", "We apply for your federal EIN for you"),
             ("Brand kit", "Logo, colors, fonts, tagline"),
-            ("Website", "Live within days of LLC approval"),
-            ("Stripe", "Ready to accept payments"),
+            ("Website", "A professional website, ready for customers"),
+            ("Stripe", "Accept payments immediately with a checkout that's wired up and ready"),
             ("Total", f"{price_label}"),
         ])
     )

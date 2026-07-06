@@ -1,6 +1,13 @@
+import io
 import json
 from google.genai import types
 from app.agents import get_client
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle, PageBreak
 
 MODEL = "gemini-2.5-flash"
 
@@ -201,18 +208,136 @@ def _render_html(plan: dict, business_name: str) -> str:
 
     return (
         f'<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2937;">'
-        f'<h2 style="margin:0 0 16px;color:#0e2148;font-size:20px;">30-Day Marketing Plan — {_esc(business_name)}</h2>'
+        f'<h2 style="margin:0 0 16px;color:#0e2148;font-size:20px;">Starter Marketing Plan — {_esc(business_name)}</h2>'
         f'{top_channels_html}{week1_html}{week2_html}{week3_html}{week4_html}{budget_html}{goals_html}'
         f'</div>'
     )
 
 
 def generate_marketing_plan(business_name: str, business_idea: str, target_customer: str,
-                             industry: str, location: str = "Virginia") -> str:
-    """Generates a complete 30-day marketing plan and returns it as
-    self-contained, inline-styled HTML - ready to embed directly in an
-    email body or a dashboard page. Raises on failure rather than
-    returning a placeholder; callers (run_document_generation) already
-    catch and record agent failures uniformly, same as brand kit/website."""
+                             industry: str, location: str = "Virginia") -> dict:
+    """Generates a complete Starter Marketing Plan. Returns {"html": ...,
+    "plan": ...} rather than just the rendered HTML string - "plan" (the
+    raw structured data) is what build_marketing_plan_pdf needs to produce
+    a downloadable file the same way brand_pdf.py does for the brand kit;
+    re-deriving it from the HTML would be fragile. Raises on failure
+    rather than returning a placeholder; callers (run_document_generation)
+    already catch and record agent failures uniformly, same as brand
+    kit/website."""
     plan = _generate_plan_data(business_name, business_idea, target_customer, industry, location)
-    return _render_html(plan, business_name)
+    return {"html": _render_html(plan, business_name), "plan": plan}
+
+
+def build_marketing_plan_pdf(plan: dict, business_name: str) -> bytes:
+    """Renders the structured plan dict (see MARKETING_PLAN_SCHEMA) into a
+    downloadable PDF with ReportLab - same toolchain as brand_pdf.py, for
+    the same reason (this app's Cloud Run image has none of WeasyPrint's
+    native system libraries)."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=0.85 * inch,
+                             leftMargin=0.85 * inch, topMargin=0.85 * inch, bottomMargin=0.85 * inch)
+    content_width = letter[0] - doc.leftMargin - doc.rightMargin
+    primary_hex, text_hex = "#0e2148", "#1f2937"
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("MPTitle", parent=styles["Title"], fontSize=22, textColor=colors.HexColor(primary_hex), alignment=TA_CENTER)
+    subtitle_style = ParagraphStyle("MPSubtitle", parent=styles["Normal"], fontSize=12, alignment=TA_CENTER, textColor=colors.grey, spaceAfter=6)
+    section_style = ParagraphStyle("MPSection", parent=styles["Heading1"], fontSize=16, textColor=colors.HexColor(primary_hex), spaceBefore=14, spaceAfter=8)
+    heading_style = ParagraphStyle("MPHeading", parent=styles["Heading2"], fontSize=11, textColor=colors.HexColor(text_hex), spaceBefore=8, spaceAfter=3)
+    body_style = ParagraphStyle("MPBody", parent=styles["Normal"], fontSize=10, leading=15, textColor=colors.HexColor(text_hex))
+    small_style = ParagraphStyle("MPSmall", parent=styles["Normal"], fontSize=8.5, textColor=colors.grey)
+
+    def section(title):
+        story.append(Paragraph(title, section_style))
+
+    def heading(title):
+        story.append(Paragraph(title, heading_style))
+
+    def body(text):
+        story.append(Paragraph(text, body_style))
+
+    def bullets(items, ordered=False):
+        prefix = lambda i: f"{i + 1}." if ordered else "•"
+        for i, item in enumerate(items):
+            story.append(Paragraph(f"{prefix(i)} {item}", body_style))
+
+    def action_items(items):
+        heading("Action items")
+        bullets(items, ordered=True)
+
+    story = []
+
+    # ─── COVER ────────────────────────────────────────────────
+    story.append(Spacer(1, 1.2 * inch))
+    story.append(Paragraph(business_name or "Your Business", title_style))
+    story.append(Paragraph("Starter Marketing Plan", subtitle_style))
+    story.append(Spacer(1, 0.6 * inch))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.lightgrey))
+    story.append(Spacer(1, 0.15 * inch))
+    story.append(Paragraph("Prepared by Launch Bridge LLC", small_style))
+    story.append(PageBreak())
+
+    # ─── TOP CHANNELS ─────────────────────────────────────────
+    section("Top 3 Marketing Channels")
+    for c in plan["top_channels"]:
+        story.append(Paragraph(f"<b>{c['channel']}</b> — {c['rationale']}", body_style))
+        story.append(Spacer(1, 0.05 * inch))
+
+    # ─── WEEK 1 ───────────────────────────────────────────────
+    w1 = plan["week1_foundation"]
+    section("Week 1 — Foundation")
+    body(f"<b>Google Business Profile:</b> {w1['google_business_profile']}")
+    body(f"<b>Social platforms:</b> {', '.join(w1['social_platforms'])}")
+    body(f"<b>Target audience:</b> {w1['target_audience']}")
+    action_items(w1["action_items"])
+
+    # ─── WEEK 2 ───────────────────────────────────────────────
+    w2 = plan["week2_content"]
+    section("Week 2 — Content")
+    heading("Content calendar (5 post ideas)")
+    bullets(w2["content_calendar"])
+    heading("Sample posts")
+    bullets(w2["sample_posts"])
+    body(f"<b>Hashtags:</b> {' '.join('#' + h.lstrip('#') for h in w2['hashtags'])}")
+    action_items(w2["action_items"])
+
+    # ─── WEEK 3 ───────────────────────────────────────────────
+    w3 = plan["week3_outreach"]
+    section("Week 3 — Outreach")
+    heading("Local networking")
+    bullets(w3["local_networking"])
+    heading("Partnership ideas")
+    bullets(w3["partnerships"])
+    heading("Email outreach template")
+    body(w3["email_template"].replace("\n", "<br/>"))
+    action_items(w3["action_items"])
+
+    # ─── WEEK 4 ───────────────────────────────────────────────
+    w4 = plan["week4_growth"]
+    section("Week 4 — Growth")
+    body(f"<b>Paid advertising:</b> {w4['paid_ads_recommendation']}")
+    body(f"<b>Budget recommendation:</b> {w4['budget_recommendation']}")
+    heading("Key metrics to track")
+    bullets(w4["key_metrics"])
+    action_items(w4["action_items"])
+
+    # ─── BUDGET BREAKDOWN ─────────────────────────────────────
+    section("Estimated Monthly Budget Breakdown")
+    rows = [[b["category"], b["amount"]] for b in plan["budget_breakdown"]]
+    budget_table = Table(rows, colWidths=[content_width * 0.7, content_width * 0.3])
+    budget_table.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor(text_hex)),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(budget_table)
+
+    # ─── 90-DAY GOALS ─────────────────────────────────────────
+    section("90-Day Goals")
+    bullets(plan["goals_90_day"])
+
+    doc.build(story)
+    return buffer.getvalue()
