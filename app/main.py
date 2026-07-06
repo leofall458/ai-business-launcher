@@ -2382,6 +2382,42 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         "business_name": order.get("business_name", ""),
     })
 
+@app.post("/dashboard/orders/{order_id}/update-idea", response_class=HTMLResponse)
+async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_owned_order)):
+    """Step 1 - lets the customer refine their business idea and get fresh
+    AI name suggestions without leaving the page, rather than being stuck
+    with whatever one-liner they typed on the Step 1 landing page. Only
+    updates business_idea + regenerates name_ideas; the customer still
+    picks and submits an actual name via the main form below to advance,
+    same as a normal page load of this step."""
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    form = await request.form()
+    if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+
+    business_idea = (form.get("business_idea") or "").strip()
+    idea_error = validate_business_idea(business_idea)
+    if idea_error:
+        return templates.TemplateResponse(request, "_name_ideas_chips.html", {
+            "name_ideas": [], "error": idea_error,
+        })
+
+    order_ref.set({"business_idea": business_idea}, merge=True)
+
+    loop = asyncio.get_event_loop()
+    try:
+        name_ideas = await loop.run_in_executor(None, generate_name_ideas, business_idea)
+    except Exception as e:
+        print(f"⚠️ Could not regenerate name ideas for order {order_id}: {e}")
+        name_ideas = []
+
+    return templates.TemplateResponse(request, "_name_ideas_chips.html", {
+        "name_ideas": name_ideas,
+    })
+
 @app.post("/dashboard/orders/{order_id}/name", response_class=HTMLResponse)
 async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_owned_order)):
     order_ref, order, customer_id = owned

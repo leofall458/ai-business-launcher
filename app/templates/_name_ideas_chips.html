@@ -1,0 +1,11 @@
+{% if error %}
+<p class="text-sm text-red-600">⚠️ {{ error }}</p>
+{% elif name_ideas %}
+<div class="flex flex-wrap gap-2">
+    {% for idea in name_ideas %}
+    <span class="name-chip" onclick="pickName('{{ idea|replace("'", "\\'") }}')">{{ idea }}</span>
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-xs text-[#0e2148]/40">✨ Generating name ideas for your business... refresh if this doesn't appear.</p>
+{% endif %}

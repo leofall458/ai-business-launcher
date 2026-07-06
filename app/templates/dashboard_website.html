@@ -14,7 +14,7 @@
 <body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
 <div class="max-w-xl mx-auto px-4 sm:px-8">
 
-    <a href="/dashboard/orders/{{ order_id }}/business" class="inline-block text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 transition mb-3">← Back to business details</a>
+    <a href="/dashboard/orders/{{ order_id }}/business" class="inline-flex items-center gap-1 px-4 py-2 mb-4 bg-white border-2 border-[#0e2148] text-[#0e2148] text-sm font-medium rounded-lg hover:bg-[#0e2148] hover:text-white transition-colors">← Back to business details</a>
 
     {% set wizard_step = 4 %}
     {% include "_wizard_progress.html" %}

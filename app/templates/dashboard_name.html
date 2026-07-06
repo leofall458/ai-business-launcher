@@ -5,15 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Name Your Business - Launch Bridge LLC</title>
     {% include "_brand.html" %}
+    <script src="/static/htmx.min.js"></script>
     {% include "_ga4.html" %}
     <style>
         @media (max-width: 640px) { input, textarea { font-size: 16px !important; } }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: block !important; }
+        .htmx-request.htmx-indicator { display: block !important; }
     </style>
 </head>
 <body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
 <div class="max-w-xl mx-auto px-4 sm:px-8">
 
-    <a href="/start" class="inline-block text-xs text-[#0e2148]/45 hover:text-[#0e2148]/70 transition mb-3">← Back to payment</a>
+    <a href="/start" class="inline-flex items-center gap-1 px-4 py-2 mb-4 bg-white border-2 border-[#0e2148] text-[#0e2148] text-sm font-medium rounded-lg hover:bg-[#0e2148] hover:text-white transition-colors">← Back to payment</a>
 
     {% set wizard_step = 1 %}
     {% include "_wizard_progress.html" %}
@@ -31,8 +35,22 @@
     {% endif %}
 
     <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
-        <p class="text-xs text-[#0e2148]/45 mb-1">Your business idea</p>
-        <p class="text-sm text-[#0e2148]/80 italic">"{{ business_idea }}"</p>
+        <label class="block text-xs text-[#0e2148]/55 font-medium mb-1.5">Your business idea</label>
+        <textarea id="business-idea-input" name="business_idea" rows="3"
+            placeholder="e.g. Mobile notary services for real estate closings in Northern Virginia — specializing in after-hours appointments for busy professionals"
+            class="w-full bg-white border border-[#0e2148]/20 rounded-lg p-3 text-[#0e2148] placeholder-[#0e2148]/30 text-sm resize-none focus:border-[#c9a227] focus:outline-none">{{ business_idea }}</textarea>
+        <p class="text-xs text-[#0e2148]/40 mt-1.5">Adding more detail helps us suggest better names and build a better website for you</p>
+        <button type="button" id="update-idea-btn"
+            hx-post="/dashboard/orders/{{ order_id }}/update-idea"
+            hx-include="#business-idea-input"
+            hx-vals='{"csrf_token":"{{ csrf_token }}"}'
+            hx-target="#name-ideas-container"
+            hx-swap="innerHTML"
+            hx-indicator="#idea-update-indicator"
+            hx-disabled-elt="this"
+            class="mt-3 inline-flex items-center gap-1.5 bg-[#0e2148] hover:bg-[#0e2148]/90 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+            ✨ Update &amp; Regenerate Names →
+        </button>
     </div>
 
     {% if name_error %}
@@ -44,15 +62,12 @@
     <!-- AI name ideas -->
     <div class="mb-6">
         <p class="text-xs text-[#0e2148]/55 font-medium mb-2">✨ Here are AI-suggested names for your business:</p>
-        {% if name_ideas %}
-        <div class="flex flex-wrap gap-2">
-            {% for idea in name_ideas %}
-            <span class="name-chip" onclick="pickName('{{ idea|replace("'", "\\'") }}')">{{ idea }}</span>
-            {% endfor %}
+        <div id="name-ideas-container">
+            {% include "_name_ideas_chips.html" %}
         </div>
-        {% else %}
-        <p class="text-xs text-[#0e2148]/40">✨ Generating name ideas for your business... refresh if this doesn't appear.</p>
-        {% endif %}
+        <div id="idea-update-indicator" class="htmx-indicator mt-2">
+            <p class="text-xs text-[#c9a227] font-medium">✨ Generating new name ideas...</p>
+        </div>
     </div>
 
     <form method="post" action="/dashboard/orders/{{ order_id }}/name" class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4" id="name-form">
