@@ -18,7 +18,10 @@ import mimetypes
 from email.message import EmailMessage
 from urllib.parse import quote
 
-from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL
+from app.config import (
+    GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL,
+    FOUNDING_MEMBER_PRICE_CENTS, LLC_FORMATION_PRICE_CENTS,
+)
 from app.dashboard_auth import create_magic_link
 
 FROM_NAME = "Launch Bridge LLC"
@@ -149,12 +152,13 @@ def send_order_received_email(order: dict, order_id: str):
     name = order.get("full_name", "") or "there"
     business_name = order.get("business_name", "your business")
     url = create_magic_link(email)
+    amount_paid = (FOUNDING_MEMBER_PRICE_CENTS if order.get("founding_member") else LLC_FORMATION_PRICE_CENTS) // 100
     body = (
         f"Hi {name},\n\n"
         "Thank you for choosing Launch Bridge LLC!\n\n"
         "Your order has been confirmed. Here are your details:\n\n"
         f"Business Name: {business_name}\n"
-        "Amount Paid: $350\n\n"
+        f"Amount Paid: ${amount_paid}\n\n"
         "Sign in to your dashboard to track progress:\n"
         f"{url}\n\n"
         "What happens next:\n"
@@ -169,7 +173,7 @@ def send_order_received_email(order: dict, order_id: str):
         f"<p>Hi {name},</p>"
         "<p>Thank you for choosing Launch Bridge LLC!</p>"
         "<p>Your order has been confirmed. Here are your details:</p>"
-        + _info_table([("Business Name", business_name), ("Amount Paid", "$350")])
+        + _info_table([("Business Name", business_name), ("Amount Paid", f"${amount_paid}")])
         + "<p style=\"margin-top:24px;font-weight:600;\">What happens next:</p>"
         "<p>✅ Your documents are being generated now<br>"
         "⏳ We will file your LLC with Virginia SCC within 72 hours<br>"
@@ -544,18 +548,25 @@ def send_name_rejected_email(order: dict, order_id: str, business_name: str) -> 
     html = _wrap_html(html_inner, cta_text="Choose a New Name →", cta_url=url)
     return _send(email, f'Action needed: "{business_name}" is taken in Virginia', body, html_body=html)
 
-def send_abandoned_cart_email_1h(lead: dict) -> bool:
+def send_abandoned_cart_email_1h(lead: dict, is_founding_member: bool = False) -> bool:
+    """is_founding_member reflects founding-member availability at send time
+    (passed in by abandoned_cart_scheduler, which already computes it via
+    get_founding_member_status() - kept out of this module to avoid a
+    circular import with app.main), not whatever was true when the lead
+    was first captured - slots can run out between the two."""
     email = lead.get("email", "")
     if not email:
         return False
     name = lead.get("first_name") or "there"
     business_name = lead.get("desired_name") or "your LLC"
     url = "https://launchbridge.ai"
+    price = FOUNDING_MEMBER_PRICE_CENTS // 100 if is_founding_member else LLC_FORMATION_PRICE_CENTS // 100
+    price_line = f"${price} covers everything" + (" (Founding Member rate)" if is_founding_member else "")
     body = (
         f"Hi {name},\n\n"
         "You started forming your Virginia LLC but didn't complete your order.\n\n"
         f"Your business name ({business_name}) is still available to check.\n\n"
-        "Finish your order — $350 covers everything:\n"
+        f"Finish your order — {price_line}:\n"
         "• Virginia SCC filing\n• EIN with the IRS\n• Brand kit\n• Business website\n• Stripe setup\n\n"
         f"Continue here: {url}\n\n"
         "Questions? Just reply to this email.\n\n- Launch Bridge LLC"
@@ -565,7 +576,7 @@ def send_abandoned_cart_email_1h(lead: dict) -> bool:
         "<p>You started forming your Virginia LLC but didn't complete your order.</p>"
         f"<p>Your business name <strong>{business_name}</strong> is still waiting — "
         "finish before someone else takes the name.</p>"
-        "<p><strong>$350 flat — everything included:</strong></p>"
+        f"<p><strong>{price_line} — everything included:</strong></p>"
         "<ul style='margin:0 0 16px;padding-left:20px;'>"
         "<li>Virginia SCC filing</li><li>EIN with the IRS</li>"
         "<li>AI-generated brand kit</li><li>Business website, live in days</li>"
@@ -576,18 +587,21 @@ def send_abandoned_cart_email_1h(lead: dict) -> bool:
     return _send(email, f"Don't lose your business name — {business_name}", body, html_body=html)
 
 
-def send_abandoned_cart_email_24h(lead: dict) -> bool:
+def send_abandoned_cart_email_24h(lead: dict, is_founding_member: bool = False) -> bool:
+    """See send_abandoned_cart_email_1h re: is_founding_member timing."""
     email = lead.get("email", "")
     if not email:
         return False
     name = lead.get("first_name") or "there"
     business_name = lead.get("desired_name") or "your LLC"
     url = "https://launchbridge.ai"
+    price = FOUNDING_MEMBER_PRICE_CENTS // 100 if is_founding_member else LLC_FORMATION_PRICE_CENTS // 100
+    price_label = f"${price} flat" + (" (Founding Member rate)" if is_founding_member else "") + " — no subscriptions, no upsells"
     body = (
         f"Hi {name},\n\n"
         f"Your Virginia LLC ({business_name}) is still unfinished.\n\n"
         "Most people spend weeks figuring out LLC formation on their own. "
-        "Launch Bridge does it in days, for $350 flat — no subscriptions, no upsells.\n\n"
+        f"Launch Bridge does it in days, for {price_label}.\n\n"
         f"Start here: {url}\n\n"
         "Questions? Just reply.\n\n- Launch Bridge LLC"
     )
@@ -602,7 +616,7 @@ def send_abandoned_cart_email_24h(lead: dict) -> bool:
             ("Brand kit", "Logo, colors, fonts, tagline"),
             ("Website", "Live within days of LLC approval"),
             ("Stripe", "Ready to accept payments"),
-            ("Total", "$350 flat — no subscriptions"),
+            ("Total", f"{price_label}"),
         ])
     )
     html = _wrap_html(html_inner, cta_text="Finish My LLC Setup →", cta_url=url)

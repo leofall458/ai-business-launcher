@@ -1378,6 +1378,10 @@ async def abandoned_cart_scheduler():
             now = datetime.datetime.now(datetime.timezone.utc)
             one_hour_ago = now - datetime.timedelta(hours=1)
             twenty_four_hours_ago = now - datetime.timedelta(hours=24)
+            # Computed once per sweep, not per lead - founding-member
+            # availability is a global count, not something that varies
+            # lead to lead within the same pass.
+            is_founding_member_active = get_founding_member_status()["is_active"]
             for doc in LEADS.where("converted", "==", False).stream():
                 lead = doc.to_dict()
                 lead_id = doc.id
@@ -1397,10 +1401,10 @@ async def abandoned_cart_scheduler():
                 if not step1_at:
                     continue
                 if not lead.get("recovery_1h_sent") and step1_at <= one_hour_ago:
-                    send_abandoned_cart_email_1h(lead)
+                    send_abandoned_cart_email_1h(lead, is_founding_member_active)
                     LEADS.document(lead_id).set({"recovery_1h_sent": True}, merge=True)
                 if not lead.get("recovery_24h_sent") and step1_at <= twenty_four_hours_ago:
-                    send_abandoned_cart_email_24h(lead)
+                    send_abandoned_cart_email_24h(lead, is_founding_member_active)
                     LEADS.document(lead_id).set({"recovery_24h_sent": True}, merge=True)
 
             for doc in ORDERS.where("state", "in", ["paid", "name_selected"]).stream():

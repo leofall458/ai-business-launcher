@@ -28,7 +28,7 @@
             <span class="text-2xl shrink-0">🎉</span>
             <div>
                 <p class="font-bold text-[#b8860b] text-sm">Founding Member Offer — {{ founding_member_status.spots_remaining }} spot{{ "s" if founding_member_status.spots_remaining != 1 else "" }} remaining</p>
-                <p class="text-[#0e2148]/80 text-sm mt-0.5">First 10 customers pay <strong>${{ (founding_member_status.discount_price // 100) }}</strong> (normally ${{ (founding_member_status.original_price // 100) }})</p>
+                <p class="text-[#0e2148]/80 text-sm mt-0.5">First 10 customers pay <strong>${{ (founding_member_status.discount_price // 100) }}</strong> (normally ${{ (founding_member_status.original_price // 100) }} — save ${{ (founding_member_status.savings // 100) }}, {{ founding_member_status.discount_percent }}% off)</p>
             </div>
         </div>
     </div>
@@ -52,7 +52,7 @@
     <div class="bg-[#c9a227]/10 border border-[#c9a227]/30 rounded-xl p-4 mb-5">
         <div class="flex justify-between text-sm text-[#0e2148]/70 mb-1.5">
             <span>Launch Bridge service fee</span>
-            <span><s class="text-[#0e2148]/35">$250</s> <strong class="text-[#b8860b]">${{ (founding_member_status.service_fee_cents // 100) }}</strong></span>
+            <span><s class="text-[#0e2148]/35">$250</s> <strong class="text-[#b8860b]">${{ (founding_member_status.service_fee_cents // 100) }}</strong> <span class="text-xs text-[#b8860b]/70">({{ founding_member_status.discount_percent }}% off)</span></span>
         </div>
         <div class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5">
             <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
@@ -61,6 +61,7 @@
             <span class="text-[#0e2148]">Total today</span>
             <span class="text-[#b8860b] text-lg">${{ (founding_member_status.discount_price // 100) }}</span>
         </div>
+        <p class="text-xs text-[#b8860b]/80 mt-2 font-semibold">You save ${{ (founding_member_status.savings // 100) }} with Founding Member discount</p>
     </div>
     {% else %}
     <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mb-5 shadow-sm">
