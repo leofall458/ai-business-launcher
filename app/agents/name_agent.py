@@ -1,12 +1,10 @@
 import re
 
-from app.agents import get_client
+from app.agents import generate_content
 
 MODEL = "gemini-2.5-flash"
 
 def screen_business_name(business_idea: str) -> dict:
-    client = get_client()
-
     prompt = f"""
     You are a business name expert helping a founder launch a Virginia LLC.
     
@@ -26,7 +24,7 @@ def screen_business_name(business_idea: str) -> dict:
     Format your response clearly with numbered options.
     """
 
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt
     )
@@ -44,7 +42,6 @@ def generate_name_ideas(business_idea: str, count: int = 5) -> list[str]:
     the customer has tried (and had rejected) any specific name - unlike
     suggest_alternative_names below, there's nothing to be "distinct from"
     yet."""
-    client = get_client()
     prompt = f"""You are a Virginia LLC naming expert.
 
 Business idea: {business_idea}
@@ -63,7 +60,7 @@ Example format:
 4. Cardinal Path LLC
 5. Skyline Ventures LLC"""
 
-    response = client.models.generate_content(model=MODEL, contents=prompt)
+    response = generate_content(model=MODEL, contents=prompt)
     names = []
     for m in re.finditer(r'\b([A-Z][A-Za-z0-9 &\'.\-]{1,40} LLC)\b', response.text):
         name = m.group(1).strip()
@@ -74,7 +71,6 @@ Example format:
 
 def suggest_alternative_names(taken_name: str, business_idea: str) -> list[str]:
     """Generate up to 5 LLC name alternatives when the requested name is taken."""
-    client = get_client()
     context = f'Business idea: {business_idea}' if business_idea else f'Similar concept to "{taken_name}"'
     prompt = f"""You are a Virginia LLC naming expert.
 
@@ -95,7 +91,7 @@ Example format:
 4. Cardinal Path LLC
 5. Skyline Ventures LLC"""
 
-    response = client.models.generate_content(model=MODEL, contents=prompt)
+    response = generate_content(model=MODEL, contents=prompt)
     names = []
     for m in re.finditer(r'\b([A-Z][A-Za-z0-9 &\'.\-]{1,40} LLC)\b', response.text):
         name = m.group(1).strip()

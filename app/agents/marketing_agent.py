@@ -1,7 +1,7 @@
 import io
 import json
 from google.genai import types
-from app.agents import get_client
+from app.agents import generate_content
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -94,7 +94,6 @@ MARKETING_PLAN_SCHEMA = {
 
 def _generate_plan_data(business_name: str, business_idea: str, target_customer: str,
                          industry: str, location: str) -> dict:
-    client = get_client()
     prompt = f"""
     You are a marketing strategist creating a complete 30-day launch plan for a new small business.
 
@@ -107,7 +106,7 @@ def _generate_plan_data(business_name: str, business_idea: str, target_customer:
     Be specific and actionable for THIS business - no generic advice that could apply to any
     company. Reference the actual industry, location, and target customer throughout.
     """
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(

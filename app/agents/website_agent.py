@@ -2,7 +2,7 @@ import os
 import json
 from jinja2 import Environment, FileSystemLoader
 from google.genai import types
-from app.agents import get_client
+from app.agents import generate_content
 from app.agents.brand_agent import generate_logo_variations, generate_favicon_svg, svg_to_data_uri
 
 MODEL = "gemini-2.5-flash"
@@ -71,7 +71,6 @@ def get_image_keywords(business_idea: str, industry: str = None) -> str:
     itself fails - a broken hero image is worse than a generic one, but a
     crashed asset-generation pipeline is worse still."""
     try:
-        client = get_client()
         prompt = f"""
         A new small business describes itself as: "{business_idea}"
 
@@ -80,7 +79,7 @@ def get_image_keywords(business_idea: str, industry: str = None) -> str:
         website - think about what the business actually looks like or
         does, not generic words like "business" or "success".
         """
-        response = client.models.generate_content(
+        response = generate_content(
             model=MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -144,8 +143,6 @@ def generate_website_content(business_name: str, business_idea: str, target_cust
     """Calls Gemini for whatever copy/colors the customer didn't provide
     themselves. Always asks for every field - the caller picks and
     chooses which ones it actually needs per-field."""
-    client = get_client()
-
     prompt = f"""
     You are a copywriter and designer creating website content for a new Virginia small business.
     Write copy that sounds like a real small business owner talking to their community, not
@@ -175,7 +172,7 @@ def generate_website_content(business_name: str, business_idea: str, target_cust
     - A primary/secondary hex color pair that fits the business's vibe
     """
 
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(

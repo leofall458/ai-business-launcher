@@ -2,7 +2,7 @@ import base64
 import json
 import xml.etree.ElementTree as ET
 from google.genai import types
-from app.agents import get_client
+from app.agents import generate_content
 from app.agents.brand_pdf import build_brand_kit_pdf
 
 MODEL = "gemini-2.5-flash"
@@ -69,7 +69,6 @@ BRAND_SCHEMA = {
 }
 
 def _generate_brand_data(business_name: str, business_idea: str, target_customer: str) -> dict:
-    client = get_client()
     prompt = f"""
     You are a brand designer creating a complete, cohesive brand identity for a new Virginia small business.
 
@@ -85,7 +84,7 @@ def _generate_brand_data(business_name: str, business_idea: str, target_customer
 
     Make everything feel like one cohesive brand, not a list of disconnected ideas.
     """
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -110,7 +109,6 @@ def _generate_logo_svg(business_name: str, business_idea: str, primary_hex: str,
     vector monogram (see app/agents/brand_pdf.py) rather than ever
     blocking brand kit generation on this one piece."""
     try:
-        client = get_client()
         prompt = f"""
         Design a simple, professional SVG logo for this business:
 
@@ -126,7 +124,7 @@ def _generate_logo_svg(business_name: str, business_idea: str, primary_hex: str,
 
         Respond with ONLY the raw <svg>...</svg> markup. No markdown code fences, no explanation, no XML declaration.
         """
-        response = client.models.generate_content(model=MODEL, contents=prompt)
+        response = generate_content(model=MODEL, contents=prompt)
         svg = _strip_code_fence(response.text or "")
         if svg.startswith("<svg") and svg.endswith("</svg>"):
             return svg
@@ -153,8 +151,7 @@ def _generate_svg_from_prompt(prompt: str) -> str:
     returns "" on any failure rather than ever raising, so a bad logo
     response can never block the rest of website/asset generation."""
     try:
-        client = get_client()
-        response = client.models.generate_content(model=MODEL, contents=prompt)
+        response = generate_content(model=MODEL, contents=prompt)
         svg = _strip_code_fence(response.text or "")
         if svg.startswith("<svg") and svg.endswith("</svg>") and _is_well_formed_svg(svg):
             return svg

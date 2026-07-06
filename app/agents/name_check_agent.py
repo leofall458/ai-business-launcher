@@ -1,5 +1,5 @@
 import httpx
-from app.agents import get_client
+from app.agents import generate_content
 
 MODEL = "gemini-2.5-flash"
 
@@ -12,8 +12,6 @@ def check_domain_available(domain: str) -> bool:
         return None
 
 def check_business_name(desired_name: str, state: str = "Virginia") -> dict:
-    client = get_client()
-
     clean_name = desired_name.lower().replace(" ", "").replace(",", "").replace(".", "").replace("'", "")
     domain = f"{clean_name}.com"
     domain_available = check_domain_available(domain)
@@ -35,7 +33,7 @@ def check_business_name(desired_name: str, state: str = "Virginia") -> dict:
     Be honest and specific.
     """
 
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt
     )

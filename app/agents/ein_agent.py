@@ -1,10 +1,8 @@
-from app.agents import get_client
+from app.agents import generate_content
 
 MODEL = "gemini-2.5-flash"
 
 def generate_ein_guidance(business_name: str, owner_name: str, state: str) -> dict:
-    client = get_client()
-
     prompt = f"""
     You are a tax expert helping a new Virginia LLC owner get their EIN.
     
@@ -22,7 +20,7 @@ def generate_ein_guidance(business_name: str, owner_name: str, state: str) -> di
     Be specific with field-by-field guidance for the SS-4 form.
     """
 
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt
     )

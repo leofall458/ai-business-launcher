@@ -1,10 +1,8 @@
-from app.agents import get_client
+from app.agents import generate_content
 
 MODEL = "gemini-2.5-flash"
 
 def generate_llc_paperwork(business_name: str, owner_name: str, business_purpose: str, registered_agent: str, principal_address: str) -> dict:
-    client = get_client()
-
     prompt = f"""
     You are a Virginia business formation expert. Generate a complete Virginia LLC formation package.
     
@@ -55,7 +53,7 @@ def generate_llc_paperwork(business_name: str, owner_name: str, business_purpose
     Use the actual business name and owner name throughout all documents.
     """
 
-    response = client.models.generate_content(
+    response = generate_content(
         model=MODEL,
         contents=prompt
     )
