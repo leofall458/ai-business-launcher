@@ -1,7 +1,10 @@
-"""Security headers for the authenticated dashboard, and CSRF tokens bound
-to a dashboard session - both scoped to the dashboard/document routes
-rather than applied app-wide, since the marketing pages and the existing
-admin panel have different (or no) requirements here.
+"""Security headers for the authenticated customer dashboard and admin
+panel, and CSRF tokens bound to a dashboard session - the header scoping
+excludes only the public marketing pages, which have no session/PII to
+protect. /admin handles the same customer PII (aggregated across every
+order) as /dashboard and was originally left out of this list with no
+stated reason - included now so it gets the same CSP/nosniff/no-store
+protection.
 """
 
 import hashlib
@@ -11,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import STATUS_SESSION_SECRET
 
-DASHBOARD_PATH_PREFIXES = ("/dashboard", "/orders")
+DASHBOARD_PATH_PREFIXES = ("/dashboard", "/orders", "/admin")
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """setdefault, not direct assignment, so a route that already set a

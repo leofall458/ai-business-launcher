@@ -2,6 +2,7 @@ import re
 import gzip
 import hashlib
 import io
+import os
 import requests
 import google.auth
 import google.auth.transport.requests
@@ -17,7 +18,12 @@ _VERSION_CONFIG = {
             "glob": "**",
             "headers": {
                 "X-Content-Type-Options": "nosniff",
-                "X-Frame-Options": "DENY",
+                # Not a blanket X-Frame-Options: DENY - the customer dashboard
+                # embeds the customer's own site in a preview iframe (see
+                # dashboard_order.html), which DENY silently blocked (blank
+                # box, no error) since that iframe is a different origin than
+                # the site itself. This still blocks framing by anyone else.
+                "Content-Security-Policy": "frame-ancestors 'self' https://app.launchbridge.ai https://*.run.app",
                 "Referrer-Policy": "strict-origin-when-cross-origin",
                 "X-XSS-Protection": "1; mode=block",
             },
@@ -25,6 +31,10 @@ _VERSION_CONFIG = {
         "rewrites": [{"glob": "**", "path": "/index.html"}],
     }
 }
+
+_WEBSITE_CSS_PATH = os.path.join(os.path.dirname(__file__), "static", "website-tailwind.css")
+with open(_WEBSITE_CSS_PATH, "rb") as _f:
+    _WEBSITE_CSS = _f.read()
 
 def make_site_id(business_name: str, order_id: str) -> str:
     slug = business_name.lower()
@@ -150,6 +160,7 @@ def _build_site_files(site_id: str, html_content: str) -> dict[str, bytes]:
         "/index.html": html_content.encode(),
         "/robots.txt": robots.encode(),
         "/sitemap.xml": sitemap.encode(),
+        "/styles.css": _WEBSITE_CSS,
     }
 
 def deploy_to_firebase(site_id: str, html_content: str) -> str:
