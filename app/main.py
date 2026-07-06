@@ -807,18 +807,36 @@ def run_document_generation(order_id: str):
             print(f"⚠️ Brand kit agent failed for order {order_id}: {e}")
             errors["brand_result"] = f"Brand kit: {e}"
 
+    # Split into two independently-retryable steps rather than one try block -
+    # marketing_plan_html previously got persisted to Firestore even when the
+    # PDF build/upload that followed it in the same try failed, and since
+    # this whole block is guarded by "if not order.get(marketing_plan_html)",
+    # every later retry saw html already present and skipped straight past
+    # the PDF forever, leaving the plan permanently viewable but never
+    # downloadable. Persisting the raw plan dict (not just its rendered
+    # HTML) means the PDF step can retry on its own without a second Gemini
+    # call even if it only fails on this run.
+    plan_data = order.get("marketing_plan_data")
     if not order.get("marketing_plan_html"):
         try:
             industry_label = INDUSTRY_CODE_LABELS.get(order.get("industry_code", "0"), "General Business")
             marketing_result = generate_marketing_plan(
                 business_name, business_idea, target_customer, industry_label, location="Virginia")
+            plan_data = marketing_result["plan"]
             update["marketing_plan_html"] = marketing_result["html"]
-            pdf_bytes = build_marketing_plan_pdf(marketing_result["plan"], business_name)
-            object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
-            update["documents.marketing_plan"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+            update["marketing_plan_data"] = plan_data
         except Exception as e:
             print(f"⚠️ Marketing plan agent failed for order {order_id}: {e}")
             errors["marketing_result"] = f"Marketing plan: {e}"
+
+    if plan_data and not existing_documents.get("marketing_plan"):
+        try:
+            pdf_bytes = build_marketing_plan_pdf(plan_data, business_name)
+            object_name = upload_document(order_id, pdf_bytes, "application/pdf", "pdf")
+            update["documents.marketing_plan"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+        except Exception as e:
+            print(f"⚠️ Marketing plan PDF failed for order {order_id}: {e}")
+            errors["marketing_plan_pdf"] = f"Marketing plan PDF: {e}"
 
     # LLC PDF requires a real address and signature — skip until the customer
     # completes the post-payment intake form in the dashboard.
