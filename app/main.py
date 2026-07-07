@@ -1824,6 +1824,10 @@ async def start_checkout(request: Request):
             cancel_url=f"{base_url}cancel",
             amount=charge_amount,
             founding_member=is_founding_member,
+            gclid=attribution.get("gclid"),
+            utm_source=attribution.get("utm_source"),
+            utm_medium=attribution.get("utm_medium"),
+            utm_campaign=attribution.get("utm_campaign"),
         )
         order_ref.set({"stripe_checkout_session_id": session.id}, merge=True)
     except Exception as e:

@@ -22,6 +22,7 @@ def construct_webhook_event(payload: bytes, sig_header: str):
 def create_checkout_session(
     order_id: str, success_url: str, cancel_url: str,
     amount: int = None, founding_member: bool = False, email: str = None,
+    gclid: str = None, utm_source: str = None, utm_medium: str = None, utm_campaign: str = None,
 ):
     """Stripe Checkout Session for the flat-fee LLC formation package.
     order_id travels in metadata + client_reference_id so /success can look
@@ -36,7 +37,13 @@ def create_checkout_session(
     (e.g. a resumed abandoned checkout) since Stripe rejects an empty string.
     Checkout renders Apple Pay/Google Pay automatically above the card form
     once wallets are enabled in the Stripe Dashboard - no extra params
-    needed for that."""
+    needed for that.
+
+    gclid/utm_* are whatever the order already has stored from the
+    lb_attribution cookie (see parse_attribution_cookie in main.py) - passed
+    straight through, not re-derived here. Stripe metadata values must be
+    strings, so a missing/null one is simply left out of the dict rather
+    than sent as None - Checkout still creates normally either way."""
     charge = amount if amount is not None else LLC_FORMATION_PRICE_CENTS
     if founding_member:
         description = (
@@ -55,6 +62,13 @@ def create_checkout_session(
     kwargs = {}
     if email:
         kwargs["customer_email"] = email
+    metadata = {"order_id": order_id, "founding_member": "true" if founding_member else "false"}
+    for key, value in (
+        ("gclid", gclid), ("utm_source", utm_source),
+        ("utm_medium", utm_medium), ("utm_campaign", utm_campaign),
+    ):
+        if value:
+            metadata[key] = value
     return stripe.checkout.Session.create(
         mode="payment",
         line_items=[{
@@ -72,7 +86,7 @@ def create_checkout_session(
         success_url=success_url,
         cancel_url=cancel_url,
         client_reference_id=order_id,
-        metadata={"order_id": order_id, "founding_member": "true" if founding_member else "false"},
+        metadata=metadata,
         **kwargs,
     )
 
