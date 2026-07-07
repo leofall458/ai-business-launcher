@@ -195,7 +195,16 @@
             </div>
             <p class="text-xs text-[#0e2148]/50 italic">"I just launched {{ business_name }} with Launch Bridge! 🚀"</p>
             <div class="mt-5 rounded-lg overflow-hidden border border-emerald-200">
+                {% if website_embeddable %}
                 <iframe src="{{ website_url }}" class="w-full h-96 bg-white" loading="lazy" title="{{ business_name }} website preview"></iframe>
+                {% else %}
+                <div class="w-full h-96 bg-gradient-to-br from-[#0e2148] to-[#1a3a6e] flex flex-col items-center justify-center text-center p-6">
+                    <p class="text-white font-serif text-lg font-semibold mb-2">{{ business_name }}</p>
+                    <p class="text-white/60 text-xs mb-4 max-w-xs">Inline preview isn't available for this site - open it directly instead.</p>
+                    <a href="{{ website_url }}" target="_blank"
+                        class="bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] text-xs font-semibold px-4 py-2 rounded-lg transition">View Live Site →</a>
+                </div>
+                {% endif %}
             </div>
             <div class="flex gap-3 mt-2">
                 <a href="{{ website_url }}" target="_blank"

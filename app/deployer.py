@@ -228,3 +228,17 @@ def deploy_website(business_name: str, html_content: str, order_id: str = None) 
 def get_website_html(order_id: str) -> str | None:
     """Retrieve stored HTML from GCS for download."""
     return _get_gcs_html(order_id)
+
+def check_iframe_embeddable(url: str) -> bool:
+    """True unless the site's own response headers would block being framed.
+    Sites deployed before the 2026-07-06 header fix (see _VERSION_CONFIG
+    above) still serve a static X-Frame-Options: DENY baked into that old
+    Firebase Hosting version - no code change here retroactively updates
+    already-deployed versions, only a redeploy does. Fails open (assumes
+    embeddable) on any request error so a slow/flaky check never hides an
+    otherwise-working preview behind the fallback."""
+    try:
+        resp = requests.head(url, timeout=2.5, allow_redirects=True)
+        return not any(h.lower() == "x-frame-options" for h in resp.headers)
+    except Exception:
+        return True

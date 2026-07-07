@@ -40,7 +40,7 @@ from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
 from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS
-from app.deployer import deploy_website, make_site_id, get_website_html
+from app.deployer import deploy_website, make_site_id, get_website_html, check_iframe_embeddable
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
     create_checkout_session,
@@ -2302,6 +2302,7 @@ def _dashboard_order_context(
         "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
         "ein": order.get("ein"),
         "website_url": order.get("website_url"),
+        "website_embeddable": check_iframe_embeddable(order["website_url"]) if order.get("website_url") else False,
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
         "awaiting_intake": bool(order.get("awaiting_intake")),
         "google_places_api_key": GOOGLE_PLACES_API_KEY,
