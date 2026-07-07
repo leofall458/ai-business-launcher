@@ -570,7 +570,7 @@ def send_abandoned_cart_email_1h(lead: dict, is_founding_member: bool = False) -
         "• We prepare and file your Virginia Articles of Organization on your behalf\n"
         "• We apply for your federal EIN for you\n• Brand kit\n"
         "• A professional website, ready for customers\n"
-        "• Accept payments immediately with a checkout that's wired up and ready\n\n"
+        "• Complete the pre-activation process to start accepting payments\n\n"
         f"Continue here: {url}\n\n"
         "Questions? Just reply to this email.\n\n- Launch Bridge LLC"
     )
@@ -585,7 +585,7 @@ def send_abandoned_cart_email_1h(lead: dict, is_founding_member: bool = False) -
         "<li>We apply for your federal EIN for you</li>"
         "<li>AI-generated brand kit</li>"
         "<li>A professional website, ready for customers</li>"
-        "<li>Accept payments immediately with a checkout that's wired up and ready</li>"
+        "<li>Complete the pre-activation process to start accepting payments</li>"
         "</ul>"
     )
     html = _wrap_html(html_inner, cta_text="Continue My LLC Setup →", cta_url=url)
@@ -620,7 +620,7 @@ def send_abandoned_cart_email_24h(lead: dict, is_founding_member: bool = False) 
             ("EIN", "We apply for your federal EIN for you"),
             ("Brand kit", "Logo, colors, fonts, tagline"),
             ("Website", "A professional website, ready for customers"),
-            ("Stripe", "Accept payments immediately with a checkout that's wired up and ready"),
+            ("Stripe", "Complete the pre-activation process to start accepting payments"),
             ("Total", f"{price_label}"),
         ])
     )
