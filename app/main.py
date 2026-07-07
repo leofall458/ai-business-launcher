@@ -1,13 +1,14 @@
 import os
 import re
 import io
+import json
 import zipfile
 import secrets
 import hmac
 import hashlib
 import asyncio
 import datetime
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -1710,6 +1711,55 @@ def run_logo_regeneration(order_id: str) -> dict:
         print(f"⚠️ Logo regeneration crashed for order {order_id}: {e}")
         return {"success": False, "error": error}
 
+ATTRIBUTION_COOKIE_NAME = "lb_attribution"
+ATTRIBUTION_STRING_FIELDS = ("gclid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content")
+
+def parse_attribution_cookie(raw: str | None) -> dict:
+    """Reads the marketing site's lb_attribution cookie (domain
+    .launchbridge.ai) into the fields stored on the order at creation time.
+    app.launchbridge.ai is a subdomain of launchbridge.ai, so the browser
+    already sends this cookie on every request here without any extra
+    wiring - this just parses what's on the request.
+
+    Never raises and never blocks order creation: a visitor who came
+    straight to the app (no cookie), an ad blocker that stripped it, or a
+    malformed value all just mean every field comes back null, same as if
+    they'd never been near a Google/UTM link at all."""
+    fields = {"attribution_captured_at": None, **{k: None for k in ATTRIBUTION_STRING_FIELDS}}
+    if not raw:
+        return fields
+
+    data = None
+    for candidate in (raw, unquote(raw)):
+        try:
+            data = json.loads(candidate)
+            break
+        except (ValueError, TypeError):
+            continue
+    if not isinstance(data, dict):
+        return fields
+
+    for key in ATTRIBUTION_STRING_FIELDS:
+        value = data.get(key)
+        fields[key] = value if isinstance(value, str) and value else None
+
+    # The cookie's own capture time, not order-creation time - a visitor can
+    # click a Google ad and not actually check out until days later, and the
+    # gap itself is signal (see how utm/gclid data feeds ad spend attribution).
+    captured_raw = data.get("timestamp") or data.get("captured_at") or data.get("attribution_captured_at")
+    if isinstance(captured_raw, str):
+        try:
+            fields["attribution_captured_at"] = datetime.datetime.fromisoformat(captured_raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    elif isinstance(captured_raw, (int, float)):
+        try:
+            seconds = captured_raw / 1000 if captured_raw > 1e12 else captured_raw
+            fields["attribution_captured_at"] = datetime.datetime.fromtimestamp(seconds, tz=datetime.timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            pass
+    return fields
+
 @app.get("/start", response_class=HTMLResponse)
 async def start(request: Request):
     """Step 2: shows the deliverables recap + founding pricing + Checkout
@@ -1760,7 +1810,8 @@ async def start_checkout(request: Request):
     # those come from Steps 3-4, post-payment; Stripe Checkout collects
     # email itself during payment.
     extra = {"lead_id": lead_id} if lead_id else {}
-    record_state(order_ref, "draft", business_idea=business_idea, **extra,
+    attribution = parse_attribution_cookie(request.cookies.get(ATTRIBUTION_COOKIE_NAME))
+    record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
                  awaiting_intake=True, founding_member=is_founding_member,
                  consent=True, consent_at=firestore.SERVER_TIMESTAMP)
