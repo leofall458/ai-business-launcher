@@ -2155,7 +2155,11 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
             advanced = process_paid_order(order_id, session.payment_status, background_tasks)
             log_entry["advanced_order"] = advanced
             if session.payment_status == "paid":
-                gclid = (session.metadata or {}).get("gclid")
+                # StripeObject (session.metadata's type) doesn't actually
+                # implement .get() despite looking dict-like - it falls
+                # through to __getattr__/__getitem__ and raises AttributeError
+                # instead of returning None. to_dict() is a real dict.
+                gclid = session.metadata.to_dict().get("gclid") if session.metadata else None
                 conversion_dt = datetime.datetime.fromtimestamp(event.created, tz=datetime.timezone.utc)
                 background_tasks.add_task(
                     import_ad_conversion, order_id, gclid, session.amount_total, conversion_dt,
