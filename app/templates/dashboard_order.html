@@ -6,7 +6,11 @@
     <title>Your Dashboard - Launch Bridge LLC</title>
     {% include "_brand.html" %}
     <script src="/static/htmx.min.js"></script>
+    {# Skipped while the raw SSN input is on this page - see the matching
+       guard on _clarity.html inside _brand.html above. #}
+    {% if not needs_ssn_entry %}
     {% include "_ga4.html" %}
+    {% endif %}
     <style>
         @media (max-width: 640px) {
             input, textarea, select { font-size: 16px !important; }
@@ -322,7 +326,7 @@
             });
         }
     </script>
-    {% if google_analytics_id %}
+    {% if google_analytics_id and not needs_ssn_entry %}
     <script>
         (function() {
             function ga(name, params) {

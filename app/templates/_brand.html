@@ -49,4 +49,11 @@
         #pay-sticky p { color: rgba(14,33,72,0.55) !important; }
     }
 </style>
+{# needs_ssn_entry is only ever set by dashboard_order.html's context (see
+   _dashboard_order_context in main.py) - undefined on every other page, and
+   Jinja's Undefined is falsy, so `not needs_ssn_entry` still includes Clarity
+   everywhere else. Skipped here specifically so a page showing the raw SSN
+   input never loads a third-party session-recording script. #}
+{% if not needs_ssn_entry %}
 {% include "_clarity.html" %}
+{% endif %}
