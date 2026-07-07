@@ -9,6 +9,7 @@ dependencies = [
     "dnspython>=2.8.0",
     "fastapi>=0.137.1",
     "firebase-admin>=7.4.0",
+    "google-ads>=31.1.0",
     "google-api-python-client>=2.197.0",
     "google-auth>=2.55.0",
     "google-auth-oauthlib>=1.4.0",

@@ -54,6 +54,7 @@ from app.stripe_service import (
     construct_webhook_event,
 )
 from app.config import LLC_FORMATION_PRICE_CENTS
+from app.google_ads_service import upload_click_conversion
 from app.ssn_vault import (
     encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours, is_ssn_stored,
 )
@@ -2083,6 +2084,41 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         "amount_paid": FOUNDING_MEMBER_PRICE_CENTS // 100 if is_founding else LLC_FORMATION_PRICE_CENTS // 100,
     })
 
+def import_ad_conversion(order_id: str, gclid: str | None, amount_cents: int, conversion_dt: datetime.datetime):
+    """Reports a completed Stripe payment to Google Ads against its gclid -
+    triggered from the webhook (not /success), since the webhook is the
+    server-authoritative record of payment rather than something that
+    depends on the customer's browser/ad-blocker actually firing a
+    client-side gtag('event', 'purchase') call. A silent no-op for the
+    (normal, majority) case where this order never carried a gclid at all -
+    not every order is ad-driven.
+
+    Idempotent: ad_conversion_imported is only ever attempted once per
+    order, since Stripe can redeliver the same webhook event on a retry and
+    a second import would double-count the same purchase in Google Ads.
+    Wrapped in try/except on top of upload_click_conversion's own internal
+    guard - this must never be able to affect the webhook's core job of
+    marking the order paid, which has already happened by the time this
+    runs (see stripe_webhook, called via background_tasks)."""
+    if not gclid:
+        return
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order or order.get("ad_conversion_imported"):
+        return
+    try:
+        success = upload_click_conversion(
+            gclid=gclid, order_id=order_id,
+            conversion_value=amount_cents / 100, conversion_datetime=conversion_dt,
+        )
+        order_ref.set({
+            "ad_conversion_imported": success,
+            "ad_conversion_attempted_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+    except Exception as e:
+        print(f"⚠️ Google Ads conversion import crashed for order {order_id}: {e}")
+        order_ref.set({"ad_conversion_attempted_at": firestore.SERVER_TIMESTAMP}, merge=True)
+
 @app.post("/webhook")
 async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
     """Server-to-server backstop for /success - if a customer closes their
@@ -2118,6 +2154,12 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
         if order_id:
             advanced = process_paid_order(order_id, session.payment_status, background_tasks)
             log_entry["advanced_order"] = advanced
+            if session.payment_status == "paid":
+                gclid = (session.metadata or {}).get("gclid")
+                conversion_dt = datetime.datetime.fromtimestamp(event.created, tz=datetime.timezone.utc)
+                background_tasks.add_task(
+                    import_ad_conversion, order_id, gclid, session.amount_total, conversion_dt,
+                )
 
     db.collection("webhook_events").add(log_entry)
     return Response(status_code=200)

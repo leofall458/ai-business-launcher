@@ -80,3 +80,23 @@ CLARITY_ID = os.getenv("CLARITY_ID", "")
 
 # Optional: URL of a deployed sample site for the deliverables gallery iframe preview.
 SAMPLE_WEBSITE_URL = os.getenv("SAMPLE_WEBSITE_URL", "")
+
+# Google Ads offline conversion import (see app/google_ads_service.py) -
+# reports a completed Stripe payment back to Google Ads against its gclid,
+# server-side, from the Stripe webhook. All optional: any of these being
+# empty just disables the import (skipped, not an error - see
+# google_ads_service.upload_click_conversion). Not split into _STAGING
+# variants like the Stripe keys - the service only ever calls the live API
+# when APP_ENV == "production" in the first place, so there's nothing for a
+# staging-only credential to protect against.
+GOOGLE_ADS_DEVELOPER_TOKEN = get_secret("GOOGLE_ADS_DEVELOPER_TOKEN")
+GOOGLE_ADS_CLIENT_ID = get_secret("GOOGLE_ADS_CLIENT_ID")
+GOOGLE_ADS_CLIENT_SECRET = get_secret("GOOGLE_ADS_CLIENT_SECRET")
+GOOGLE_ADS_REFRESH_TOKEN = get_secret("GOOGLE_ADS_REFRESH_TOKEN")
+# Only needed if GOOGLE_ADS_CUSTOMER_ID is managed under a manager (MCC)
+# account rather than being logged into directly.
+GOOGLE_ADS_LOGIN_CUSTOMER_ID = get_secret("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+# Target account ID that owns the conversion action, digits only (no dashes).
+GOOGLE_ADS_CUSTOMER_ID = get_secret("GOOGLE_ADS_CUSTOMER_ID")
+# Full resource name, e.g. "customers/1234567890/conversionActions/567890123".
+GOOGLE_ADS_CONVERSION_ACTION = get_secret("GOOGLE_ADS_CONVERSION_ACTION")
