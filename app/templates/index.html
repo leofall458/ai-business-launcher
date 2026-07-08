@@ -27,15 +27,9 @@
         <p class="text-[#0e2148]/65 text-base sm:text-lg mb-5 max-w-sm mx-auto">
             From business idea to fully-formed LLC with a website, brand kit, EIN, and Stripe account — all done for you.
         </p>
-        {% if founding_member_status and founding_member_status.is_active %}
-        <div class="inline-flex items-center gap-2 bg-[#c9a227]/15 border border-[#c9a227]/50 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
-            ${{ (founding_member_status.discount_price // 100) }} Founding Member · normally ${{ (founding_member_status.original_price // 100) }}
-        </div>
-        {% else %}
         <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
             $350 flat · includes $100 Virginia state fee
         </div>
-        {% endif %}
     </header>
 
     {% if cancelled %}
@@ -190,22 +184,6 @@
         </div>
 
         <!-- Pricing breakdown -->
-        {% if founding_member_status and founding_member_status.is_active %}
-        <div class="bg-[#c9a227]/10 border border-[#c9a227]/35 rounded-xl p-4 mt-4">
-            <div class="flex justify-between text-sm text-[#0e2148]/75 mb-2">
-                <span>Launch Bridge service fee</span>
-                <span><s class="text-[#0e2148]/35">$250</s> <strong class="text-[#b8860b]">${{ (founding_member_status.service_fee_cents // 100) }}</strong> <span class="text-xs text-[#b8860b]/70">({{ founding_member_status.discount_percent }}% off)</span></span>
-            </div>
-            <div class="flex justify-between text-sm text-[#0e2148]/75 mb-3">
-                <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
-            </div>
-            <div class="flex justify-between font-bold border-t border-[#c9a227]/25 pt-3">
-                <span class="text-[#0e2148]">Total</span><span class="text-[#b8860b] text-lg">${{ (founding_member_status.discount_price // 100) }}</span>
-            </div>
-            <p class="text-xs text-[#b8860b]/80 font-semibold mt-2">You save ${{ (founding_member_status.savings // 100) }} with Founding Member discount</p>
-            <p class="text-xs text-[#b8860b]/70 mt-1">Founding Member rate · {{ founding_member_status.spots_remaining }} spot{{ "s" if founding_member_status.spots_remaining != 1 else "" }} remaining · We pay Virginia directly.</p>
-        </div>
-        {% else %}
         <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mt-4 shadow-sm">
             <div class="flex justify-between text-sm text-[#0e2148]/70 mb-2">
                 <span>Launch Bridge service fee</span><span class="text-[#0e2148] font-semibold">$250</span>
@@ -218,7 +196,6 @@
             </div>
             <p class="text-xs text-[#0e2148]/35 mt-2">We pay Virginia directly — you never pay separately.</p>
         </div>
-        {% endif %}
     </section>
 
     <!-- ── TRUST SIGNALS ── -->

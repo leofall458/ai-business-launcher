@@ -22,13 +22,6 @@ STRIPE_WEBHOOK_SECRET = get_secret(f"STRIPE_WEBHOOK_SECRET{_secret_suffix}")
 
 LLC_FORMATION_PRICE_CENTS = 35000
 
-FOUNDING_MEMBER_DISCOUNT = True
-FOUNDING_MEMBER_MAX = 10
-FOUNDING_MEMBER_PRICE_CENTS = 25000          # $250 total ($100 off $350)
-FOUNDING_MEMBER_SERVICE_FEE_CENTS = 15000   # $150 service fee (normally $250)
-FOUNDING_MEMBER_DISCOUNT_PERCENT = 29
-FOUNDING_MEMBER_LABEL = "Founding Member"
-
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "ai-biz-launcher")
 
 # Staging writes to its own Firestore collection (e.g. "staging_orders") in

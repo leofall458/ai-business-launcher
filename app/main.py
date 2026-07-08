@@ -21,8 +21,6 @@ from app.config import (
     FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET,
     APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
     STRIPE_PUBLISHABLE_KEY,
-    FOUNDING_MEMBER_DISCOUNT, FOUNDING_MEMBER_MAX, FOUNDING_MEMBER_PRICE_CENTS,
-    FOUNDING_MEMBER_SERVICE_FEE_CENTS, FOUNDING_MEMBER_DISCOUNT_PERCENT, FOUNDING_MEMBER_LABEL,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name
@@ -188,34 +186,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     log_customer_error(request, exc)
     return friendly_error_response(
         request, "We hit a small snag. Our team has been notified and will fix it shortly.", 500)
-
-def get_founding_member_status() -> dict:
-    """Returns current founding-member discount availability by counting
-    orders in Firestore that carry founding_member=True and have left the
-    draft/payment_failed state (i.e. actually paid). Thread-safe only in
-    the sense that Firestore reads are consistent point-in-time snapshots;
-    a very tight race between two simultaneous checkouts could let one
-    extra slot through, which is acceptable at this order volume."""
-    base = {
-        "discount_price": FOUNDING_MEMBER_PRICE_CENTS,
-        "original_price": LLC_FORMATION_PRICE_CENTS,
-        "discount_percent": FOUNDING_MEMBER_DISCOUNT_PERCENT,
-        "savings": LLC_FORMATION_PRICE_CENTS - FOUNDING_MEMBER_PRICE_CENTS,
-        "service_fee_cents": FOUNDING_MEMBER_SERVICE_FEE_CENTS,
-    }
-    if not FOUNDING_MEMBER_DISCOUNT:
-        return {**base, "is_active": False, "spots_taken": FOUNDING_MEMBER_MAX, "spots_remaining": 0}
-
-    try:
-        count = sum(
-            1 for doc in ORDERS.where("founding_member", "==", True).stream()
-            if doc.to_dict().get("state", "draft") not in ("draft", "payment_failed")
-        )
-    except Exception:
-        count = 0
-
-    spots_remaining = max(0, FOUNDING_MEMBER_MAX - count)
-    return {**base, "is_active": spots_remaining > 0, "spots_taken": count, "spots_remaining": spots_remaining}
 
 @app.on_event("startup")
 async def on_startup():
@@ -387,7 +357,7 @@ def compute_timeline(order: dict, state: str) -> list:
 
     # 1. Payment Received
     if state != "draft":
-        amount_label = f"${FOUNDING_MEMBER_PRICE_CENTS // 100}" if order.get("founding_member") else f"${LLC_FORMATION_PRICE_CENTS // 100}"
+        amount_label = f"${LLC_FORMATION_PRICE_CENTS // 100}"
         steps.append({"key": "payment", "name": "Payment Received", "status": "complete",
             "description": f"Payment of {amount_label} confirmed{on_date(order.get('paid_at'))}"})
     else:
@@ -561,7 +531,6 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
 def _wizard_context() -> dict:
     return {
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or "",
-        "founding_member_status": get_founding_member_status(),
     }
 
 @app.get("/", response_class=HTMLResponse)
@@ -1402,10 +1371,6 @@ async def abandoned_cart_scheduler():
             now = datetime.datetime.now(datetime.timezone.utc)
             one_hour_ago = now - datetime.timedelta(hours=1)
             twenty_four_hours_ago = now - datetime.timedelta(hours=24)
-            # Computed once per sweep, not per lead - founding-member
-            # availability is a global count, not something that varies
-            # lead to lead within the same pass.
-            is_founding_member_active = get_founding_member_status()["is_active"]
             for doc in LEADS.where("converted", "==", False).stream():
                 lead = doc.to_dict()
                 lead_id = doc.id
@@ -1425,10 +1390,10 @@ async def abandoned_cart_scheduler():
                 if not step1_at:
                     continue
                 if not lead.get("recovery_1h_sent") and step1_at <= one_hour_ago:
-                    send_abandoned_cart_email_1h(lead, is_founding_member_active)
+                    send_abandoned_cart_email_1h(lead)
                     LEADS.document(lead_id).set({"recovery_1h_sent": True}, merge=True)
                 if not lead.get("recovery_24h_sent") and step1_at <= twenty_four_hours_ago:
-                    send_abandoned_cart_email_24h(lead, is_founding_member_active)
+                    send_abandoned_cart_email_24h(lead)
                     LEADS.document(lead_id).set({"recovery_24h_sent": True}, merge=True)
 
             for doc in ORDERS.where("state", "in", ["paid", "name_selected"]).stream():
@@ -1763,7 +1728,7 @@ def parse_attribution_cookie(raw: str | None) -> dict:
 
 @app.get("/start", response_class=HTMLResponse)
 async def start(request: Request):
-    """Step 2: shows the deliverables recap + founding pricing + Checkout
+    """Step 2: shows the deliverables recap + pricing + Checkout
     button for the idea the customer just entered on the Step 1 landing
     page. The idea travels here as a query param (Step 1's JS reads it back
     out of localStorage before navigating) rather than a Firestore lookup -
@@ -1799,9 +1764,7 @@ async def start_checkout(request: Request):
     business_idea = form.get("business_idea", "").strip()
     lead_id = (form.get("lead_id") or "").strip()
 
-    fm_status = get_founding_member_status()
-    is_founding_member = fm_status["is_active"]
-    charge_amount = FOUNDING_MEMBER_PRICE_CENTS if is_founding_member else LLC_FORMATION_PRICE_CENTS
+    charge_amount = LLC_FORMATION_PRICE_CENTS
 
     order_ref = ORDERS.document()
     order_id = order_ref.id
@@ -1814,7 +1777,7 @@ async def start_checkout(request: Request):
     attribution = parse_attribution_cookie(request.cookies.get(ATTRIBUTION_COOKIE_NAME))
     record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
-                 awaiting_intake=True, founding_member=is_founding_member,
+                 awaiting_intake=True,
                  consent=True, consent_at=firestore.SERVER_TIMESTAMP)
 
     base_url = str(request.base_url)
@@ -1824,7 +1787,6 @@ async def start_checkout(request: Request):
             success_url=f"{base_url}success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}cancel",
             amount=charge_amount,
-            founding_member=is_founding_member,
             gclid=attribution.get("gclid"),
             utm_source=attribution.get("utm_source"),
             utm_medium=attribution.get("utm_medium"),
@@ -1924,7 +1886,7 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     # business_name/full_name don't exist yet at this point (Steps 3-4,
     # post-payment) - business_idea is the only descriptive field known
     # this early, captured back at Step 1.
-    amount_paid = FOUNDING_MEMBER_PRICE_CENTS // 100 if order.get("founding_member") else LLC_FORMATION_PRICE_CENTS // 100
+    amount_paid = LLC_FORMATION_PRICE_CENTS // 100
     if APP_ENV == "staging":
         send_admin_sms(
             f"🧪 [TEST] New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
@@ -1935,16 +1897,6 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
             f"💰 [LIVE] New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
             f"Order: {order_id[:8]}. Admin: app.launchbridge.ai/admin"
         )
-
-    # Check if this is the 10th founding member — if so, notify admin that
-    # the discount period has ended and future checkouts revert to $350.
-    if order.get("founding_member"):
-        try:
-            fm_check = get_founding_member_status()
-            if fm_check["spots_taken"] >= FOUNDING_MEMBER_MAX:
-                send_admin_sms("🎉 All 10 founding member spots filled! Now charging $350")
-        except Exception:
-            pass
 
     # awaiting_intake orders collected only 5 fields pre-payment. The rest
     # (address, DOB, sig) is gathered in the dashboard before the pipeline
@@ -2075,13 +2027,11 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         except Exception as e:
             print(f"⚠️ Could not auto-login order {resolved_order_id} after payment: {e}")
 
-    is_founding = order.get("founding_member", False)
     return templates.TemplateResponse(request, "success_interstitial.html", {
         "email": email,
         "order_id": resolved_order_id,
         "business_name": order.get("business_name", ""),
-        "founding_member": is_founding,
-        "amount_paid": FOUNDING_MEMBER_PRICE_CENTS // 100 if is_founding else LLC_FORMATION_PRICE_CENTS // 100,
+        "amount_paid": LLC_FORMATION_PRICE_CENTS // 100,
     })
 
 def import_ad_conversion(order_id: str, gclid: str | None, amount_cents: int, conversion_dt: datetime.datetime):
@@ -3164,8 +3114,6 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
     # Gmail poller removed - SCC approval emails go directly to customers
     # Admin manually marks LLC as approved in the admin dashboard
 
-    fm_admin_status = get_founding_member_status()
-
     # Filtered in Python rather than a Firestore .where("resolved", "==",
     # False).order_by("timestamp", ...) query - that combination needs a
     # composite index that doesn't exist for this brand-new collection, and
@@ -3197,8 +3145,6 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "irs_open": irs_open,
         "irs_next_window_eta": irs_next_window_eta,
         "warning": request.query_params.get("warning"),
-        "founding_member_count": fm_admin_status["spots_taken"],
-        "founding_member_max": FOUNDING_MEMBER_MAX,
         "stats": stats,
         "recent_errors": recent_errors,
     })

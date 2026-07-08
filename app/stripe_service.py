@@ -21,14 +21,13 @@ def construct_webhook_event(payload: bytes, sig_header: str):
 
 def create_checkout_session(
     order_id: str, success_url: str, cancel_url: str,
-    amount: int = None, founding_member: bool = False, email: str = None,
+    amount: int = None, email: str = None,
     gclid: str = None, utm_source: str = None, utm_medium: str = None, utm_campaign: str = None,
 ):
     """Stripe Checkout Session for the flat-fee LLC formation package.
     order_id travels in metadata + client_reference_id so /success can look
     up the right Firestore order regardless of which one it reads back.
-    amount defaults to LLC_FORMATION_PRICE_CENTS ($350); pass a lower value
-    for the founding-member discount.
+    amount defaults to LLC_FORMATION_PRICE_CENTS ($350).
 
     Called at Step 2, before the customer has picked a business name (that's
     Step 3, post-payment) - so the line item can't be named after the
@@ -45,24 +44,16 @@ def create_checkout_session(
     strings, so a missing/null one is simply left out of the dict rather
     than sent as None - Checkout still creates normally either way."""
     charge = amount if amount is not None else LLC_FORMATION_PRICE_CENTS
-    if founding_member:
-        description = (
-            "$150 Launch Bridge service fee (Founding Member rate — $100 off) + "
-            "$100 Virginia state filing fee = $250 total. "
-            "Full service: LLC filing, EIN, brand kit, marketing plan, website, and Stripe setup."
-        )
-        product_name = "Virginia LLC Formation — Founding Member"
-    else:
-        description = (
-            "$250 Launch Bridge service fee + $100 Virginia state filing fee "
-            "(we pay this to Virginia for you) = $350 total. "
-            "Includes EIN application, brand kit, marketing plan, and business website."
-        )
-        product_name = "Virginia LLC Formation"
+    description = (
+        "$250 Launch Bridge service fee + $100 Virginia state filing fee "
+        "(we pay this to Virginia for you) = $350 total. "
+        "Includes EIN application, brand kit, marketing plan, and business website."
+    )
+    product_name = "Virginia LLC Formation"
     kwargs = {}
     if email:
         kwargs["customer_email"] = email
-    metadata = {"order_id": order_id, "founding_member": "true" if founding_member else "false"}
+    metadata = {"order_id": order_id}
     for key, value in (
         ("gclid", gclid), ("utm_source", utm_source),
         ("utm_medium", utm_medium), ("utm_campaign", utm_campaign),
