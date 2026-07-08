@@ -38,7 +38,7 @@ from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTa
 from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
-from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS
+from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS, get_backdrop_image_options
 from app.deployer import deploy_website, make_site_id, get_website_html, check_iframe_embeddable
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
@@ -928,6 +928,7 @@ def run_early_assets(order_id: str):
                     linkedin_url=order.get("linkedin_url", ""),
                     color_preference=order.get("color_preference", "default"),
                     custom_primary_color=order.get("custom_primary_color", ""),
+                    backdrop_image_choice=order.get("backdrop_image_choice", ""),
                     payment_link_url=None,  # Added after EIN + Stripe onboarding completes
                     order_id=order_id,
                     site_url=f"https://{_site_id}.web.app",
@@ -1490,6 +1491,7 @@ def run_asset_generation(order_id: str):
                     linkedin_url=order.get("linkedin_url", ""),
                     color_preference=order.get("color_preference", "default"),
                     custom_primary_color=order.get("custom_primary_color", ""),
+                    backdrop_image_choice=order.get("backdrop_image_choice", ""),
                     payment_link_url=payment_link_url,
                     order_id=order_id,
                     site_url=f"https://{_site_id}.web.app",
@@ -1579,6 +1581,7 @@ def run_website_regeneration(order_id: str) -> dict:
             linkedin_url=order.get("linkedin_url", ""),
             color_preference=order.get("color_preference", "default"),
             custom_primary_color=order.get("custom_primary_color", ""),
+            backdrop_image_choice=order.get("backdrop_image_choice", ""),
             payment_link_url=order.get("stripe_payment_link_url"),
             order_id=order_id,
             site_url=f"https://{_site_id}.web.app",
@@ -2794,7 +2797,7 @@ _STEP6_WEBSITE_SIMPLE_FIELDS = [
     "service_1_name", "service_1_desc", "service_2_name", "service_2_desc",
     "service_3_name", "service_3_desc",
     "business_hours", "instagram_url", "facebook_url", "tiktok_url", "linkedin_url",
-    "color_preference", "custom_primary_color",
+    "color_preference", "custom_primary_color", "backdrop_image_choice",
     "website_contact_phone", "website_contact_email", "website_contact_address",
 ]
 
@@ -2805,11 +2808,25 @@ async def dashboard_website(request: Request, owned: tuple = Depends(get_owned_o
     if not reached(order.get("state", "draft"), "name_selected"):
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/name", status_code=303)
 
+    # Generated once per order and cached on Firestore - otherwise every
+    # page load (or a customer hitting back/forward) would burn a fresh
+    # Gemini call and, worse, keep reshuffling the candidate grid out from
+    # under whatever the customer already clicked.
+    backdrop_options = order.get("backdrop_image_options")
+    if not backdrop_options:
+        try:
+            backdrop_options = get_backdrop_image_options(order.get("business_idea", ""))
+            order_ref.set({"backdrop_image_options": backdrop_options}, merge=True)
+        except Exception as e:
+            print(f"⚠️ Could not generate backdrop image options for order {order_id}: {e}")
+            backdrop_options = []
+
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
     return templates.TemplateResponse(request, "dashboard_website.html", {
         "order_id": order_id,
         "business_name": order.get("business_name", ""),
         "order": order,
+        "backdrop_image_options": backdrop_options,
         "csrf_token": make_csrf_token(session_id),
         "website_errors": {},
     })
@@ -2849,6 +2866,7 @@ async def dashboard_website_submit(
             "order_id": order_id,
             "business_name": order.get("business_name", ""),
             "order": {**order, **form},
+            "backdrop_image_options": order.get("backdrop_image_options") or [],
             "csrf_token": make_csrf_token(session_id),
             "website_errors": photo_errors,
         }, status_code=400)

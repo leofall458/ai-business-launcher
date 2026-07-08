@@ -100,6 +100,86 @@ def get_image_keywords(business_idea: str, industry: str = None) -> str:
 def _image_url(keywords: str, width: int, height: int, lock: int) -> str:
     return f"https://loremflickr.com/{width}/{height}/{keywords}?lock={lock}"
 
+IMAGE_OPTIONS_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "keyword_sets": {
+            "type": "ARRAY", "minItems": 4, "maxItems": 5,
+            "items": {
+                "type": "ARRAY", "minItems": 1, "maxItems": 2,
+                "items": {"type": "STRING", "description": "A single lowercase English word suitable as a stock-photo search term (e.g. 'bakery', 'storefront', 'pastries') - no phrases, no punctuation"},
+            },
+        },
+    },
+    "required": ["keyword_sets"],
+}
+
+def get_image_option_keywords(business_idea: str, industry: str = None) -> list:
+    """Asks Gemini for 4-5 different keyword combinations, each a distinct
+    visual angle on the business (storefront, interior, a product/dish
+    close-up, the street it's on, tools/equipment) - used to build the
+    backdrop-image picker's candidate grid (see dashboard_website.html and
+    get_backdrop_image_options below), one candidate per combination.
+
+    Deliberately steered away from portrait/face/team-style keywords: a
+    stranger's identifiable close-up face makes an odd backdrop for someone
+    else's business website, whereas a wide, anonymous shot (a busy street,
+    a crowd from a distance) is fine if it comes up naturally. loremflickr
+    has no orientation/content-type API param to enforce this directly (see
+    get_image_keywords's docstring on why this integration is keyless
+    Flickr-tag search, not the real Unsplash API) - keyword steering is the
+    only lever available.
+
+    Falls back to a handful of deterministic variations built from
+    get_image_keywords()'s single result if the Gemini call itself fails -
+    a less-varied candidate grid is better than a crashed customization
+    step."""
+    try:
+        prompt = f"""
+        A new small business describes itself as: "{business_idea}"
+
+        Give 4-5 different sets of 1-2 concrete, specific English keywords
+        (single words, not phrases) for stock-photo searches that would each
+        find a DIFFERENT visual angle of this business - e.g. storefront/
+        exterior, interior, a product or dish close-up, the neighborhood/
+        street it's on, or tools/equipment used. Avoid generic words like
+        "business" or "success".
+
+        Do NOT include words like "portrait", "face", "headshot", "person",
+        or "team" - a close-up of a stranger's face makes a bad, slightly
+        unsettling website backdrop. Distant/anonymous people (e.g. a busy
+        street from afar) are fine if they come up naturally, but don't
+        specifically search for people.
+        """
+        response = generate_content(
+            model=MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=IMAGE_OPTIONS_SCHEMA,
+            ),
+        )
+        keyword_sets = json.loads(response.text)["keyword_sets"]
+        options = [",".join(k.strip().lower() for k in kw_set if k.strip()) for kw_set in keyword_sets]
+        options = [o for o in options if o]
+        if options:
+            return options
+    except Exception as e:
+        print(f"⚠️ get_image_option_keywords Gemini call failed, falling back: {e}")
+
+    base = get_image_keywords(business_idea, industry)
+    first = base.split(",")[0]
+    return [base, f"{first},storefront", f"{first},interior", f"{first},exterior"]
+
+def get_backdrop_image_options(business_idea: str, industry: str = None,
+                                width: int = 1600, height: int = 900) -> list:
+    """Returns 4-5 candidate backdrop-image URLs for the website
+    customization step's image picker - one per keyword combination from
+    get_image_option_keywords, each with its own lock so every candidate is
+    a distinct photo rather than the same one repeated."""
+    keyword_sets = get_image_option_keywords(business_idea, industry)
+    return [_image_url(keywords, width, height, lock=i + 1) for i, keywords in enumerate(keyword_sets)]
+
 CONTENT_SCHEMA = {
     "type": "OBJECT",
     "properties": {
@@ -276,6 +356,7 @@ def generate_website(
     contact_email: str = None, contact_address: str = None,
     industry: str = None,
     logo_data_uri: str = None, favicon_data_uri: str = None,
+    backdrop_image_choice: str = "",
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
@@ -297,7 +378,16 @@ def generate_website(
     customer explicitly opted in on the website customization step, all
     three are forced to None here regardless of what's stored on the order,
     so a public site can never end up displaying contact details the
-    customer didn't choose to publish."""
+    customer didn't choose to publish.
+
+    backdrop_image_choice is whatever the customer picked in the backdrop-
+    image step (see get_backdrop_image_options / dashboard_website.html):
+    a specific URL from that candidate grid, "none" (no stock image at
+    all - template falls back to its solid/gradient background), or
+    "custom_upload" (rely entirely on their own uploaded photos). Left
+    blank/missing - older orders, or a customer who never reached this
+    step - falls back to the original behavior of auto-picking one image
+    from AI-derived keywords, so nothing already in the pipeline breaks."""
     if not show_contact:
         contact_phone = contact_email = contact_address = None
     if template_name not in TEMPLATE_FILES:
@@ -308,7 +398,16 @@ def generate_website(
     description = (description or "").strip()
 
     ai_content = generate_website_content(business_name, business_idea, target_customer)
-    image_keywords = get_image_keywords(business_idea, industry)
+
+    backdrop_image_choice = (backdrop_image_choice or "").strip()
+    if backdrop_image_choice.startswith("http://") or backdrop_image_choice.startswith("https://"):
+        hero_image_url = about_image_url = backdrop_image_choice
+    elif backdrop_image_choice in ("none", "custom_upload"):
+        hero_image_url = about_image_url = None
+    else:
+        image_keywords = get_image_keywords(business_idea, industry)
+        hero_image_url = _image_url(image_keywords, 1600, 900, lock=1)
+        about_image_url = _image_url(image_keywords, 900, 700, lock=2)
 
     final_tagline = tagline or ai_content["tagline"]
     final_about = description or ai_content["about_text"]
@@ -363,8 +462,8 @@ def generate_website(
         payment_link_url=payment_link_url,
         hero_photo=photos[0] if photos else None,
         gallery_photos=photos,
-        hero_image_url=_image_url(image_keywords, 1600, 900, lock=1),
-        about_image_url=_image_url(image_keywords, 900, 700, lock=2),
+        hero_image_url=hero_image_url,
+        about_image_url=about_image_url,
         hours=(hours or "").strip() or None,
         instagram_url=(instagram_url or "").strip() or None,
         facebook_url=(facebook_url or "").strip() or None,
