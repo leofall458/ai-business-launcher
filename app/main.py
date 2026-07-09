@@ -2234,6 +2234,22 @@ DASHBOARD_SESSION_COOKIE = "lb_session"
 MAGIC_LINK_RATE_WINDOW = datetime.timedelta(hours=1)
 MAGIC_LINK_RATE_LIMIT = 3
 
+# Stopgap app-level throttle on the two Gemini/SCC-calling endpoints in this
+# file - there's no Cloud Armor/WAF in front of Cloud Run yet, so these are
+# the only thing standing between an abused dashboard session and unbounded
+# Gemini API cost / SCC scraping. Keyed per order_id (the natural unit here,
+# since every call site is already order-scoped via get_owned_order) rather
+# than per IP, so it can't be defeated by rotating IPs behind the same
+# session. 10/hour comfortably covers real usage - a customer refining their
+# idea a few times or retrying a couple of rejected names - while still
+# capping the cost of a compromised/scripted session. Replace with Cloud
+# Armor rate-limiting at the infra layer when that's set up; this isn't a
+# substitute for it.
+NAME_IDEAS_RATE_WINDOW = datetime.timedelta(hours=1)
+NAME_IDEAS_RATE_LIMIT = 10
+SCC_NAME_CHECK_RATE_WINDOW = datetime.timedelta(hours=1)
+SCC_NAME_CHECK_RATE_LIMIT = 10
+
 def get_owned_order(order_id: str, request: Request):
     """Every failure mode - no session, expired session, order doesn't
     exist, order belongs to a different email - returns the identical
@@ -2415,12 +2431,15 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
     business_idea = order.get("business_idea", "")
-    try:
-        loop = asyncio.get_event_loop()
-        name_ideas = await loop.run_in_executor(None, generate_name_ideas, business_idea)
-    except Exception as e:
-        print(f"⚠️ Could not generate name ideas for order {order_id}: {e}")
+    if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
         name_ideas = []
+    else:
+        try:
+            loop = asyncio.get_event_loop()
+            name_ideas = await loop.run_in_executor(None, generate_name_ideas, business_idea)
+        except Exception as e:
+            print(f"⚠️ Could not generate name ideas for order {order_id}: {e}")
+            name_ideas = []
 
     session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
     return templates.TemplateResponse(request, "dashboard_name.html", {
@@ -2461,6 +2480,12 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
         })
 
     order_ref.set({"business_idea": business_idea}, merge=True)
+
+    if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
+        return templates.TemplateResponse(request, "_name_ideas_chips.html", {
+            "name_ideas": [],
+            "error": "You've regenerated names several times in the last hour - please wait a bit, or just type your own name below.",
+        })
 
     loop = asyncio.get_event_loop()
     try:
@@ -2529,11 +2554,20 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
         # Best-effort, non-blocking - populates order.name_check for the
         # admin dashboard's "unverified" banner; never gates submission,
         # since it's expected to fail (reCAPTCHA-gated) most of the time.
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
-        except Exception as e:
-            result = {"exists": None, "message": str(e)}
+        # Same shared throttle as the non-skip_llc branch below - skipping
+        # the call when over the limit just means name_check falls back to
+        # this placeholder instead of a real SCC lookup; the customer's own
+        # scc_confirmed checkbox above (and our Playwright re-verify before
+        # actual filing) is what actually gates things, so this never
+        # blocks submission.
+        if _rate_limited("scc_name_check_requests", "order_id", order_id, SCC_NAME_CHECK_RATE_WINDOW, SCC_NAME_CHECK_RATE_LIMIT):
+            result = {"exists": None, "message": "Automated check skipped (rate limited) - relying on self-certification."}
+        else:
+            loop = asyncio.get_event_loop()
+            try:
+                result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
+            except Exception as e:
+                result = {"exists": None, "message": str(e)}
         order_ref.set({
             "business_name": existing_llc_name,
             "existing_llc_name": existing_llc_name,
@@ -2546,11 +2580,14 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
         business_name, sanitize_error = sanitize_business_name(submitted_name)
         if sanitize_error:
             return render_error(sanitize_error, submitted_name)
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(None, check_name_on_scc, business_name)
-        except Exception as e:
-            result = {"status": "UNAVAILABLE", "message": str(e)}
+        if _rate_limited("scc_name_check_requests", "order_id", order_id, SCC_NAME_CHECK_RATE_WINDOW, SCC_NAME_CHECK_RATE_LIMIT):
+            result = {"status": "UNKNOWN", "message": "Automated check skipped (rate limited) - relying on self-certification."}
+        else:
+            loop = asyncio.get_event_loop()
+            try:
+                result = await loop.run_in_executor(None, check_name_on_scc, business_name)
+            except Exception as e:
+                result = {"status": "UNAVAILABLE", "message": str(e)}
         order_ref.set({
             "business_name": business_name,
             "skip_llc_formation": False,
