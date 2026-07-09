@@ -2459,8 +2459,16 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
     business_idea = order.get("business_idea", "")
+    name_ideas_error = None
     if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
         name_ideas = []
+        # _name_ideas_chips.html's default empty-state ("Generating name
+        # ideas... refresh if this doesn't appear") is written for the
+        # normal in-flight case and would be actively misleading here -
+        # refreshing this page just re-triggers the same rate limit, it
+        # doesn't make suggestions appear. Same wording as the
+        # update-idea rate-limit message below for consistency.
+        name_ideas_error = "You've hit the name-suggestion limit for this hour - please wait a bit, or just type your own name below."
     else:
         try:
             loop = asyncio.get_event_loop()
@@ -2474,6 +2482,7 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         "order_id": order_id,
         "business_idea": business_idea,
         "name_ideas": name_ideas,
+        "error": name_ideas_error,
         "csrf_token": make_csrf_token(session_id),
         "name_error": None,
         "name_error_field": None,
