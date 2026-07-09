@@ -28,6 +28,26 @@ _SCC_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
+# The old 10s per-attempt timeout was tighter than the live site's own
+# typical response time - the CheckEntityDistinguishableCheckForOnline POST
+# has been directly observed taking 10-12+ seconds on a normal, working
+# response (see run_scc_health_check's per-attempt latency logging), so a
+# genuinely fine SCC response was routinely getting cut off mid-request and
+# forced into a pointless retry. 20s gives real headroom above that.
+#
+# Retries dropped from 3 to 2 at the same time: with the old too-tight
+# timeout, 3 retries were doing double duty as a workaround for spurious
+# timeouts on an otherwise-working site. Now that the timeout properly
+# reflects real-world latency, that workaround isn't needed - and keeping
+# 3 attempts at 20s would let a genuinely down/hanging SCC block a customer
+# for up to ~64s (3*20s + 2*2s) before falling back, well past what feels
+# like a reasonable wait with a loading indicator. 2 attempts at 20s caps
+# the true-failure case at ~42s while still giving one clean retry for a
+# real transient blip.
+SCC_PUBLIC_CHECK_TIMEOUT_SECONDS = 20.0
+SCC_PUBLIC_CHECK_ATTEMPTS = 2
+SCC_PUBLIC_CHECK_RETRY_DELAY = 2
+
 # ── Name sanitization and validation ───────────────────────────────────────
 # Virginia SCC allowed characters: letters, numbers, spaces, hyphens,
 # apostrophes, periods, commas, ampersands, exclamation marks, plus signs.
@@ -241,7 +261,9 @@ def check_name_public(business_name: str) -> dict:
     gated by reCAPTCHA v3 and needs no login. Works from any server
     including Cloud Run.
 
-    Retries up to 3 times with 2-second delays (10 s per-attempt timeout).
+    Retries up to SCC_PUBLIC_CHECK_ATTEMPTS times with
+    SCC_PUBLIC_CHECK_RETRY_DELAY-second delays
+    (SCC_PUBLIC_CHECK_TIMEOUT_SECONDS-second per-attempt timeout).
     Successful AVAILABLE/TAKEN results are cached for 1 hour.
     """
     cached = _cache_get(business_name)
@@ -250,9 +272,9 @@ def check_name_public(business_name: str) -> dict:
 
     last_error = "unknown"
 
-    for attempt in range(1, 4):
+    for attempt in range(1, SCC_PUBLIC_CHECK_ATTEMPTS + 1):
         try:
-            with httpx.Client(timeout=10.0, follow_redirects=True,
+            with httpx.Client(timeout=SCC_PUBLIC_CHECK_TIMEOUT_SECONDS, follow_redirects=True,
                               headers={"User-Agent": _SCC_UA}) as client:
                 token = _get_name_check_token(client)
 
@@ -265,7 +287,7 @@ def check_name_public(business_name: str) -> dict:
                     "Referer": SCC_NAME_CHECK_URL,
                 })
                 print(f"[name-check] POST {SCC_CHECK_DISTINGUISHABLE_URL} → {resp.status_code} "
-                      f"attempt {attempt}/3")
+                      f"attempt {attempt}/{SCC_PUBLIC_CHECK_ATTEMPTS}")
                 resp.raise_for_status()
                 data = resp.json()
                 result_data = data.get("Result") or {}
@@ -303,19 +325,19 @@ def check_name_public(business_name: str) -> dict:
                 print(f"[name-check] {last_error} for '{business_name}'")
 
         except httpx.TimeoutException as e:
-            last_error = f"timeout on attempt {attempt}/3"
+            last_error = f"timeout on attempt {attempt}/{SCC_PUBLIC_CHECK_ATTEMPTS}"
             print(f"[name-check] {last_error} for '{business_name}': {e}")
         except httpx.HTTPStatusError as e:
-            last_error = f"HTTP {e.response.status_code} on attempt {attempt}/3"
+            last_error = f"HTTP {e.response.status_code} on attempt {attempt}/{SCC_PUBLIC_CHECK_ATTEMPTS}"
             print(f"[name-check] {last_error} for '{business_name}': {e}")
         except Exception as e:
-            last_error = f"{type(e).__name__} on attempt {attempt}/3: {e}"
+            last_error = f"{type(e).__name__} on attempt {attempt}/{SCC_PUBLIC_CHECK_ATTEMPTS}: {e}"
             print(f"[name-check] {last_error} for '{business_name}'")
 
-        if attempt < 3:
-            time.sleep(2)
+        if attempt < SCC_PUBLIC_CHECK_ATTEMPTS:
+            time.sleep(SCC_PUBLIC_CHECK_RETRY_DELAY)
 
-    print(f"[name-check] All 3 attempts failed for '{business_name}'. Last failure: {last_error}")
+    print(f"[name-check] All {SCC_PUBLIC_CHECK_ATTEMPTS} attempts failed for '{business_name}'. Last failure: {last_error}")
     return _UNAVAILABLE
 
 # ── Chrome CDP fallback ─────────────────────────────────────────────────────
@@ -429,9 +451,12 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
     then Chrome CDP."""
     # Try public search first - same unauthenticated, non-reCAPTCHA-gated
     # endpoint as check_name_public (see its docstring); "distinguishable"
-    # here just means "not found", i.e. exists=False.
+    # here just means "not found", i.e. exists=False. Same timeout constant
+    # as check_name_public - it's the identical SCC_CHECK_DISTINGUISHABLE_URL
+    # endpoint with the same 10-12+ second real-world latency, no retry loop
+    # here so no need for a separate attempts constant, just the timeout.
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=True,
+        with httpx.Client(timeout=SCC_PUBLIC_CHECK_TIMEOUT_SECONDS, follow_redirects=True,
                           headers={"User-Agent": _SCC_UA}) as client:
             token = _get_name_check_token(client)
 
