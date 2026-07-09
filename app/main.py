@@ -2391,6 +2391,18 @@ def _dashboard_order_context(
     }
     downloadable_labels = {k: v for k, v in DOCUMENT_LABELS.items() if k not in ("articles", "operating_agreement")}
 
+    # The articles/operating_agreement PDFs are AI-drafted right after
+    # intake (see run_asset_generation) - available_documents.get('articles')
+    # goes true then, long before Virginia SCC has actually approved the
+    # filing. The "sent to your email" claim on the dashboard shouldn't
+    # appear until it's actually true: filing_confirmed is when the SCC has
+    # approved the LLC and the real, final documents would realistically
+    # have been generated/emailed. Before that, the existing timeline
+    # section below already says "Waiting for Virginia SCC to process your
+    # filing" - no need for a second, redundant status line here.
+    llc_documents_emailed = reached(order.get("state", "draft"), "filing_confirmed") and bool(
+        available_documents.get("articles") or available_documents.get("operating_agreement"))
+
     return {
         **status_context(order_id, order),
         "order": order,
@@ -2412,6 +2424,7 @@ def _dashboard_order_context(
         "csrf_token": make_csrf_token(session_id),
         "document_labels": downloadable_labels,
         "available_documents": available_documents,
+        "llc_documents_emailed": llc_documents_emailed,
         # Separate from available_documents.values()|select|list, which
         # would also be true if only articles/operating_agreement (excluded
         # from downloadable_labels above) are ready - that must not render

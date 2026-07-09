@@ -101,8 +101,13 @@
         </div>
         {% endif %}
 
-        <!-- Articles of Organization + Operating Agreement: emailed, not downloadable -->
-        {% if available_documents.get('articles') or available_documents.get('operating_agreement') %}
+        <!-- Articles of Organization + Operating Agreement: emailed, not downloadable.
+        Gated on filing_confirmed (SCC has actually approved the LLC), not just on the
+        AI-drafted PDF existing (which happens right after intake) - see
+        llc_documents_emailed in main.py's _dashboard_order_context. Before
+        filing_confirmed, the timeline section below already covers "filing in
+        progress" - nothing else needed here. -->
+        {% if llc_documents_emailed %}
         <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 sm:p-6 shadow-sm">
             <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-2">📧 Your Articles of Organization and Operating Agreement have been sent to your email.</h2>
             <p class="text-xs text-[#0e2148]/45">
