@@ -528,3 +528,118 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
             "exists": None,
             "message": "Could not connect to Virginia SCC right now. Please check the Virginia SCC website directly.",
         }
+
+# ── Health check (monitoring only) ──────────────────────────────────────────
+# Deliberately independent of check_name_public/check_name_on_scc above -
+# does not touch the cache, the 3x retry loop, or the Chrome CDP fallback,
+# and does not change anything about how a real customer's name check
+# behaves. Its only job is to walk the same NameCheckAvailability ->
+# CheckEntityDistinguishableCheckForOnline chain step by step and capture
+# exactly what broke (and the raw response) if SCC ever changes their page.
+
+SCC_HEALTH_CHECK_TEST_NAME = "Apex Federal Advisors LLC"
+
+
+def run_scc_health_check(business_name: str = SCC_HEALTH_CHECK_TEST_NAME) -> dict:
+    """Diagnostic probe of the SCC name-check dependency chain. Never
+    raises - always returns a dict with at least "ok" and "steps".
+
+    "steps" records what happened at each stage (cookie consent, CSRF
+    token fetch, distinguishability POST) so a failure email/log always
+    has something concrete to debug from, not just "it failed somewhere".
+    On failure, "raw" holds the actual response body/error text
+    (truncated) that didn't match what we expected - this is the part
+    that lets us tell "SCC is down" apart from "SCC changed their page
+    and our scraper needs updating"."""
+    steps: list[dict] = []
+
+    def record(step: str, ok: bool, detail: str = "") -> None:
+        steps.append({"step": step, "ok": ok, "detail": detail})
+
+    def failure(failed_step: str, raw: str) -> dict:
+        raw = (raw or "")[:2000]
+        print(f"[scc-health-check] FAILED at step '{failed_step}' for '{business_name}'. "
+              f"Raw response/error (truncated to 2000 chars): {raw}")
+        return {"ok": False, "failed_step": failed_step, "steps": steps, "raw": raw}
+
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True,
+                          headers={"User-Agent": _SCC_UA}) as client:
+            try:
+                consent_resp = client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+                record("cookie_consent", True, f"HTTP {consent_resp.status_code}")
+            except Exception as e:
+                # Best-effort like the real check-flow treats it - not fatal
+                # on its own, but worth recording if it ever starts failing.
+                record("cookie_consent", False, f"{type(e).__name__}: {e}")
+
+            try:
+                token_resp = client.get(SCC_NAME_CHECK_URL)
+                token_resp.raise_for_status()
+            except Exception as e:
+                record("fetch_token_page", False, f"{type(e).__name__}: {e}")
+                return failure("fetch_token_page", str(e))
+
+            soup = BeautifulSoup(token_resp.text, "html.parser")
+            token_input = soup.find("input", {"name": "__RequestVerificationToken"})
+            if not token_input or not token_input.get("value"):
+                record("fetch_token_page", False, "no __RequestVerificationToken input found on page")
+                return failure("fetch_token_page", token_resp.text)
+            token = token_input["value"]
+            record("fetch_token_page", True, f"HTTP {token_resp.status_code}, token length {len(token)}")
+
+            try:
+                check_resp = client.post(SCC_CHECK_DISTINGUISHABLE_URL, data={
+                    "searchNameValue": business_name, "businessTypeName": "",
+                    "Filingtype": "", "IsOnline": "true", "IsExternalCheckAvailability": "true",
+                }, headers={
+                    "__RequestVerificationToken": token,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": SCC_NAME_CHECK_URL,
+                })
+            except Exception as e:
+                record("check_distinguishable", False, f"{type(e).__name__}: {e}")
+                return failure("check_distinguishable", str(e))
+
+            if check_resp.status_code != 200:
+                record("check_distinguishable", False, f"HTTP {check_resp.status_code}")
+                return failure("check_distinguishable", check_resp.text)
+
+            content_type = check_resp.headers.get("content-type", "")
+            if "json" not in content_type.lower():
+                record("check_distinguishable", False, f"non-JSON content-type: {content_type!r}")
+                return failure("check_distinguishable", check_resp.text)
+
+            try:
+                data = check_resp.json()
+            except Exception as e:
+                record("check_distinguishable", False, f"could not parse JSON body: {e}")
+                return failure("check_distinguishable", check_resp.text)
+
+            result_data = data.get("Result")
+            is_distinguished = result_data.get("IsDistinguished") if isinstance(result_data, dict) else None
+            if not isinstance(is_distinguished, bool):
+                record("check_distinguishable", False, f"unexpected JSON shape (no boolean IsDistinguished): {data!r}")
+                return failure("check_distinguishable", repr(data))
+
+            record("check_distinguishable", True, f"IsDistinguished={is_distinguished}")
+
+            # SCC_HEALTH_CHECK_TEST_NAME is a made-up name we don't expect
+            # to ever actually be registered, so IsDistinguished=True is the
+            # expected outcome - but a False here isn't proof the chain is
+            # broken (someone could have genuinely filed this exact name),
+            # so it's only reported as a mismatch, never an alert trigger.
+            matched_expectation = is_distinguished is True
+
+            print(f"[scc-health-check] OK - '{business_name}' IsDistinguished={is_distinguished} "
+                  f"(expected True, matched={matched_expectation})")
+            return {
+                "ok": True,
+                "business_name": business_name,
+                "is_distinguished": is_distinguished,
+                "matched_expectation": matched_expectation,
+                "steps": steps,
+            }
+    except Exception as e:
+        record("unexpected", False, f"{type(e).__name__}: {e}")
+        return failure("unexpected", str(e))

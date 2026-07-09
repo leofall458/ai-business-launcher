@@ -23,7 +23,10 @@ from app.config import (
     STRIPE_PUBLISHABLE_KEY,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
-from app.agents.scc_name_check import check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name
+from app.agents.scc_name_check import (
+    check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name,
+    run_scc_health_check,
+)
 from app.agents.llc_agent import generate_llc_paperwork
 from app.agents.brand_agent import generate_brand_kit, generate_logo_variations, generate_favicon_svg, svg_to_data_uri
 from app.agents.marketing_agent import generate_marketing_plan, build_marketing_plan_pdf
@@ -202,6 +205,7 @@ async def on_startup():
     asyncio.create_task(ssn_expiry_scheduler())
     asyncio.create_task(stripe_activation_scheduler())
     asyncio.create_task(abandoned_cart_scheduler())
+    asyncio.create_task(scc_health_check_scheduler())
 
 # Canonical order of the order state machine. An order's "state" field is
 # always one of these. Progression is mostly linear, but filing_confirmed
@@ -1412,6 +1416,30 @@ async def abandoned_cart_scheduler():
         except Exception as e:
             print(f"⚠️ abandoned_cart_scheduler error: {e}")
         await asyncio.sleep(1800)
+
+SCC_HEALTH_CHECK_INTERVAL_SECONDS = 86400  # once a day
+
+async def scc_health_check_scheduler():
+    """Runs immediately on startup (so a bad deploy surfaces right away
+    instead of waiting up to 24h) and then once a day. Monitoring only -
+    doesn't touch check_name_public/check_name_on_scc's own cache, retries,
+    or Chrome fallback, and never affects a real customer's name check.
+
+    Pure httpx/BeautifulSoup work like check_name_public itself, so this is
+    safe to run everywhere check_name_public runs, Cloud Run included."""
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            result = await loop.run_in_executor(None, run_scc_health_check)
+            if not result.get("ok"):
+                send_admin_sms(
+                    f"⚠️ SCC health check FAILED at step '{result.get('failed_step')}' "
+                    f"- see Cloud Run logs for the raw response"
+                )
+        except Exception as e:
+            print(f"⚠️ scc_health_check_scheduler tick failed unexpectedly: {e}")
+            send_admin_sms(f"⚠️ SCC health check crashed unexpectedly: {e}")
+        await asyncio.sleep(SCC_HEALTH_CHECK_INTERVAL_SECONDS)
 
 def run_asset_generation(order_id: str):
     """Triggered once the admin records the real EIN (or immediately for
