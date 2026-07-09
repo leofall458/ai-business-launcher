@@ -540,17 +540,29 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
 SCC_HEALTH_CHECK_TEST_NAME = "Apex Federal Advisors LLC"
 
 
+SCC_HEALTH_CHECK_ATTEMPTS = 3  # matches check_name_public's own retry count/delay -
+SCC_HEALTH_CHECK_RETRY_DELAY = 2  # the live site is slow enough (~9-10s POSTs
+                                   # observed) that a single timeout is
+                                   # transient noise, not proof of an outage.
+
+
 def run_scc_health_check(business_name: str = SCC_HEALTH_CHECK_TEST_NAME) -> dict:
     """Diagnostic probe of the SCC name-check dependency chain. Never
     raises - always returns a dict with at least "ok" and "steps".
 
-    "steps" records what happened at each stage (cookie consent, CSRF
-    token fetch, distinguishability POST) so a failure email/log always
-    has something concrete to debug from, not just "it failed somewhere".
-    On failure, "raw" holds the actual response body/error text
-    (truncated) that didn't match what we expected - this is the part
-    that lets us tell "SCC is down" apart from "SCC changed their page
-    and our scraper needs updating"."""
+    Retries the whole probe up to SCC_HEALTH_CHECK_ATTEMPTS times, same
+    count/delay as check_name_public's own retry loop - the live SCC POST
+    has been observed taking ~9-10s on its own, right at the edge of the
+    10s per-attempt timeout, so a single slow response isn't reliable
+    evidence the chain is actually broken.
+
+    "steps" records what happened at each stage, across every attempt, so
+    a failure alert always has something concrete to debug from, not just
+    "it failed somewhere". On failure, "raw" holds the actual response
+    body/error text (truncated) from the last attempt that didn't match
+    what we expected - this is the part that lets us tell "SCC is slow/
+    down" apart from "SCC changed their page and our scraper needs
+    updating"."""
     steps: list[dict] = []
 
     def record(step: str, ok: bool, detail: str = "") -> None:
@@ -558,88 +570,116 @@ def run_scc_health_check(business_name: str = SCC_HEALTH_CHECK_TEST_NAME) -> dic
 
     def failure(failed_step: str, raw: str) -> dict:
         raw = (raw or "")[:2000]
-        print(f"[scc-health-check] FAILED at step '{failed_step}' for '{business_name}'. "
+        print(f"[scc-health-check] FAILED at step '{failed_step}' for '{business_name}' "
+              f"after {SCC_HEALTH_CHECK_ATTEMPTS} attempts. "
               f"Raw response/error (truncated to 2000 chars): {raw}")
         return {"ok": False, "failed_step": failed_step, "steps": steps, "raw": raw}
 
-    try:
-        with httpx.Client(timeout=10.0, follow_redirects=True,
-                          headers={"User-Agent": _SCC_UA}) as client:
-            try:
-                consent_resp = client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
-                record("cookie_consent", True, f"HTTP {consent_resp.status_code}")
-            except Exception as e:
-                # Best-effort like the real check-flow treats it - not fatal
-                # on its own, but worth recording if it ever starts failing.
-                record("cookie_consent", False, f"{type(e).__name__}: {e}")
+    last_failed_step = "unexpected"
+    last_raw = ""
 
-            try:
-                token_resp = client.get(SCC_NAME_CHECK_URL)
-                token_resp.raise_for_status()
-            except Exception as e:
-                record("fetch_token_page", False, f"{type(e).__name__}: {e}")
-                return failure("fetch_token_page", str(e))
+    for attempt in range(1, SCC_HEALTH_CHECK_ATTEMPTS + 1):
+        try:
+            # check_name_public uses a 10s timeout because a real customer
+            # is waiting on that request; this health check has no such
+            # constraint (background, once-a-day), and the live POST has
+            # been observed taking ~9-10s on its own - a 10s timeout here
+            # would mostly measure "is SCC on the slow side of normal
+            # today" rather than "is the chain actually broken".
+            with httpx.Client(timeout=20.0, follow_redirects=True,
+                              headers={"User-Agent": _SCC_UA}) as client:
+                try:
+                    consent_resp = client.post(SCC_COOKIE_CONSENT_URL, headers={"X-Requested-With": "XMLHttpRequest"})
+                    record("cookie_consent", True, f"attempt {attempt}: HTTP {consent_resp.status_code}")
+                except Exception as e:
+                    # Best-effort like the real check-flow treats it - not
+                    # fatal on its own, but worth recording if it ever
+                    # starts failing.
+                    record("cookie_consent", False, f"attempt {attempt}: {type(e).__name__}: {e}")
 
-            soup = BeautifulSoup(token_resp.text, "html.parser")
-            token_input = soup.find("input", {"name": "__RequestVerificationToken"})
-            if not token_input or not token_input.get("value"):
-                record("fetch_token_page", False, "no __RequestVerificationToken input found on page")
-                return failure("fetch_token_page", token_resp.text)
-            token = token_input["value"]
-            record("fetch_token_page", True, f"HTTP {token_resp.status_code}, token length {len(token)}")
+                try:
+                    token_resp = client.get(SCC_NAME_CHECK_URL)
+                    token_resp.raise_for_status()
+                except Exception as e:
+                    record("fetch_token_page", False, f"attempt {attempt}: {type(e).__name__}: {e}")
+                    last_failed_step, last_raw = "fetch_token_page", str(e)
+                    continue
 
-            try:
-                check_resp = client.post(SCC_CHECK_DISTINGUISHABLE_URL, data={
-                    "searchNameValue": business_name, "businessTypeName": "",
-                    "Filingtype": "", "IsOnline": "true", "IsExternalCheckAvailability": "true",
-                }, headers={
-                    "__RequestVerificationToken": token,
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer": SCC_NAME_CHECK_URL,
-                })
-            except Exception as e:
-                record("check_distinguishable", False, f"{type(e).__name__}: {e}")
-                return failure("check_distinguishable", str(e))
+                soup = BeautifulSoup(token_resp.text, "html.parser")
+                token_input = soup.find("input", {"name": "__RequestVerificationToken"})
+                if not token_input or not token_input.get("value"):
+                    record("fetch_token_page", False, f"attempt {attempt}: no __RequestVerificationToken input found on page")
+                    last_failed_step, last_raw = "fetch_token_page", token_resp.text
+                    continue
+                token = token_input["value"]
+                record("fetch_token_page", True, f"attempt {attempt}: HTTP {token_resp.status_code}, token length {len(token)}")
 
-            if check_resp.status_code != 200:
-                record("check_distinguishable", False, f"HTTP {check_resp.status_code}")
-                return failure("check_distinguishable", check_resp.text)
+                post_started = time.monotonic()
+                try:
+                    check_resp = client.post(SCC_CHECK_DISTINGUISHABLE_URL, data={
+                        "searchNameValue": business_name, "businessTypeName": "",
+                        "Filingtype": "", "IsOnline": "true", "IsExternalCheckAvailability": "true",
+                    }, headers={
+                        "__RequestVerificationToken": token,
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": SCC_NAME_CHECK_URL,
+                    })
+                except Exception as e:
+                    elapsed = time.monotonic() - post_started
+                    record("check_distinguishable", False, f"attempt {attempt} ({elapsed:.1f}s): {type(e).__name__}: {e}")
+                    last_failed_step, last_raw = "check_distinguishable", str(e)
+                    continue
+                post_elapsed = time.monotonic() - post_started
 
-            content_type = check_resp.headers.get("content-type", "")
-            if "json" not in content_type.lower():
-                record("check_distinguishable", False, f"non-JSON content-type: {content_type!r}")
-                return failure("check_distinguishable", check_resp.text)
+                if check_resp.status_code != 200:
+                    record("check_distinguishable", False, f"attempt {attempt} ({post_elapsed:.1f}s): HTTP {check_resp.status_code}")
+                    last_failed_step, last_raw = "check_distinguishable", check_resp.text
+                    continue
 
-            try:
-                data = check_resp.json()
-            except Exception as e:
-                record("check_distinguishable", False, f"could not parse JSON body: {e}")
-                return failure("check_distinguishable", check_resp.text)
+                content_type = check_resp.headers.get("content-type", "")
+                if "json" not in content_type.lower():
+                    record("check_distinguishable", False, f"attempt {attempt} ({post_elapsed:.1f}s): non-JSON content-type: {content_type!r}")
+                    last_failed_step, last_raw = "check_distinguishable", check_resp.text
+                    continue
 
-            result_data = data.get("Result")
-            is_distinguished = result_data.get("IsDistinguished") if isinstance(result_data, dict) else None
-            if not isinstance(is_distinguished, bool):
-                record("check_distinguishable", False, f"unexpected JSON shape (no boolean IsDistinguished): {data!r}")
-                return failure("check_distinguishable", repr(data))
+                try:
+                    data = check_resp.json()
+                except Exception as e:
+                    record("check_distinguishable", False, f"attempt {attempt} ({post_elapsed:.1f}s): could not parse JSON body: {e}")
+                    last_failed_step, last_raw = "check_distinguishable", check_resp.text
+                    continue
 
-            record("check_distinguishable", True, f"IsDistinguished={is_distinguished}")
+                result_data = data.get("Result")
+                is_distinguished = result_data.get("IsDistinguished") if isinstance(result_data, dict) else None
+                if not isinstance(is_distinguished, bool):
+                    record("check_distinguishable", False, f"attempt {attempt} ({post_elapsed:.1f}s): unexpected JSON shape (no boolean IsDistinguished): {data!r}")
+                    last_failed_step, last_raw = "check_distinguishable", repr(data)
+                    continue
 
-            # SCC_HEALTH_CHECK_TEST_NAME is a made-up name we don't expect
-            # to ever actually be registered, so IsDistinguished=True is the
-            # expected outcome - but a False here isn't proof the chain is
-            # broken (someone could have genuinely filed this exact name),
-            # so it's only reported as a mismatch, never an alert trigger.
-            matched_expectation = is_distinguished is True
+                record("check_distinguishable", True, f"attempt {attempt} ({post_elapsed:.1f}s): IsDistinguished={is_distinguished}")
 
-            print(f"[scc-health-check] OK - '{business_name}' IsDistinguished={is_distinguished} "
-                  f"(expected True, matched={matched_expectation})")
-            return {
-                "ok": True,
-                "business_name": business_name,
-                "is_distinguished": is_distinguished,
-                "matched_expectation": matched_expectation,
-                "steps": steps,
-            }
-    except Exception as e:
-        record("unexpected", False, f"{type(e).__name__}: {e}")
-        return failure("unexpected", str(e))
+                # SCC_HEALTH_CHECK_TEST_NAME is a made-up name we don't
+                # expect to ever actually be registered, so
+                # IsDistinguished=True is the expected outcome - but a
+                # False here isn't proof the chain is broken (someone
+                # could have genuinely filed this exact name), so it's
+                # only reported as a mismatch, never an alert trigger.
+                matched_expectation = is_distinguished is True
+
+                print(f"[scc-health-check] OK - '{business_name}' IsDistinguished={is_distinguished} "
+                      f"(expected True, matched={matched_expectation}) on attempt {attempt}/{SCC_HEALTH_CHECK_ATTEMPTS}")
+                return {
+                    "ok": True,
+                    "business_name": business_name,
+                    "is_distinguished": is_distinguished,
+                    "matched_expectation": matched_expectation,
+                    "steps": steps,
+                }
+        except Exception as e:
+            record("unexpected", False, f"attempt {attempt}: {type(e).__name__}: {e}")
+            last_failed_step, last_raw = "unexpected", str(e)
+
+        if attempt < SCC_HEALTH_CHECK_ATTEMPTS:
+            time.sleep(SCC_HEALTH_CHECK_RETRY_DELAY)
+
+    return failure(last_failed_step, last_raw)
