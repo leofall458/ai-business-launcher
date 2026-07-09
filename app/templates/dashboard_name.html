@@ -17,8 +17,6 @@
 <body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-8 sm:py-12">
 <div class="max-w-xl mx-auto px-4 sm:px-8">
 
-    <a href="/start" class="inline-flex items-center gap-1 px-4 py-2 mb-4 bg-white border-2 border-[#0e2148] text-[#0e2148] text-sm font-medium rounded-lg hover:bg-[#0e2148] hover:text-white transition-colors">← Back to payment</a>
-
     {% set wizard_step = 1 %}
     {% include "_wizard_progress.html" %}
 
@@ -100,7 +98,7 @@
         <div class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-xl p-4">
             <p class="text-sm font-semibold text-[#0e2148] mb-1">🔍 Check if your name is available:</p>
             <p class="text-xs text-[#0e2148]/60 mb-3">Virginia requires all LLC names to be unique.</p>
-            <a href="https://cis.scc.virginia.gov/EntitySearch/Index" target="_blank" rel="noopener"
+            <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank" rel="noopener"
                 class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2">
                 Check on Virginia SCC →
             </a>

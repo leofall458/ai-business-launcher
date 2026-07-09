@@ -14,7 +14,7 @@
     {% elif status == "unknown" %}
     <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 space-y-2">
         <p>⚠️ Could not auto-verify. Did you manually check the name at
-            <a href="https://cis.scc.virginia.gov/EntitySearch/Index" target="_blank" rel="noopener" class="underline">Virginia SCC Entity Search</a>?</p>
+            <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank" rel="noopener" class="underline">Virginia SCC Entity Search</a>?</p>
         <div class="flex gap-2 pt-1">
             <form hx-post="/admin/{{ order_id }}/confirm-approve"
                   hx-target="#approve-area-{{ order_id }}" hx-swap="outerHTML">

@@ -200,7 +200,7 @@ _UNAVAILABLE = {
     "available": None,
     "status": "UNAVAILABLE",
     "message": "⚠️ Name check temporarily unavailable - you can still continue. Our team verifies all names before filing.",
-    "link": SCC_ENTITY_SEARCH_URL,
+    "link": SCC_NAME_CHECK_URL,
     "conflicts": [],
     "raw": "",
 }
@@ -501,7 +501,7 @@ def check_llc_exists_on_scc(business_name: str) -> dict:
                     "exists": None,
                     "status": "UNAVAILABLE",
                     "message": "We can't verify existing LLCs against Virginia SCC right now.",
-                    "link": SCC_ENTITY_SEARCH_URL,
+                    "link": SCC_NAME_CHECK_URL,
                 }
             context = browser.contexts[0]
             page = context.new_page()

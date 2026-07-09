@@ -24,10 +24,20 @@
         <p class="text-[#0e2148]/55 text-sm">Tell us about your business and we'll build your website. Leave anything blank and our AI will fill it in.</p>
     </div>
 
-    <a href="/dashboard/orders/{{ order_id }}/complete"
-        class="block text-center w-full bg-transparent border-2 border-[#c9a227] hover:bg-[#c9a227]/10 text-[#b8860b] font-bold py-4 rounded-full text-base transition mb-6">
-        ⚡ Skip — AI will customize everything for me →
-    </a>
+    <form method="post" action="/dashboard/orders/{{ order_id }}/website" class="mb-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+        <!-- Explicitly "none" rather than leaving this field unsubmitted -
+        generate_website's backdrop_image_choice="" default exists only to
+        keep pre-backdrop-picker orders working, and falls back to
+        auto-picking a stock photo. A customer who deliberately skips this
+        step to let AI handle everything should get a clean, image-free
+        site instead, not a surprise stock photo they never chose. -->
+        <input type="hidden" name="backdrop_image_choice" value="none"/>
+        <button type="submit"
+            class="block text-center w-full bg-transparent border-2 border-[#c9a227] hover:bg-[#c9a227]/10 text-[#b8860b] font-bold py-4 rounded-full text-base transition">
+            ⚡ Skip — AI will customize everything for me →
+        </button>
+    </form>
 
     {% if website_errors %}
     <div class="bg-red-50 border border-red-300 rounded-xl p-4 mb-4">
