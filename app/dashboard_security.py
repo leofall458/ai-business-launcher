@@ -1,10 +1,19 @@
-"""Security headers for the authenticated customer dashboard and admin
-panel, and CSRF tokens bound to a dashboard session - the header scoping
-excludes only the public marketing pages, which have no session/PII to
-protect. /admin handles the same customer PII (aggregated across every
-order) as /dashboard and was originally left out of this list with no
-stated reason - included now so it gets the same CSP/nosniff/no-store
-protection.
+"""Security headers for every route on this app, and CSRF tokens bound to
+a dashboard session. Cache-Control: no-store stays scoped to the
+authenticated /dashboard, /orders, and /admin paths - the public
+marketing pages have no session/PII to protect and should stay cacheable.
+The rest of the header set (CSP frame-ancestors, nosniff, Referrer-Policy,
+X-XSS-Protection) applies everywhere, including the public marketing
+pages: none of them need to be embeddable by a THIRD-PARTY origin, and
+the protection costs nothing on a page with no session/PII either.
+
+The public CSP is frame-ancestors 'self', not 'none' - the homepage and
+/examples both embed the same-origin /examples/demo-site route in an
+iframe (see index.html, examples.html) to show off a sample generated
+site, and 'none' would silently blank that preview out exactly like the
+stale X-Frame-Options: DENY bug documented in deployer.py's
+_VERSION_CONFIG comment. /dashboard, /orders, and /admin have no such
+same-origin iframe and keep the stricter 'none'.
 """
 
 import hashlib
@@ -21,11 +30,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     more specific header (e.g. a tighter CSP) is never overridden."""
     async def dispatch(self, request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith(DASHBOARD_PATH_PREFIXES):
+        is_dashboard = request.url.path.startswith(DASHBOARD_PATH_PREFIXES)
+        if is_dashboard:
             response.headers.setdefault("Cache-Control", "no-store")
-            response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
-            response.headers.setdefault("X-Content-Type-Options", "nosniff")
-            response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        frame_ancestors = "'none'" if is_dashboard else "'self'"
+        response.headers.setdefault("Content-Security-Policy", f"frame-ancestors {frame_ancestors}")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-XSS-Protection", "1; mode=block")
         return response
 
 def make_csrf_token(session_id: str) -> str:
