@@ -552,6 +552,21 @@ async def examples_page(request: Request):
 async def examples_demo_site():
     return FileResponse("app/static/examples/demo_site.html", media_type="text/html")
 
+# RFC 9116. Only covers this app (app.launchbridge.ai / the run.app URL) -
+# the marketing root (launchbridge.ai) is a separate Netlify-hosted site
+# with no repo here, so it needs its own copy added independently.
+_SECURITY_TXT = """Contact: mailto:support@launchbridge.ai
+Expires: 2027-07-10T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://app.launchbridge.ai/.well-known/security.txt
+# No bug bounty program at this time. Please report vulnerabilities
+# responsibly and allow reasonable time for a fix before public disclosure.
+"""
+
+@app.get("/.well-known/security.txt")
+async def security_txt():
+    return Response(content=_SECURITY_TXT, media_type="text/plain")
+
 @app.get("/virginia-llc/contractors", response_class=HTMLResponse)
 async def landing_contractors(request: Request):
     return templates.TemplateResponse(request, "virginia_llc_contractors.html", {**_wizard_context()})

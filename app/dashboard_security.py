@@ -38,6 +38,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+        # Cloud Run only ever terminates TLS - there's no legitimate plain-HTTP
+        # version of this app for a browser to fall back to, so this is safe
+        # unconditionally. No "preload": that requires submission to browsers'
+        # built-in preload list, which is slow to undo if this domain's TLS
+        # setup ever needs to change - max-age is enough on its own.
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
 def make_csrf_token(session_id: str) -> str:
