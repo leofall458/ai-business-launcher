@@ -3192,7 +3192,6 @@ def _is_test_order(order: dict) -> bool:
     email = (order.get("email") or "").lower()
     return any(marker in email for marker in _TEST_EMAIL_MARKERS)
 
-@app.get("/admin", response_class=HTMLResponse)
 def _get_page_view_stats() -> dict:
     """Reads the daily buckets track_page_view() writes on every homepage
     hit. Bounded reads (at most ~31 daily docs for the month figure) - fine
@@ -3220,6 +3219,7 @@ def _get_page_view_stats() -> dict:
         "visits_total": (total_doc.to_dict() or {}).get("count", 0) if total_doc.exists else 0,
     }
 
+@app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, authorized: bool = Depends(verify_admin)):
     orders = []
     query = ORDERS.order_by("created_at", direction=firestore.Query.DESCENDING)
