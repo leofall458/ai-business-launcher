@@ -20,7 +20,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import (
     FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET,
     APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
-    STRIPE_PUBLISHABLE_KEY,
+    STRIPE_PUBLISHABLE_KEY, PAGE_VIEWS_COLLECTION,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.scc_name_check import (
@@ -537,8 +537,23 @@ def _wizard_context() -> dict:
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or "",
     }
 
+def track_page_view() -> None:
+    """Increments today's page-view bucket plus a running all-time total -
+    two separate documents (not one atomic transaction) since this is a
+    rough visit counter for comparing app traffic against marketing-site
+    traffic, not a financial ledger; losing perfect consistency between
+    the two on a rare race is fine. Best-effort: a Firestore hiccup here
+    must never break the homepage for a real visitor."""
+    try:
+        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        db.collection(PAGE_VIEWS_COLLECTION).document(today).set({"count": firestore.Increment(1)}, merge=True)
+        db.collection(PAGE_VIEWS_COLLECTION).document("_total").set({"count": firestore.Increment(1)}, merge=True)
+    except Exception as e:
+        print(f"⚠️ Could not track page view: {e}")
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    track_page_view()
     return templates.TemplateResponse(request, "index.html", {
         "cancelled": request.query_params.get("cancelled") == "1",
         **_wizard_context(),
@@ -3178,6 +3193,33 @@ def _is_test_order(order: dict) -> bool:
     return any(marker in email for marker in _TEST_EMAIL_MARKERS)
 
 @app.get("/admin", response_class=HTMLResponse)
+def _get_page_view_stats() -> dict:
+    """Reads the daily buckets track_page_view() writes on every homepage
+    hit. Bounded reads (at most ~31 daily docs for the month figure) - fine
+    for an admin page load, not a hot path. all_time comes from its own
+    running-total doc rather than summing every daily bucket ever written,
+    so this stays cheap indefinitely as the site accumulates history."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - datetime.timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+
+    def _count_for(date_str: str) -> int:
+        doc = db.collection(PAGE_VIEWS_COLLECTION).document(date_str).get()
+        return (doc.to_dict() or {}).get("count", 0) if doc.exists else 0
+
+    def _sum_since(start: datetime.datetime) -> int:
+        days = (today_start - start).days + 1
+        return sum(_count_for((start + datetime.timedelta(days=i)).strftime("%Y-%m-%d")) for i in range(days))
+
+    total_doc = db.collection(PAGE_VIEWS_COLLECTION).document("_total").get()
+    return {
+        "visits_today": _count_for(today_start.strftime("%Y-%m-%d")),
+        "visits_week": _sum_since(week_start),
+        "visits_month": _sum_since(month_start),
+        "visits_total": (total_doc.to_dict() or {}).get("count", 0) if total_doc.exists else 0,
+    }
+
 async def admin_dashboard(request: Request, authorized: bool = Depends(verify_admin)):
     orders = []
     query = ORDERS.order_by("created_at", direction=firestore.Query.DESCENDING)
@@ -3219,6 +3261,7 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
         "funnel_intake": sum(1 for o in orders if o.get("intake_complete_at")),
         "funnel_assets": sum(1 for o in orders if o.get("assets_status") == "complete"),
         "funnel_complete": sum(1 for o in orders if o.get("state") == "complete"),
+        **_get_page_view_stats(),
     }
 
     irs_open = is_irs_open()

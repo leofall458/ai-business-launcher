@@ -66,6 +66,28 @@
         <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 mb-6 shadow-sm">
             <h2 class="text-xs font-semibold text-[#0e2148]/45 mb-4 uppercase tracking-widest">Analytics</h2>
 
+            <!-- App Visits: homepage hits, tracked via track_page_view() in
+            main.py - compare against the marketing-root site's own visit
+            count to see how much traffic actually reaches the app. -->
+            <div class="grid grid-cols-4 gap-3 mb-5">
+                <div class="bg-[#FAF8F3] rounded-lg p-3 text-center">
+                    <p class="text-xs text-[#0e2148]/45 mb-1">App Visits Today</p>
+                    <p class="text-lg font-bold text-[#0e2148]">{{ stats.visits_today }}</p>
+                </div>
+                <div class="bg-[#FAF8F3] rounded-lg p-3 text-center">
+                    <p class="text-xs text-[#0e2148]/45 mb-1">This Week</p>
+                    <p class="text-lg font-bold text-[#0e2148]">{{ stats.visits_week }}</p>
+                </div>
+                <div class="bg-[#FAF8F3] rounded-lg p-3 text-center">
+                    <p class="text-xs text-[#0e2148]/45 mb-1">This Month</p>
+                    <p class="text-lg font-bold text-[#0e2148]">{{ stats.visits_month }}</p>
+                </div>
+                <div class="bg-[#FAF8F3] rounded-lg p-3 text-center">
+                    <p class="text-xs text-[#0e2148]/45 mb-1">All Time</p>
+                    <p class="text-lg font-bold text-[#0e2148]">{{ stats.visits_total }}</p>
+                </div>
+            </div>
+
             <!-- Revenue -->
             <div class="grid grid-cols-3 gap-3 mb-5">
                 <div class="bg-[#FAF8F3] rounded-lg p-3 text-center">

@@ -29,6 +29,13 @@ FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "ai-biz-launcher")
 # no separate Firestore instance needed just for that isolation.
 ORDERS_COLLECTION = os.getenv("ORDERS_COLLECTION", "orders")
 
+# Same isolation, derived from APP_ENV directly rather than needing its own
+# Cloud Run env var like ORDERS_COLLECTION does - page view counts have no
+# reason to need per-deploy overriding, and this way staging load/E2E
+# testing traffic can never inflate the production visit count the admin
+# dashboard shows.
+PAGE_VIEWS_COLLECTION = "staging_page_views" if APP_ENV == "staging" else "page_views"
+
 GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")
 
