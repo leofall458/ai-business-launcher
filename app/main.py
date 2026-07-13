@@ -3197,11 +3197,17 @@ _TEST_EMAIL_MARKERS = ("test", "example", "e2e")
 def _is_test_order(order: dict) -> bool:
     """True for orders the admin dashboard should file under "Test Orders"
     rather than "Live Orders": never-completed checkouts (draft),
-    payments that failed outright, or anything with a giveaway email
-    (our own e2e/test-script runs, or *@example.com placeholders) -
-    regardless of state, since a test script can still walk an order all
-    the way to "complete"."""
+    payments that failed outright, anything with a giveaway email
+    (our own e2e/test-script runs, or *@example.com placeholders), or an
+    order that has paid_at but no checkout_at - structurally impossible
+    through the real /start flow (checkout_at is always written when the
+    order doc is first created, before Stripe can ever confirm payment),
+    so it can only be a script that wrote paid_at directly to Firestore
+    without going through checkout - regardless of state, since a test
+    script can still walk an order all the way to "complete"."""
     if order.get("state") in ("draft", "payment_failed"):
+        return True
+    if order.get("paid_at") and not order.get("checkout_at"):
         return True
     email = (order.get("email") or "").lower()
     return any(marker in email for marker in _TEST_EMAIL_MARKERS)
