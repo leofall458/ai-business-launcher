@@ -3262,19 +3262,26 @@ async def admin_dashboard(request: Request, authorized: bool = Depends(verify_ad
             return v if v.tzinfo else v.replace(tzinfo=datetime.timezone.utc)
         return None
 
-    paid_orders = [o for o in orders if o.get("state") not in ("draft", None)]
+    # "Orders" and "Revenue" only count orders that actually paid - a
+    # started-but-abandoned checkout (draft) shouldn't inflate either
+    # figure. Both also exclude test orders (see _is_test_order) so
+    # internal test runs don't pollute what's meant to be real sales data.
+    # The funnel intentionally keeps every non-test order regardless of
+    # stage reached - that's the whole point of a funnel - but still
+    # excludes test orders for the same reason.
+    successful_orders = [o for o in live_orders if o.get("paid_at")]
     stats = {
-        "orders_today": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= today_start),
-        "orders_week": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= week_start),
-        "orders_month": sum(1 for o in orders if _ts(o.get("created_at")) and _ts(o.get("created_at")) >= month_start),
-        "revenue_today": sum((250 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= today_start),
-        "revenue_week": sum((250 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= week_start),
-        "revenue_month": sum((250 if o.get("founding_member") else 350) for o in orders if _ts(o.get("paid_at")) and _ts(o.get("paid_at")) >= month_start),
-        "funnel_checkout": sum(1 for o in orders if o.get("checkout_at")),
-        "funnel_paid": sum(1 for o in orders if o.get("paid_at")),
-        "funnel_intake": sum(1 for o in orders if o.get("intake_complete_at")),
-        "funnel_assets": sum(1 for o in orders if o.get("assets_status") == "complete"),
-        "funnel_complete": sum(1 for o in orders if o.get("state") == "complete"),
+        "orders_today": sum(1 for o in successful_orders if _ts(o.get("paid_at")) >= today_start),
+        "orders_week": sum(1 for o in successful_orders if _ts(o.get("paid_at")) >= week_start),
+        "orders_month": sum(1 for o in successful_orders if _ts(o.get("paid_at")) >= month_start),
+        "revenue_today": sum((250 if o.get("founding_member") else 350) for o in successful_orders if _ts(o.get("paid_at")) >= today_start),
+        "revenue_week": sum((250 if o.get("founding_member") else 350) for o in successful_orders if _ts(o.get("paid_at")) >= week_start),
+        "revenue_month": sum((250 if o.get("founding_member") else 350) for o in successful_orders if _ts(o.get("paid_at")) >= month_start),
+        "funnel_checkout": sum(1 for o in live_orders if o.get("checkout_at")),
+        "funnel_paid": sum(1 for o in live_orders if o.get("paid_at")),
+        "funnel_intake": sum(1 for o in live_orders if o.get("intake_complete_at")),
+        "funnel_assets": sum(1 for o in live_orders if o.get("assets_status") == "complete"),
+        "funnel_complete": sum(1 for o in live_orders if o.get("state") == "complete"),
         **_get_page_view_stats(),
     }
 
