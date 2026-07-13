@@ -41,8 +41,10 @@ PRE_PAYMENT_VALIDATED_FIELDS = [
     "desired_name", "existing_llc_name",
 ]
 
-# Used by /start - the only thing collected before payment now is the idea.
-IDEA_VALIDATED_FIELDS = ["business_idea", "consent"]
+# Used by /start - business_idea moved to post-payment (Step 1, name
+# selection) so customers can pay before answering any questions; consent
+# is the only thing still validated pre-payment.
+CHECKOUT_VALIDATED_FIELDS = ["consent"]
 
 # Used by the post-payment dashboard intake form.
 POST_PAYMENT_VALIDATED_FIELDS = [

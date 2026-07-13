@@ -6,7 +6,6 @@
     <title>Launch Bridge — AI-Powered Virginia LLC Formation</title>
     <meta name="description" content="Form a Virginia LLC in days with AI. Get your Articles, EIN, brand kit, business website, and Stripe account — all for $350 flat.">
     {% include "_brand.html" %}
-    <script src="/static/htmx.min.js"></script>
     <style>
         @keyframes pulse-gold { 0%,100%{opacity:1} 50%{opacity:.4} }
         .live-dot { animation: pulse-gold 2s infinite; }
@@ -34,7 +33,7 @@
 
     {% if cancelled %}
     <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 text-center text-sm text-amber-800">
-        Payment cancelled — no charge was made. Describe your idea below whenever you're ready.
+        Payment cancelled — no charge was made. Whenever you're ready, click below to try again.
     </div>
     {% endif %}
 
@@ -45,7 +44,25 @@
         <span class="text-[#c9a227]">Sign in to your dashboard →</span>
     </a>
 
-    {% include "_hero_idea_form.html" %}
+    <!-- ── EVERYTHING INCLUDED + CTA ── -->
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
+        <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Everything included</h2>
+        <ul class="space-y-2 text-sm text-[#0e2148]/75 mb-5">
+            <li class="flex items-center gap-2">🏛️ <span>We prepare and file your Virginia Articles of Organization on your behalf</span></li>
+            <li class="flex items-center gap-2">📄 <span>Articles of Organization + Operating Agreement</span></li>
+            <li class="flex items-center gap-2">🧾 <span>We apply for your federal EIN for you</span></li>
+            <li class="flex items-center gap-2">🎨 <span>Brand kit — logo, colors, fonts, tagline</span></li>
+            <li class="flex items-center gap-2">🌐 <span>A professional website, ready for customers</span></li>
+            <li class="flex items-center gap-2">💳 <span>Complete the pre-activation process to start accepting payments</span></li>
+        </ul>
+        <a href="/start"
+            class="block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
+            🚀 Get Started — $350 Flat →
+        </a>
+        <p class="text-center text-sm text-[#0e2148]/60 mt-4">
+            Questions? Contact <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] hover:text-[#b8860b] font-semibold underline">support@launchbridge.ai</a>
+        </p>
+    </div>
 
     <!-- ── TRUST STRIP ── -->
     <div class="grid grid-cols-3 gap-2 text-xs text-[#0e2148]/55 mb-10">
@@ -53,6 +70,60 @@
         <div class="bg-white rounded-lg p-2.5 text-center border border-[#0e2148]/8 shadow-sm">⏱️ 72hr filing</div>
         <div class="bg-white rounded-lg p-2.5 text-center border border-[#0e2148]/8 shadow-sm">💳 $350 flat</div>
     </div>
+
+    <!-- ── GOOGLE REVIEWS ── -->
+    <section class="mb-10">
+        <div class="flex items-center gap-2 mb-5">
+            <svg class="w-5 h-5 shrink-0" viewBox="0 0 48 48">
+                <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+            </svg>
+            <h2 class="font-serif text-xl font-bold text-[#0e2148]">What customers are saying</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Peter Allen</span> · via Google</p>
+                </div>
+            </div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Lucy Hultquist</span> · via Google</p>
+                </div>
+            </div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Austin Genova</span> · via Google</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- ── DELIVERABLES GALLERY ── -->
     <section class="mb-10">

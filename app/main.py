@@ -62,7 +62,7 @@ from app.ssn_vault import (
 from app.log_scrub import scrub_ssn
 from app.validators import (
     validate_business_idea, validate_step4_details, validate_post_payment_intake,
-    validate_ssn, IDEA_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
+    validate_ssn, CHECKOUT_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
 )
 from app.email_service import (
     send_order_received_email,
@@ -1811,17 +1811,22 @@ async def start_checkout(request: Request):
     form = dict(form_raw)
 
     errors = {}
-    idea_error = validate_business_idea(form.get("business_idea", ""))
-    if idea_error:
-        errors["business_idea"] = idea_error
     if form.get("consent") != "on":
         errors["consent"] = "Please agree to the terms to continue"
     if errors:
         return templates.TemplateResponse(request, "form_errors.html", {
             "errors": errors,
-            "all_fields": IDEA_VALIDATED_FIELDS,
+            "all_fields": CHECKOUT_VALIDATED_FIELDS,
         })
 
+    # index.html no longer collects this pre-payment (see dashboard_name/
+    # dashboard_update_idea, where it's now captured post-payment instead)
+    # - but the other SEO landing pages (virginia_llc_contractors.html,
+    # virginia_llc_pricing.html, virginia_llc_done_for_you.html) still
+    # include the same hero idea form and may still submit a real one, so
+    # this stays a normal form read rather than being hardcoded blank.
+    # Either way it's optional now - no validation blocks checkout if it's
+    # empty.
     business_idea = form.get("business_idea", "").strip()
     lead_id = (form.get("lead_id") or "").strip()
 
@@ -1862,7 +1867,7 @@ async def start_checkout(request: Request):
         print(f"⚠️ Could not create Stripe checkout session for order {order_id}: {e}")
         return templates.TemplateResponse(request, "form_errors.html", {
             "errors": {"_checkout": "Something went wrong starting checkout - please try again in a moment, or contact support@launchbridge.ai if this keeps happening."},
-            "all_fields": IDEA_VALIDATED_FIELDS,
+            "all_fields": CHECKOUT_VALIDATED_FIELDS,
         })
 
     return Response(status_code=200, headers={"HX-Redirect": session.url})
@@ -2503,7 +2508,15 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
 
     business_idea = order.get("business_idea", "")
     name_ideas_error = None
-    if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
+    if not business_idea.strip():
+        # Idea capture moved here (post-payment) - the pre-payment page no
+        # longer collects it, so every order lands on this page with a
+        # blank idea now, not just an edge case. Calling Gemini with
+        # nothing would just waste a call and return generic junk - wait
+        # for the customer to actually type something and hit "Update &
+        # Regenerate Names" instead.
+        name_ideas = []
+    elif _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
         name_ideas = []
         # _name_ideas_chips.html's default empty-state ("Generating name
         # ideas... refresh if this doesn't appear") is written for the
@@ -2526,6 +2539,7 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         "business_idea": business_idea,
         "name_ideas": name_ideas,
         "error": name_ideas_error,
+        "no_idea_yet": not business_idea.strip(),
         "csrf_token": make_csrf_token(session_id),
         "name_error": None,
         "name_error_field": None,

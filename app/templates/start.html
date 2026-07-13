@@ -19,7 +19,11 @@
     <div class="text-center mb-6">
         <div class="eyebrow justify-center mb-3">Launch Bridge LLC</div>
         <h1 class="font-serif text-2xl sm:text-3xl font-bold text-[#0e2148] mb-2">Here's what you're getting 🚀</h1>
+        {% if business_idea %}
         <p class="text-[#0e2148]/55 text-sm">We're launching: <span class="italic">"{{ business_idea }}"</span></p>
+        {% else %}
+        <p class="text-[#0e2148]/55 text-sm">Ready to launch your Virginia LLC — tell us about your business after checkout.</p>
+        {% endif %}
     </div>
 
     <!-- Deliverables recap -->
@@ -81,7 +85,7 @@
         <p class="text-base">Processing your payment...</p>
     </div>
 
-    <a href="/" class="block text-center text-xs text-[#0e2148]/40 hover:text-[#0e2148] mt-4">← Back to change your idea</a>
+    <a href="/" class="block text-center text-xs text-[#0e2148]/40 hover:text-[#0e2148] mt-4">← Back to homepage</a>
 </div>
 
 <script>
