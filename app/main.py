@@ -1841,14 +1841,15 @@ async def start_checkout(request: Request):
             "all_fields": CHECKOUT_VALIDATED_FIELDS,
         })
 
-    # index.html no longer collects this pre-payment (see dashboard_name/
-    # dashboard_update_idea, where it's now captured post-payment instead)
-    # - but the other SEO landing pages (virginia_llc_contractors.html,
-    # virginia_llc_pricing.html, virginia_llc_done_for_you.html) still
-    # include the same hero idea form and may still submit a real one, so
-    # this stays a normal form read rather than being hardcoded blank.
-    # Either way it's optional now - no validation blocks checkout if it's
-    # empty.
+    # index.html's hero idea form (_hero_idea_form.html, shared with the
+    # SEO landing pages) is the sole pre-payment field - it saves the idea
+    # to localStorage and redirects here with ?idea=... (see /start GET),
+    # which start.html carries into a hidden field on this form. Still not
+    # server-side required though: the hero form's own client-side check
+    # (10+ chars) is what makes it "the" pre-payment field in practice, and
+    # staying lenient here means a customer who lands on /start some other
+    # way (e.g. a bookmark, or a future entry point with no idea capture)
+    # never gets stuck unable to pay.
     business_idea = form.get("business_idea", "").strip()
     lead_id = (form.get("lead_id") or "").strip()
 
@@ -1863,11 +1864,12 @@ async def start_checkout(request: Request):
     # email itself during payment.
     extra = {"lead_id": lead_id} if lead_id else {}
     attribution = parse_attribution_cookie(request.cookies.get(ATTRIBUTION_COOKIE_NAME))
-    # Most orders reach here with a blank idea (see the comment above -
-    # index.html no longer collects it pre-payment), so this is a no-op
-    # for the common case; the SEO landing pages that still submit a real
-    # idea here get it classified immediately instead of waiting for
-    # Step 3's update-idea, which not every order visits.
+    # The idea is normally already present here now (see the comment
+    # above - index.html's hero form is the pre-payment field again), so
+    # this is the common classification point, not the rare one; a blank
+    # idea (bookmarked /start, or a future entry point with no idea
+    # capture) just skips classification until Step 3's update-idea runs
+    # it instead.
     category_fields = _classify_category_fields(business_idea)
     record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution, **category_fields,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
@@ -2601,10 +2603,13 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
             "name_ideas": [], "error": idea_error,
         })
 
-    # This is the real capture point for most orders now (see the /start
-    # comment above) - the AI category suggestion is classified from the
-    # idea text as soon as it exists, immediately with source "ai", well
-    # before Step 5 shows the confirm-or-change UI built off it.
+    # Now that index.html's hero form captures the idea pre-payment again,
+    # this is mainly an edit path (the customer refining what they already
+    # typed on Step 1) rather than first-time capture - but it works
+    # exactly the same either way, since it's just an unconditional
+    # overwrite: reclassifies category fresh from whatever text is here
+    # now, immediately with source "ai", well before Step 5 shows the
+    # confirm-or-change UI built off it.
     order_ref.set({"business_idea": business_idea, **_classify_category_fields(business_idea)}, merge=True)
 
     if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
