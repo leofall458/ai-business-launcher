@@ -3194,22 +3194,30 @@ async def connect_onboard(owned: tuple = Depends(get_owned_order)):
 
 _TEST_EMAIL_MARKERS = ("test", "example", "e2e")
 
+# Our own domains - a real customer would never sign up with an email on
+# the company's own domain, so any order using one is a teammate's
+# internal walkthrough, not a sale.
+_INTERNAL_EMAIL_DOMAINS = ("launchbridge.ai", "teamlaunchbridge.com")
+
 def _is_test_order(order: dict) -> bool:
     """True for orders the admin dashboard should file under "Test Orders"
     rather than "Live Orders": never-completed checkouts (draft),
     payments that failed outright, anything with a giveaway email
-    (our own e2e/test-script runs, or *@example.com placeholders), or an
-    order that has paid_at but no checkout_at - structurally impossible
-    through the real /start flow (checkout_at is always written when the
-    order doc is first created, before Stripe can ever confirm payment),
-    so it can only be a script that wrote paid_at directly to Firestore
-    without going through checkout - regardless of state, since a test
-    script can still walk an order all the way to "complete"."""
+    (our own e2e/test-script runs, *@example.com placeholders, or an
+    address on one of our own internal domains), or an order that has
+    paid_at but no checkout_at - structurally impossible through the real
+    /start flow (checkout_at is always written when the order doc is
+    first created, before Stripe can ever confirm payment), so it can
+    only be a script that wrote paid_at directly to Firestore without
+    going through checkout - regardless of state, since a test script can
+    still walk an order all the way to "complete"."""
     if order.get("state") in ("draft", "payment_failed"):
         return True
     if order.get("paid_at") and not order.get("checkout_at"):
         return True
     email = (order.get("email") or "").lower()
+    if any(email.endswith("@" + domain) for domain in _INTERNAL_EMAIL_DOMAINS):
+        return True
     return any(marker in email for marker in _TEST_EMAIL_MARKERS)
 
 def _get_page_view_stats() -> dict:
