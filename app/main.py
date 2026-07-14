@@ -540,27 +540,46 @@ def _wizard_context() -> dict:
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY or "",
     }
 
-def track_page_view() -> None:
+VISITOR_SEEN_COOKIE = "lb_visitor_seen"
+VISITOR_SEEN_COOKIE_MAX_AGE = 60 * 60 * 24 * 400  # ~400 days - browser cap on cookie lifetime
+
+def track_page_view(date_str: str) -> None:
     """Increments today's page-view bucket plus a running all-time total -
     two separate documents (not one atomic transaction) since this is a
     rough visit counter for comparing app traffic against marketing-site
     traffic, not a financial ledger; losing perfect consistency between
     the two on a rare race is fine. Best-effort: a Firestore hiccup here
-    must never break the homepage for a real visitor."""
+    must never break the homepage for a real visitor. Only called once
+    per unique visitor per day - see home() - so this counts individual
+    people, not raw hits (a refresh, back-button visit, or repeat load
+    used to increment this on every single request)."""
     try:
-        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-        db.collection(PAGE_VIEWS_COLLECTION).document(today).set({"count": firestore.Increment(1)}, merge=True)
+        db.collection(PAGE_VIEWS_COLLECTION).document(date_str).set({"count": firestore.Increment(1)}, merge=True)
         db.collection(PAGE_VIEWS_COLLECTION).document("_total").set({"count": firestore.Increment(1)}, merge=True)
     except Exception as e:
         print(f"⚠️ Could not track page view: {e}")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    track_page_view()
-    return templates.TemplateResponse(request, "index.html", {
+    # A visitor is only "new" the first time they hit the homepage on a
+    # given calendar day - the cookie's value is just the last date they
+    # were counted, so a second load today is a no-op but tomorrow counts
+    # again, same as standard daily-unique-visitor analytics.
+    today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    is_new_visit_today = request.cookies.get(VISITOR_SEEN_COOKIE) != today_str
+    if is_new_visit_today:
+        track_page_view(today_str)
+    response = templates.TemplateResponse(request, "index.html", {
         "cancelled": request.query_params.get("cancelled") == "1",
         **_wizard_context(),
     })
+    if is_new_visit_today:
+        response.set_cookie(
+            key=VISITOR_SEEN_COOKIE, value=today_str,
+            max_age=VISITOR_SEEN_COOKIE_MAX_AGE, httponly=True, secure=True, samesite="lax",
+            path="/",
+        )
+    return response
 
 @app.get("/examples", response_class=HTMLResponse)
 async def examples_page(request: Request):
