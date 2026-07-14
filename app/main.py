@@ -23,6 +23,7 @@ from app.config import (
     STRIPE_PUBLISHABLE_KEY, PAGE_VIEWS_COLLECTION,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
+from app.agents.category_agent import classify_business_category, CATEGORY_TAXONOMY, LOW_CONFIDENCE_THRESHOLD
 from app.agents.scc_name_check import (
     check_name_on_scc, check_name_public, check_llc_exists_on_scc, sanitize_business_name,
     run_scc_health_check,
@@ -98,6 +99,8 @@ templates.env.globals["app_env"] = APP_ENV
 templates.env.globals["google_analytics_id"] = GOOGLE_ANALYTICS_ID
 templates.env.globals["clarity_id"] = CLARITY_ID
 templates.env.globals["sample_website_url"] = SAMPLE_WEBSITE_URL
+templates.env.globals["category_taxonomy"] = CATEGORY_TAXONOMY
+templates.env.globals["category_low_confidence_threshold"] = LOW_CONFIDENCE_THRESHOLD
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 db = firestore.Client(project=FIREBASE_PROJECT_ID)
@@ -1787,6 +1790,25 @@ def parse_attribution_cookie(raw: str | None) -> dict:
             pass
     return fields
 
+def _classify_category_fields(business_idea: str) -> dict:
+    """Runs the AI business-category classifier and shapes its result into
+    the fields stored on the order doc. Returns {} for a blank idea rather
+    than storing an "Other / Not sure" placeholder before there's any text
+    to classify - the Step 5 confirmation UI only shows once category is
+    actually set. category_source starts as "ai" and only becomes
+    "confirmed" once the customer reviews it in Step 5 (see
+    dashboard_category_confirm)."""
+    business_idea = (business_idea or "").strip()
+    if not business_idea:
+        return {}
+    result = classify_business_category(business_idea)
+    return {
+        "category": result["category"],
+        "category_source": "ai",
+        "category_confidence": result["confidence"],
+        "government_contracting_signal": result["government_contracting_signal"],
+    }
+
 @app.get("/start", response_class=HTMLResponse)
 async def start(request: Request):
     """Step 2: shows the deliverables recap + pricing + Checkout
@@ -1841,7 +1863,13 @@ async def start_checkout(request: Request):
     # email itself during payment.
     extra = {"lead_id": lead_id} if lead_id else {}
     attribution = parse_attribution_cookie(request.cookies.get(ATTRIBUTION_COOKIE_NAME))
-    record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution,
+    # Most orders reach here with a blank idea (see the comment above -
+    # index.html no longer collects it pre-payment), so this is a no-op
+    # for the common case; the SEO landing pages that still submit a real
+    # idea here get it classified immediately instead of waiting for
+    # Step 3's update-idea, which not every order visits.
+    category_fields = _classify_category_fields(business_idea)
+    record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution, **category_fields,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
                  awaiting_intake=True,
                  consent=True, consent_at=firestore.SERVER_TIMESTAMP)
@@ -2573,7 +2601,11 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
             "name_ideas": [], "error": idea_error,
         })
 
-    order_ref.set({"business_idea": business_idea}, merge=True)
+    # This is the real capture point for most orders now (see the /start
+    # comment above) - the AI category suggestion is classified from the
+    # idea text as soon as it exists, immediately with source "ai", well
+    # before Step 5 shows the confirm-or-change UI built off it.
+    order_ref.set({"business_idea": business_idea, **_classify_category_fields(business_idea)}, merge=True)
 
     if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
         return templates.TemplateResponse(request, "_name_ideas_chips.html", {
@@ -3061,6 +3093,30 @@ async def dashboard_autosave(request: Request, owned: tuple = Depends(get_owned_
     # whatever the customer had just typed, on every keystroke pause.
     order_ref.set({field: form.get(field, "")}, merge=True)
     return templates.TemplateResponse(request, "_autosave_indicator.html", {"field": field})
+
+
+@app.post("/dashboard/orders/{order_id}/category-confirm", response_class=HTMLResponse)
+async def dashboard_category_confirm(request: Request, owned: tuple = Depends(get_owned_order)):
+    """Step 5's one-tap category confirmation (see dashboard_business.html)
+    - fires on either the "That's right" button or picking a different
+    option from the dropdown, both of which land here with whatever
+    category should now be final. Always sets category_source to
+    "confirmed", whether the value matches the AI's original suggestion
+    or the customer picked something else - either way a human has now
+    reviewed it, which is what category_source is tracking."""
+    order_ref, order, customer_id = owned
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    form = await request.form()
+    if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+
+    category = (form.get("category") or "").strip()
+    if category not in CATEGORY_TAXONOMY:
+        raise HTTPException(status_code=400, detail="Not a valid category")
+
+    order_ref.set({"category": category, "category_source": "confirmed"}, merge=True)
+    return templates.TemplateResponse(request, "_autosave_indicator.html", {"field": "category"})
 
 
 @app.get("/dashboard/orders/{order_id}/timeline", response_class=HTMLResponse)
