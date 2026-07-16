@@ -47,7 +47,11 @@
 
         <!-- Registered Agent -->
         <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm">
-            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Choose your Registered Agent</h2>
+            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-1">Choose your Registered Agent</h2>
+            <p class="text-xs text-[#0e2148]/55 mb-3">
+                Don't want your home address on public record? Skip listing yourself as your own registered
+                agent — let ours handle it instead.
+            </p>
             <div class="space-y-2">
                 <label id="ra-option-professional_ra" class="flex items-start gap-3 p-3 rounded-lg cursor-pointer {% if preselected_ra_choice != 'self' %}border-2 border-[#c9a227] bg-[#c9a227]/10{% else %}border border-[#0e2148]/15{% endif %}">
                     <input type="radio" name="registered_agent_choice" value="professional_ra" {% if preselected_ra_choice != 'self' %}checked{% endif %}
