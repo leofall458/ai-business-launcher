@@ -1829,8 +1829,13 @@ async def start(request: Request):
     page. The idea travels here as a query param (Step 1's JS reads it back
     out of localStorage before navigating) rather than a Firestore lookup -
     no order exists yet at this point."""
+    # Carries the RA choice made on page 1's hero form (see _hero_idea_form.html's
+    # ?ra= param) so Step 2 starts pre-selected on whatever the customer already
+    # picked, instead of always resetting to the default.
+    preselected_ra_choice = "self" if request.query_params.get("ra") == "self" else "professional_ra"
     return templates.TemplateResponse(request, "start.html", {
         "business_idea": request.query_params.get("idea", ""),
+        "preselected_ra_choice": preselected_ra_choice,
         **_wizard_context(),
     })
 

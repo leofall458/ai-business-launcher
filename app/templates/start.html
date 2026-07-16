@@ -49,8 +49,8 @@
         <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm">
             <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Choose your Registered Agent</h2>
             <div class="space-y-2">
-                <label class="flex items-start gap-3 p-3 rounded-lg border-2 border-[#c9a227] bg-[#c9a227]/10 cursor-pointer">
-                    <input type="radio" name="registered_agent_choice" value="professional_ra" checked
+                <label id="ra-option-professional_ra" class="flex items-start gap-3 p-3 rounded-lg cursor-pointer {% if preselected_ra_choice != 'self' %}border-2 border-[#c9a227] bg-[#c9a227]/10{% else %}border border-[#0e2148]/15{% endif %}">
+                    <input type="radio" name="registered_agent_choice" value="professional_ra" {% if preselected_ra_choice != 'self' %}checked{% endif %}
                         onchange="updateRaTotal()"
                         class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
                     <span>
@@ -62,8 +62,8 @@
                         </span>
                     </span>
                 </label>
-                <label class="flex items-start gap-3 p-3 rounded-lg border border-[#0e2148]/15 cursor-pointer">
-                    <input type="radio" name="registered_agent_choice" value="self"
+                <label id="ra-option-self" class="flex items-start gap-3 p-3 rounded-lg cursor-pointer {% if preselected_ra_choice == 'self' %}border-2 border-[#c9a227] bg-[#c9a227]/10{% else %}border border-[#0e2148]/15{% endif %}">
+                    <input type="radio" name="registered_agent_choice" value="self" {% if preselected_ra_choice == 'self' %}checked{% endif %}
                         onchange="updateRaTotal()"
                         class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
                     <span>
@@ -88,12 +88,12 @@
             <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5 mb-2.5">
                 <span class="text-[#0e2148]">LLC formation total</span><span class="text-[#0e2148]">$350</span>
             </div>
-            <div id="ra-price-line" class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5 pt-2.5 border-t border-[#0e2148]/10">
+            <div id="ra-price-line" class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5 pt-2.5 border-t border-[#0e2148]/10" {% if preselected_ra_choice == 'self' %}style="display:none"{% endif %}>
                 <span>Registered agent <span class="text-[#0e2148]/40">(billed annually, separate from formation fee)</span></span>
                 <span class="text-[#0e2148] font-semibold">$110/yr</span>
             </div>
             <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5">
-                <span class="text-[#0e2148]">Total due today</span><span id="total-today" class="text-[#c9a227] text-lg">$460</span>
+                <span class="text-[#0e2148]">Total due today</span><span id="total-today" class="text-[#c9a227] text-lg">${{ "350" if preselected_ra_choice == "self" else "460" }}</span>
             </div>
         </div>
 
@@ -112,7 +112,7 @@
 
         <button type="submit" id="pay-button"
             class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
-            💳 Pay $460 &amp; Launch My LLC →
+            💳 Pay ${{ "350" if preselected_ra_choice == "self" else "460" }} &amp; Launch My LLC →
         </button>
         <p class="text-center text-xs text-[#0e2148]/50">
             🍎 Apple Pay &amp; G Pay available on Stripe's checkout &nbsp;·&nbsp; ↩️ 100% refund until we file &nbsp;·&nbsp; 🔒 Secure via Stripe
@@ -127,6 +127,15 @@
             const total = professional ? 460 : 350;
             document.getElementById('total-today').textContent = '$' + total;
             document.getElementById('pay-button').textContent = '💳 Pay $' + total + ' & Launch My LLC →';
+
+            const highlight = ['border-2', 'border-[#c9a227]', 'bg-[#c9a227]/10'];
+            const dim = ['border', 'border-[#0e2148]/15'];
+            const proEl = document.getElementById('ra-option-professional_ra');
+            const selfEl = document.getElementById('ra-option-self');
+            proEl.classList.remove(...highlight, ...dim);
+            selfEl.classList.remove(...highlight, ...dim);
+            proEl.classList.add(...(professional ? highlight : dim));
+            selfEl.classList.add(...(professional ? dim : highlight));
         }
         document.addEventListener('DOMContentLoaded', updateRaTotal);
     </script>

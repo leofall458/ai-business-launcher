@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Launch Bridge — AI-Powered Virginia LLC Formation</title>
-    <meta name="description" content="Form a Virginia LLC in days with AI. Get your Articles, EIN, brand kit, business website, and Stripe account — all for $350 flat.">
+    <meta name="description" content="Form a Virginia LLC in days with AI. Get your Articles, EIN, brand kit, business website, and Stripe account — all for $350 flat, plus an optional $110/year professional registered agent.">
     {% include "_brand.html" %}
     <style>
         @keyframes pulse-gold { 0%,100%{opacity:1} 50%{opacity:.4} }
@@ -40,6 +40,7 @@
         <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
             $350 flat · includes $100 Virginia state fee
         </div>
+        <p class="text-xs text-[#0e2148]/45 mt-2">+ optional $110/year professional registered agent</p>
     </header>
 
     {% if cancelled %}
@@ -57,6 +58,71 @@
 
     {% include "_hero_idea_form.html" %}
 
+    <!-- ── REGISTERED AGENT ── -->
+    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
+        <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Choose your Registered Agent</h2>
+        <div class="space-y-2">
+            <label id="ra-option-professional_ra" class="flex items-start gap-3 p-3 rounded-lg border-2 border-[#c9a227] bg-[#c9a227]/10 cursor-pointer">
+                <input type="radio" name="page_ra_choice" value="professional_ra" checked
+                    onchange="updatePageRaTotal()"
+                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                <span>
+                    <span class="block text-sm font-semibold text-[#0e2148]">Professional Registered Agent — $110/year</span>
+                    <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
+                        Randolph Law, PLLC serves as your registered agent, with attorney Christopher Shiplett
+                        handling your account and legal correspondence. Billed annually, separate from your
+                        formation fee.
+                    </span>
+                </span>
+            </label>
+            <label id="ra-option-self" class="flex items-start gap-3 p-3 rounded-lg border border-[#0e2148]/15 cursor-pointer">
+                <input type="radio" name="page_ra_choice" value="self"
+                    onchange="updatePageRaTotal()"
+                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                <span>
+                    <span class="block text-sm font-semibold text-[#0e2148]">I'll be my own Registered Agent</span>
+                    <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
+                        You must be a Virginia resident and available during business hours to receive legal
+                        documents at your address.
+                    </span>
+                </span>
+            </label>
+        </div>
+    </div>
+
+    <script>
+        function updatePageRaTotal() {
+            const radios = document.getElementsByName('page_ra_choice');
+            let choice = 'professional_ra';
+            for (const r of radios) if (r.checked) choice = r.value;
+            localStorage.setItem('lb_ra_choice', choice);
+
+            const total = choice === 'professional_ra' ? 460 : 350;
+            const raLine = document.getElementById('page-ra-price-line');
+            if (raLine) raLine.style.display = choice === 'professional_ra' ? 'flex' : 'none';
+            const pageTotalEl = document.getElementById('page-total');
+            if (pageTotalEl) pageTotalEl.textContent = '$' + total;
+
+            const highlight = ['border-2', 'border-[#c9a227]', 'bg-[#c9a227]/10'];
+            const dim = ['border', 'border-[#0e2148]/15'];
+            const proEl = document.getElementById('ra-option-professional_ra');
+            const selfEl = document.getElementById('ra-option-self');
+            const professional = choice === 'professional_ra';
+            proEl.classList.remove(...highlight, ...dim);
+            selfEl.classList.remove(...highlight, ...dim);
+            proEl.classList.add(...(professional ? highlight : dim));
+            selfEl.classList.add(...(professional ? dim : highlight));
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('lb_ra_choice');
+            if (saved) {
+                const radio = document.querySelector('input[name="page_ra_choice"][value="' + saved + '"]');
+                if (radio) radio.checked = true;
+            }
+            updatePageRaTotal();
+        });
+    </script>
+
     <!-- ── EVERYTHING INCLUDED + CTA ── -->
     <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
         <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Everything included</h2>
@@ -67,10 +133,12 @@
             <li class="flex items-center gap-2">🎨 <span>Brand kit — logo, colors, fonts, tagline</span></li>
             <li class="flex items-center gap-2">🌐 <span>A professional website, ready for customers</span></li>
             <li class="flex items-center gap-2">💳 <span>Complete the pre-activation process to start accepting payments</span></li>
+            <li class="flex items-center gap-2">🛡️ <span>Your choice of registered agent — a Virginia attorney ($110/year, optional) or yourself, at no extra cost</span></li>
         </ul>
-        <a href="/start"
+        <a href="/start" id="everything-cta"
+            onclick="try{var c=localStorage.getItem('lb_ra_choice');if(c)this.href='/start?ra='+encodeURIComponent(c);}catch(e){}"
             class="block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
-            🚀 Get Started — $350 Flat →
+            🚀 Get Started →
         </a>
         <p class="text-center text-sm text-[#0e2148]/60 mt-4">
             Questions? Contact <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] hover:text-[#b8860b] font-semibold underline">support@launchbridge.ai</a>
@@ -221,8 +289,15 @@
             <div class="flex justify-between text-sm text-[#0e2148]/70 mb-3">
                 <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
             </div>
+            <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-3 mb-3">
+                <span class="text-[#0e2148]">LLC formation total</span><span class="text-[#0e2148]">$350</span>
+            </div>
+            <div id="page-ra-price-line" class="flex justify-between text-sm text-[#0e2148]/70 mb-3 pt-3 border-t border-[#0e2148]/10">
+                <span>Registered agent <span class="text-[#0e2148]/40">(billed annually, separate from formation fee)</span></span>
+                <span class="text-[#0e2148] font-semibold">$110/yr</span>
+            </div>
             <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-3">
-                <span class="text-[#0e2148]">Total</span><span class="text-[#c9a227] text-lg">$350</span>
+                <span class="text-[#0e2148]">Total due today</span><span id="page-total" class="text-[#c9a227] text-lg">$460</span>
             </div>
             <p class="text-xs text-[#0e2148]/35 mt-2">We pay Virginia directly — you never pay separately.</p>
         </div>
