@@ -22,6 +22,16 @@ STRIPE_WEBHOOK_SECRET = get_secret(f"STRIPE_WEBHOOK_SECRET{_secret_suffix}")
 
 LLC_FORMATION_PRICE_CENTS = 35000
 
+# $110/year registered agent add-on (Christopher Shiplett, Randolph Law, PLLC)
+# - see Part 4 of the RA feature. Price object created once per Stripe mode via
+# scripts/setup_ra_stripe_price.py; the ID differs between test and live mode
+# so it's picked by APP_ENV same as the Stripe keys above.
+RA_ANNUAL_FEE_CENTS = 11000
+RA_ANNUAL_PRICE_ID = (
+    "price_1TtfyQRwq7nrElmNwFacHFBA" if APP_ENV == "staging"
+    else os.getenv("RA_ANNUAL_PRICE_ID_LIVE", "")
+)
+
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "ai-biz-launcher")
 
 # Staging writes to its own Firestore collection (e.g. "staging_orders") in

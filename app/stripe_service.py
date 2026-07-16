@@ -1,6 +1,9 @@
 import stripe
 from google.cloud import firestore
-from app.config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS, FIREBASE_PROJECT_ID, ORDERS_COLLECTION
+from app.config import (
+    STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS,
+    FIREBASE_PROJECT_ID, ORDERS_COLLECTION, RA_ANNUAL_FEE_CENTS, RA_ANNUAL_PRICE_ID,
+)
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -23,8 +26,10 @@ def create_checkout_session(
     order_id: str, success_url: str, cancel_url: str,
     amount: int = None, email: str = None,
     gclid: str = None, utm_source: str = None, utm_medium: str = None, utm_campaign: str = None,
+    registered_agent_choice: str = "self",
 ):
-    """Stripe Checkout Session for the flat-fee LLC formation package.
+    """Stripe Checkout Session for the flat-fee LLC formation package, plus
+    the optional $110/year registered agent add-on.
     order_id travels in metadata + client_reference_id so /success can look
     up the right Firestore order regardless of which one it reads back.
     amount defaults to LLC_FORMATION_PRICE_CENTS ($350).
@@ -37,6 +42,13 @@ def create_checkout_session(
     Checkout renders Apple Pay/Google Pay automatically above the card form
     once wallets are enabled in the Stripe Dashboard - no extra params
     needed for that.
+
+    registered_agent_choice == "professional_ra" adds RA_ANNUAL_PRICE_ID
+    ($110/yr) as a second line item and switches mode to "subscription".
+    Stripe's documented mixed-cart behavior for mode="subscription" bills a
+    one-time price line item once, on the initial invoice only, while the
+    recurring line item continues to bill on its interval - so the $350
+    formation fee still doesn't recur, only the $110 RA fee does.
 
     gclid/utm_* are whatever the order already has stored from the
     lb_attribution cookie (see parse_attribution_cookie in main.py) - passed
@@ -60,19 +72,26 @@ def create_checkout_session(
     ):
         if value:
             metadata[key] = value
-    return stripe.checkout.Session.create(
-        mode="payment",
-        line_items=[{
-            "price_data": {
-                "currency": "usd",
-                "unit_amount": charge,
-                "product_data": {
-                    "name": product_name,
-                    "description": description,
-                },
+
+    line_items = [{
+        "price_data": {
+            "currency": "usd",
+            "unit_amount": charge,
+            "product_data": {
+                "name": product_name,
+                "description": description,
             },
-            "quantity": 1,
-        }],
+        },
+        "quantity": 1,
+    }]
+    mode = "payment"
+    if registered_agent_choice == "professional_ra":
+        mode = "subscription"
+        line_items.append({"price": RA_ANNUAL_PRICE_ID, "quantity": 1})
+
+    return stripe.checkout.Session.create(
+        mode=mode,
+        line_items=line_items,
         phone_number_collection={"enabled": True},
         success_url=success_url,
         cancel_url=cancel_url,

@@ -317,7 +317,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
     if pre_check["available"] is False:
         raise NameTakenError(pre_check["message"])
 
-    ra_label = "Leo Fall (Launch Bridge)" if registered_agent_choice == "launchbridge" else "Self (customer)"
+    ra_label = "Randolph Law, PLLC (Christopher Shiplett)" if registered_agent_choice == "professional_ra" else "Self (customer)"
     print(f"\n🚀 Filing LLC for: {business_name}")
     print(f"📋 Registered Agent: {ra_label}")
 
@@ -502,18 +502,21 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
                     print("Press ENTER once resolved in the browser to continue...")
                     input()
         else:
-            # PATH A (Leo Fall as RA) available but hidden from UI pending RA partner setup.
-            # The search-and-select flow below is fully implemented and tested.
-            # already a registered SCC agent, so this is a search-and-select
-            # against the existing agent search rather than the Create
-            # Individual RA flow - selecting from search results sets the
-            # RA's address from SCC's own records, so there's no address
-            # entry or address-verification step on this path.
-            print("📌 Searching for existing RA (Leo Fall)...")
-            page.wait_for_selector('#rdnNewLLCFormation_Individual', timeout=15000)
-            js_check(page, '#rdnNewLLCFormation_Individual')
-            fill_field(page, '#NewLLCFormation_FirstName', "Leo")
-            fill_field(page, '#NewLLCFormation_LastName', "Fall")
+            # PATH A: professional RA (Randolph Law, PLLC - Christopher Shiplett's
+            # firm) is registered with SCC as a Business Entity RA (Entity ID
+            # S2914168, confirmed live against SCC's own agent search - an
+            # Individual search for "Christopher Shiplett" instead returns 6
+            # ambiguous/stale entries across different addresses, so Entity
+            # search against the firm name is the unambiguous match). Already a
+            # registered SCC agent, so this is a search-and-select against the
+            # existing agent search rather than the Create Individual RA flow -
+            # selecting from search results sets the RA's address from SCC's
+            # own records (Falls Church, VA per SCC - no address entry or
+            # address-verification step on this path).
+            print("📌 Searching for existing RA (Randolph Law, PLLC)...")
+            page.wait_for_selector('#rdnNewLLCFormation_Entity', timeout=15000)
+            js_check(page, '#rdnNewLLCFormation_Entity')
+            fill_field(page, '#NewLLCFormation_EntityName', "Randolph Law")
             page.wait_for_timeout(300)
             page.locator('#btnSearchAgent').scroll_into_view_if_needed()
             page.click('#btnSearchAgent')
@@ -523,21 +526,21 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             page.screenshot(path="/tmp/scc_ra_search_results.png")
             print("📸 RA search results screenshot saved")
 
-            print("📌 Selecting Leo Fall from search results...")
+            print("📌 Selecting Randolph Law, PLLC from search results...")
             page.click('input[name="SelectedAgentID"]')
             page.wait_for_timeout(2000)
 
             # Selecting an existing agent from search reveals an "Update
-            # Registered Agent Information" panel with two more required
-            # fields SCC won't let you past without: RA Capacity (his
-            # relationship to the LLC - "Member or Manager of the LLC",
-            # same value Path B's Create Individual RA modal uses) and the
-            # "resident of Virginia" checkbox. Skipping these is exactly
-            # what was causing the filing to stall out here.
-            print("📌 Setting RA Capacity and Virginia residency...")
-            page.wait_for_selector('#NewRAStatAgentName_RegisterAgentTypeId', timeout=15000)
-            select_field(page, '#NewRAStatAgentName_RegisterAgentTypeId', '8')
-            js_check(page, '#NewRAStatAgentName_ResidentOfVA')
+            # Registered Agent Information" panel with one more required field
+            # SCC won't let you past without: RA Capacity - for an Entity RA
+            # this is "BUSINESS ENTITY THAT IS AUTHORIZED TO TRANSACT BUSINESS
+            # IN VIRGINIA" (value 56), the Entity-type counterpart of Individual
+            # RA's "Member or Manager of the LLC" (value 8). There's no
+            # "resident of Virginia" checkbox on this path - that only applies
+            # to Individual RAs.
+            print("📌 Setting RA Capacity...")
+            page.wait_for_selector('#NewRAStatAgentName_RegisterAgentTypeEntityId', timeout=15000)
+            select_field(page, '#NewRAStatAgentName_RegisterAgentTypeEntityId', '56')
 
         # === PRINCIPAL OFFICE ADDRESS ===
         print("📌 Going to Principal Office Address...")
@@ -644,6 +647,6 @@ if __name__ == "__main__":
         "zipcode": "22201",
         "industry_code": "0",
         "duration": "Perpetual",
-        "registered_agent_choice": "launchbridge"
+        "registered_agent_choice": "professional_ra"
     }
     file_llc_on_scc(test_customer)

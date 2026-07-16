@@ -34,7 +34,14 @@
                     <p>Email: <span class="text-[#0e2148] font-medium">{{ order.email }}</span></p>
                     <p>Phone: <span class="text-[#0e2148] font-medium">{{ order.phone }}</span></p>
                     <p>County: <span class="text-[#0e2148] font-medium">{{ order.county }}</span></p>
-                    <p>RA: <span class="text-[#0e2148] font-medium">{{ "Leo Fall" if order.registered_agent_choice|default("launchbridge") == "launchbridge" else "Self" }}</span></p>
+                    <p>RA: <span class="text-[#0e2148] font-medium">
+                        {%- if order.registered_agent_choice|default("self") == "professional_ra" -%}
+                        Professional (Christopher Shiplett, Randolph Law PLLC) - $110/yr
+                        {%- if order.ra_subscription_status %} · {{ order.ra_subscription_status.replace("_", " ") }}{% endif %}
+                        {%- else -%}
+                        Self
+                        {%- endif -%}
+                    </span></p>
                     {% if order.ein %}
                     <p>EIN: <span class="text-[#0e2148] font-mono font-medium">{{ order.ein }}</span></p>
                     {% endif %}

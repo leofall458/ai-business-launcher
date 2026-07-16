@@ -33,12 +33,6 @@ from app.agents.brand_agent import generate_brand_kit, generate_logo_variations,
 from app.agents.marketing_agent import generate_marketing_plan, build_marketing_plan_pdf
 from app.agents.pdf_agent import generate_llc_pdf
 from app.scc_llc_filer import file_llc_on_scc, verify_name_before_filing, NameTakenError
-
-# REGISTERED AGENT PARTNER - FUTURE FEATURE
-# Code for RA partner (Leo Fall) is implemented in scc_llc_filer.py PATH A
-# Hidden from UI until a commercial RA partner agreement is in place.
-# To re-enable: uncomment the RA selection section in dashboard_order.html
-# and restore the "launchbridge" default in form.setdefault below.
 from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
@@ -55,7 +49,7 @@ from app.stripe_service import (
     check_and_update_website,
     construct_webhook_event,
 )
-from app.config import LLC_FORMATION_PRICE_CENTS
+from app.config import LLC_FORMATION_PRICE_CENTS, RA_ANNUAL_FEE_CENTS
 from app.google_ads_service import upload_click_conversion
 from app.ssn_vault import (
     encrypt_ssn, decrypt_ssn, delete_ssn, ssn_age_hours, is_ssn_stored,
@@ -1874,6 +1868,16 @@ async def start_checkout(request: Request):
 
     charge_amount = LLC_FORMATION_PRICE_CENTS
 
+    # Registered agent choice - collected here, pre-payment, since the $110/yr
+    # charge (if any) has to be part of this same Checkout Session (see Part 4).
+    # Anything other than the one value the radio group's "self" option submits
+    # is treated as professional_ra, same lenient pattern as the idea field
+    # above - a tampered/missing value must never silently fail checkout.
+    registered_agent_choice = "self" if form.get("registered_agent_choice") == "self" else "professional_ra"
+    ra_fields = {"registered_agent_choice": registered_agent_choice}
+    if registered_agent_choice == "professional_ra":
+        ra_fields["ra_annual_fee_cents"] = RA_ANNUAL_FEE_CENTS
+
     order_ref = ORDERS.document()
     order_id = order_ref.id
     # Written immediately, before the Stripe call below - so the idea is
@@ -1891,6 +1895,7 @@ async def start_checkout(request: Request):
     # it instead.
     category_fields = _classify_category_fields(business_idea)
     record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution, **category_fields,
+                 **ra_fields,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
                  awaiting_intake=True,
                  consent=True, consent_at=firestore.SERVER_TIMESTAMP)
@@ -1906,6 +1911,7 @@ async def start_checkout(request: Request):
             utm_source=attribution.get("utm_source"),
             utm_medium=attribution.get("utm_medium"),
             utm_campaign=attribution.get("utm_campaign"),
+            registered_agent_choice=registered_agent_choice,
         )
         order_ref.set({"stripe_checkout_session_id": session.id}, merge=True)
     except Exception as e:
@@ -1947,7 +1953,7 @@ def needs_ssn_reentry(order: dict, order_id: str) -> bool:
         and not is_ssn_stored(order_id)
     )
 
-def process_paid_order(order_id: str, payment_status: str, background_tasks: BackgroundTasks) -> bool:
+def process_paid_order(order_id: str, payment_status: str, background_tasks: BackgroundTasks, subscription_id: str = None) -> bool:
     """Advances an order past payment and kicks off the real pipeline -
     shared by /success (the customer's browser redirect) and /webhook
     (Stripe's own server-to-server notification), since either one might
@@ -1977,6 +1983,11 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
         return False
 
     order_ref.set({"paid_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    # Set once the mixed-cart Checkout Session actually creates the RA
+    # subscription (mode="subscription", professional_ra orders only) - see
+    # Part 4/5 of the RA feature. Not present at all for self-RA orders.
+    if subscription_id:
+        order_ref.set({"ra_subscription_id": subscription_id, "ra_subscription_status": "active"}, merge=True)
 
     # Stripe Checkout collects the customer's email itself (see /start) -
     # nothing else in this pipeline ever wrote it back onto the order, so
@@ -2114,7 +2125,8 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         if not resolved_order_id:
             return RedirectResponse(url="/")
 
-        process_paid_order(resolved_order_id, session.payment_status, background_tasks)
+        process_paid_order(resolved_order_id, session.payment_status, background_tasks,
+                            subscription_id=session.subscription)
 
     if not resolved_order_id:
         return RedirectResponse(url="/")
@@ -2184,6 +2196,18 @@ def import_ad_conversion(order_id: str, gclid: str | None, amount_cents: int, co
         print(f"⚠️ Google Ads conversion import crashed for order {order_id}: {e}")
         order_ref.set({"ad_conversion_attempted_at": firestore.SERVER_TIMESTAMP}, merge=True)
 
+def _find_order_by_ra_subscription(subscription_id: str):
+    """Looks up the order carrying this RA subscription ID (set by
+    process_paid_order once the mixed-cart Checkout Session confirms it) -
+    invoice.payment_failed/customer.subscription.deleted events don't carry
+    our order_id directly, only the Stripe subscription ID, so this is how
+    the webhook maps one back to the other. Returns (None, None) if no
+    matching order exists (e.g. a stale/unrelated subscription event)."""
+    matches = list(ORDERS.where("ra_subscription_id", "==", subscription_id).limit(1).stream())
+    if not matches:
+        return None, None
+    return matches[0].reference, matches[0].to_dict()
+
 @app.post("/webhook")
 async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
     """Server-to-server backstop for /success - if a customer closes their
@@ -2217,7 +2241,8 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
         order_id = session.client_reference_id
         log_entry["order_id"] = order_id
         if order_id:
-            advanced = process_paid_order(order_id, session.payment_status, background_tasks)
+            advanced = process_paid_order(order_id, session.payment_status, background_tasks,
+                                           subscription_id=session.subscription)
             log_entry["advanced_order"] = advanced
             if session.payment_status == "paid":
                 # StripeObject (session.metadata's type) doesn't actually
@@ -2229,6 +2254,35 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
                 background_tasks.add_task(
                     import_ad_conversion, order_id, gclid, session.amount_total, conversion_dt,
                 )
+
+    elif event.type == "invoice.payment_failed":
+        invoice = event.data.object
+        subscription_id = invoice.get("subscription")
+        log_entry["subscription_id"] = subscription_id
+        if subscription_id:
+            order_ref, order = _find_order_by_ra_subscription(subscription_id)
+            if order_ref:
+                log_entry["order_id"] = order_ref.id
+                order_ref.set({"ra_subscription_status": "past_due"}, merge=True)
+                business_label = order.get("business_name") or order.get("business_idea", "")[:50] or order_ref.id[:8]
+                send_admin_sms(
+                    f"⚠️ RA renewal payment FAILED for {business_label} (order {order_ref.id[:8]}). "
+                    "Registered agent coverage may lapse - follow up with the customer."
+                )
+
+    elif event.type == "customer.subscription.deleted":
+        subscription = event.data.object
+        subscription_id = subscription.id
+        log_entry["subscription_id"] = subscription_id
+        order_ref, order = _find_order_by_ra_subscription(subscription_id)
+        if order_ref:
+            log_entry["order_id"] = order_ref.id
+            order_ref.set({"ra_subscription_status": "canceled"}, merge=True)
+            business_label = order.get("business_name") or order.get("business_idea", "")[:50] or order_ref.id[:8]
+            send_admin_sms(
+                f"🚫 RA subscription CANCELED for {business_label} (order {order_ref.id[:8]}). "
+                "This LLC now has no registered agent on file - follow up immediately."
+            )
 
     db.collection("webhook_events").add(log_entry)
     return Response(status_code=200)
@@ -2493,7 +2547,7 @@ def _dashboard_order_context(
         "business_name": order.get("business_name"),
         "full_name": order.get("full_name"),
         "email": order.get("email"),
-        "registered_agent_choice": order.get("registered_agent_choice", "launchbridge"),
+        "registered_agent_choice": order.get("registered_agent_choice", "self"),
         "ein": order.get("ein"),
         "website_url": order.get("website_url"),
         "website_embeddable": check_iframe_embeddable(order["website_url"]) if order.get("website_url") else False,
@@ -2857,7 +2911,6 @@ async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTas
 
 _STEP5_BUSINESS_SIMPLE_FIELDS = [
     "business_purpose", "target_customer",
-    "registered_agent_choice",
     "skip_ein", "existing_ein",
     "sig_first", "sig_middle", "sig_last",
     "industry_code", "duration",
@@ -2898,8 +2951,6 @@ async def dashboard_business_submit(
 
     if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
         raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
-
-    form.setdefault("registered_agent_choice", "self")  # RA selection hidden from UI — default is self
 
     errors = validate_post_payment_intake(form)
     if errors:

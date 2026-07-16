@@ -29,7 +29,12 @@
             <p class="font-serif text-lg sm:text-xl font-semibold text-[#0e2148]">{{ business_name }}</p>
             <p class="text-[#0e2148]/50 text-sm mt-1">{{ full_name }} · Virginia</p>
             <p class="text-[#0e2148]/40 text-xs mt-1">
-                Registered Agent: {{ "Launch Bridge (Leo Fall)" if registered_agent_choice == "launchbridge" else "Self" }}
+                {% if registered_agent_choice == "professional_ra" %}
+                Registered Agent: Professional (Christopher Shiplett, Randolph Law, PLLC) - $110/yr
+                {%- if order.ra_subscription_status %} · {{ order.ra_subscription_status.replace("_", " ") }}{% endif %}
+                {% else %}
+                Registered Agent: Self
+                {% endif %}
             </p>
         </div>
 

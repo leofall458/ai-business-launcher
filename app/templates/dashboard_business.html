@@ -50,8 +50,6 @@
             <span id="save-target_customer" class="block mt-1"></span>
         </div>
 
-        <input type="hidden" name="registered_agent_choice" value="self">
-
         {% if order.get('category') %}
         {% set low_confidence = order.get('category_confidence', 1) < category_low_confidence_threshold %}
         <!-- AI business-category suggestion - confirm-or-change, not a form field
