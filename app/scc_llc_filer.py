@@ -317,7 +317,7 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
     if pre_check["available"] is False:
         raise NameTakenError(pre_check["message"])
 
-    ra_label = "Randolph Law, PLLC (Christopher Shiplett)" if registered_agent_choice == "professional_ra" else "Self (customer)"
+    ra_label = "Randolph Law, PLLC (attorney Christopher Shiplett handling account)" if registered_agent_choice == "professional_ra" else "Self (customer)"
     print(f"\n🚀 Filing LLC for: {business_name}")
     print(f"📋 Registered Agent: {ra_label}")
 

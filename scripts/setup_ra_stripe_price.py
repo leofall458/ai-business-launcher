@@ -12,8 +12,8 @@ stripe.api_key = STRIPE_SECRET_KEY
 
 product = stripe.Product.create(
     name="Launch Bridge Registered Agent Service",
-    description="Annual registered agent service provided by Christopher Shiplett, "
-                 "a practicing Virginia attorney at Randolph Law, PLLC.",
+    description="Annual registered agent service - Randolph Law, PLLC serves as your "
+                 "registered agent, with attorney Christopher Shiplett handling your account.",
 )
 price = stripe.Price.create(
     currency="usd",

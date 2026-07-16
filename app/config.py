@@ -22,7 +22,7 @@ STRIPE_WEBHOOK_SECRET = get_secret(f"STRIPE_WEBHOOK_SECRET{_secret_suffix}")
 
 LLC_FORMATION_PRICE_CENTS = 35000
 
-# $110/year registered agent add-on (Christopher Shiplett, Randolph Law, PLLC)
+# $110/year registered agent add-on (Randolph Law, PLLC - attorney Christopher Shiplett)
 # - see Part 4 of the RA feature. Price object created once per Stripe mode via
 # scripts/setup_ra_stripe_price.py; the ID differs between test and live mode
 # so it's picked by APP_ENV same as the Stripe keys above.

@@ -36,7 +36,7 @@
                     <p>County: <span class="text-[#0e2148] font-medium">{{ order.county }}</span></p>
                     <p>RA: <span class="text-[#0e2148] font-medium">
                         {%- if order.registered_agent_choice|default("self") == "professional_ra" -%}
-                        Professional (Christopher Shiplett, Randolph Law PLLC) - $110/yr
+                        Professional (Randolph Law, PLLC - Attorney Christopher Shiplett) - $110/yr
                         {%- if order.ra_subscription_status %} · {{ order.ra_subscription_status.replace("_", " ") }}{% endif %}
                         {%- else -%}
                         Self
