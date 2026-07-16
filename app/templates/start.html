@@ -39,63 +39,63 @@
         </ul>
     </div>
 
-    <!-- Registered Agent -->
-    <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-5">
-        <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Choose your Registered Agent</h2>
-        <div class="space-y-2">
-            <label class="flex items-start gap-3 p-3 rounded-lg border-2 border-[#c9a227] bg-[#c9a227]/10 cursor-pointer">
-                <input type="radio" name="registered_agent_choice" value="professional_ra" checked
-                    onchange="updateRaTotal()"
-                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
-                <span>
-                    <span class="block text-sm font-semibold text-[#0e2148]">Professional Registered Agent — $110/year</span>
-                    <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
-                        Christopher Shiplett, a practicing Virginia attorney at Randolph Law, PLLC, will serve as your
-                        registered agent, handling legal correspondence on your behalf. Billed annually at $110,
-                        separate from your formation fee.
-                    </span>
-                </span>
-            </label>
-            <label class="flex items-start gap-3 p-3 rounded-lg border border-[#0e2148]/15 cursor-pointer">
-                <input type="radio" name="registered_agent_choice" value="self"
-                    onchange="updateRaTotal()"
-                    class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
-                <span>
-                    <span class="block text-sm font-semibold text-[#0e2148]">I'll be my own Registered Agent</span>
-                    <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
-                        You must be a Virginia resident and available during business hours to receive legal
-                        documents at your address.
-                    </span>
-                </span>
-            </label>
-        </div>
-    </div>
-
-    <!-- Pricing -->
-    <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 mb-5 shadow-sm">
-        <div class="flex justify-between text-sm text-[#0e2148]/70 mb-1.5">
-            <span>Launch Bridge service fee</span><span class="text-[#0e2148] font-semibold">$250</span>
-        </div>
-        <div class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5">
-            <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
-        </div>
-        <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5 mb-2.5">
-            <span class="text-[#0e2148]">LLC formation total</span><span class="text-[#0e2148]">$350</span>
-        </div>
-        <div id="ra-price-line" class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5 pt-2.5 border-t border-[#0e2148]/10">
-            <span>Registered agent <span class="text-[#0e2148]/40">(billed annually, separate from formation fee)</span></span>
-            <span class="text-[#0e2148] font-semibold">$110/yr</span>
-        </div>
-        <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5">
-            <span class="text-[#0e2148]">Total due today</span><span id="total-today" class="text-[#c9a227] text-lg">$460</span>
-        </div>
-    </div>
-
     <div id="form-top-errors"></div>
 
     <form id="checkout-form" hx-post="/start" hx-swap="none" hx-indicator="#spinner" class="space-y-4">
         <input type="hidden" name="business_idea" value="{{ business_idea }}"/>
         <input type="hidden" name="lead_id" id="lead_id_input" value=""/>
+
+        <!-- Registered Agent -->
+        <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm">
+            <h2 class="font-serif text-base font-semibold text-[#0e2148] mb-3">Choose your Registered Agent</h2>
+            <div class="space-y-2">
+                <label class="flex items-start gap-3 p-3 rounded-lg border-2 border-[#c9a227] bg-[#c9a227]/10 cursor-pointer">
+                    <input type="radio" name="registered_agent_choice" value="professional_ra" checked
+                        onchange="updateRaTotal()"
+                        class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                    <span>
+                        <span class="block text-sm font-semibold text-[#0e2148]">Professional Registered Agent — $110/year</span>
+                        <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
+                            Christopher Shiplett, a practicing Virginia attorney at Randolph Law, PLLC, will serve as your
+                            registered agent, handling legal correspondence on your behalf. Billed annually at $110,
+                            separate from your formation fee.
+                        </span>
+                    </span>
+                </label>
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-[#0e2148]/15 cursor-pointer">
+                    <input type="radio" name="registered_agent_choice" value="self"
+                        onchange="updateRaTotal()"
+                        class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
+                    <span>
+                        <span class="block text-sm font-semibold text-[#0e2148]">I'll be my own Registered Agent</span>
+                        <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
+                            You must be a Virginia resident and available during business hours to receive legal
+                            documents at your address.
+                        </span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Pricing -->
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
+            <div class="flex justify-between text-sm text-[#0e2148]/70 mb-1.5">
+                <span>Launch Bridge service fee</span><span class="text-[#0e2148] font-semibold">$250</span>
+            </div>
+            <div class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5">
+                <span>Virginia state filing fee</span><span class="text-[#0e2148] font-semibold">$100</span>
+            </div>
+            <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5 mb-2.5">
+                <span class="text-[#0e2148]">LLC formation total</span><span class="text-[#0e2148]">$350</span>
+            </div>
+            <div id="ra-price-line" class="flex justify-between text-sm text-[#0e2148]/70 mb-2.5 pt-2.5 border-t border-[#0e2148]/10">
+                <span>Registered agent <span class="text-[#0e2148]/40">(billed annually, separate from formation fee)</span></span>
+                <span class="text-[#0e2148] font-semibold">$110/yr</span>
+            </div>
+            <div class="flex justify-between font-bold border-t border-[#0e2148]/10 pt-2.5">
+                <span class="text-[#0e2148]">Total due today</span><span id="total-today" class="text-[#c9a227] text-lg">$460</span>
+            </div>
+        </div>
 
         <label class="flex items-start gap-3 cursor-pointer group">
             <input type="checkbox" name="consent" required
