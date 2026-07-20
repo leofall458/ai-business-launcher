@@ -20,28 +20,33 @@
             .reviews-breakout { position: relative; left: 50%; margin-left: -50vw; width: 100vw; }
             .reviews-breakout-inner { max-width: 56rem; margin: 0 auto; padding: 0 1.5rem; }
         }
-        /* Flanks the hero with a review card on each side on wide screens,
-           same breakout trick as .reviews-breakout above. app-tailwind.css
-           is purged and has zero lg: variants in it (only sm: is used
-           anywhere in this app), so this whole layout - not just the
-           breakout - is hand-written rather than Tailwind lg: utilities.
-           Below 1024px: .hero-flank is display:none (fully hidden, not
+        /* Lists all reviews vertically in a column to the right of the hero on
+           wide screens, same breakout trick as .reviews-breakout above.
+           app-tailwind.css is purged and has zero lg: variants in it (only
+           sm: is used anywhere in this app), so this whole layout - not just
+           the breakout - is hand-written rather than Tailwind lg: utilities.
+           Below 1024px: .hero-reviews-col is display:none (fully hidden, not
            stacked) and .hero-breakout-inner is normal block flow, so the
-           hero renders exactly as before on mobile. At 1024px+: the inner
-           becomes a 3-col grid (flank / hero / flank) and the flanks
-           become visible flex columns. */
-        .hero-flank { display: none; }
+           hero renders exactly as before on mobile - reviews live only in
+           the "What customers are saying" section further down the page.
+           At 1024px+: the inner becomes a 2-col grid (hero / review column)
+           and the "What customers are saying" section is hidden, since the
+           column now shows every review instead. */
+        .hero-reviews-col { display: none; }
         @media (min-width: 1024px) {
             .hero-breakout { position: relative; left: 50%; margin-left: -50vw; width: 100vw; }
             .hero-breakout-inner {
-                max-width: 76rem; margin: 0 auto; padding: 0 1.5rem;
-                display: grid; grid-template-columns: 1fr 36rem 1fr; gap: 1.5rem; align-items: center;
+                max-width: 58rem; margin: 0 auto; padding: 0 1.5rem;
+                display: grid; grid-template-columns: 36rem 20rem; gap: 1.5rem; align-items: start; justify-content: center;
             }
-            .hero-flank { display: flex; flex-direction: column; }
-            /* The two review cards below (in "What customers are saying") that are
-               duplicated as hero flanks above shouldn't also render down there. */
-            .review-flanked-duplicate { display: none; }
+            .hero-reviews-col { display: flex; flex-direction: column; gap: 1rem; }
+            .reviews-section-mobile-only { display: none; }
         }
+        /* Truncates a review to ~4 lines with a fade-to-ellipsis; the
+           "Read more" button (JS-shown only when the text actually
+           overflows) toggles .expanded to reveal the rest. */
+        .review-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+        .review-text.expanded { -webkit-line-clamp: unset; overflow: visible; }
     </style>
     {% include "_ga4.html" %}
 </head>
@@ -49,26 +54,10 @@
 
 <div class="max-w-xl mx-auto px-4">
 
-    <!-- ── HEADER (flanked by reviews on wide screens, see .hero-breakout above) ── -->
+    <!-- ── HEADER (reviews listed vertically on the right on wide screens, see
+         .hero-breakout above) ── -->
     <div class="hero-breakout">
     <div class="hero-breakout-inner">
-
-        <!-- Flank review — left (hidden below 1024px; duplicated from the "What
-             customers are saying" section below, which hides this same card at
-             1024px+ to avoid showing it twice) -->
-        <div class="hero-flank bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
-            <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
-            <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
-            <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
-                <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
-                    <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-                    <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-                    <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
-                    <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-                </svg>
-                <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Peter Allen</span> · via Google</p>
-            </div>
-        </div>
 
         <header class="text-center pt-10 pb-6">
             <div class="eyebrow mb-4">
@@ -85,25 +74,72 @@
             <p class="text-xs text-[#0e2148]/45 mt-2">+ optional $110/year professional registered agent</p>
         </header>
 
-        <!-- Flank review — right (hidden below 1024px; duplicated from the "What
-             customers are saying" section below, which hides this same card at
-             1024px+ to avoid showing it twice) -->
-        <div class="hero-flank bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm">
-            <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
-            <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
-            <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
-                <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
-                    <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-                    <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-                    <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
-                    <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-                </svg>
-                <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Austin Genova</span> · via Google</p>
+        <!-- Review column — right side (hidden below 1024px; duplicated from the
+             "What customers are saying" section below, which is hidden entirely
+             at 1024px+ to avoid showing these twice) -->
+        <div class="hero-reviews-col">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Peter Allen</span> · via Google</p>
+                </div>
+            </div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Lucy Hultquist</span> · via Google</p>
+                </div>
+            </div>
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+                <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                    </svg>
+                    <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Austin Genova</span> · via Google</p>
+                </div>
             </div>
         </div>
 
     </div>
     </div>
+
+    <script>
+        function toggleReviewText(btn) {
+            const text = btn.previousElementSibling;
+            const expanded = text.classList.toggle('expanded');
+            btn.textContent = expanded ? 'Read less' : 'Read more';
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.review-text').forEach((p) => {
+                if (p.scrollHeight > p.clientHeight + 2) {
+                    const btn = p.nextElementSibling;
+                    if (btn && btn.classList.contains('review-readmore-btn')) btn.classList.remove('hidden');
+                }
+            });
+        });
+    </script>
 
     {% if cancelled %}
     <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 text-center text-sm text-amber-800">
@@ -372,12 +408,14 @@
         </div>
     </section>
 
-    <!-- ── GOOGLE REVIEWS ──
+    <!-- ── GOOGLE REVIEWS (mobile/tablet only — at 1024px+ these are shown
+    instead as the vertical column to the right of the hero, see
+    .hero-reviews-col above) ──
     Breaks out to a wider width than the rest of the page on sm:+ screens
     (see .reviews-breakout / .reviews-breakout-inner in <style> above) so
     each card gets real room to be landscape-shaped, stacked one after
     another - mobile stays in normal flow, same width as everything else. -->
-    <div class="reviews-breakout mb-10">
+    <div class="reviews-breakout reviews-section-mobile-only mb-10">
     <div class="reviews-breakout-inner">
         <div class="flex items-center gap-2 mb-5">
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 48 48">
@@ -389,10 +427,10 @@
             <h2 class="font-serif text-xl font-bold text-[#0e2148]">What customers are saying</h2>
         </div>
         <div class="grid grid-cols-1 gap-4">
-            <!-- Hidden at 1024px+: this card flanks the hero above instead (see .hero-breakout) -->
-            <div class="review-flanked-duplicate bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
                 <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
                 <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
                     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
                         <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
@@ -405,7 +443,8 @@
             </div>
             <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
                 <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
                 <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
                     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
                         <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
@@ -416,10 +455,10 @@
                     <p class="text-xs text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Lucy Hultquist</span> · via Google</p>
                 </div>
             </div>
-            <!-- Hidden at 1024px+: this card flanks the hero above instead (see .hero-breakout) -->
-            <div class="review-flanked-duplicate bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-4 shadow-sm flex flex-col">
                 <div class="text-[#c9a227] text-sm mb-2" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="text-sm text-[#0e2148]/75 leading-relaxed flex-1">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
+                <p class="review-text text-sm text-[#0e2148]/75 leading-relaxed">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
+                <button type="button" class="review-readmore-btn hidden text-left text-xs font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
                 <div class="flex items-center gap-2 mt-4 pt-3 border-t border-[#0e2148]/8">
                     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
                         <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
