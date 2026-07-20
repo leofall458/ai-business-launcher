@@ -56,7 +56,7 @@
            "Read more" button (JS-shown only when the text actually
            overflows) toggles .expanded to reveal the rest. */
         .review-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-        .review-text.expanded { -webkit-line-clamp: unset; overflow: visible; }
+        .review-text.expanded { display: block; overflow: visible; }
         .hero-reviews-col .review-text { -webkit-line-clamp: 3; }
     </style>
     {% include "_ga4.html" %}
