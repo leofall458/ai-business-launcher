@@ -19,16 +19,17 @@
             Didn't get it? Check spam, or email <a href="mailto:support@launchbridge.ai" class="text-[#c9a227] underline">support@launchbridge.ai</a>
         </p>
     </div>
-    {% if google_analytics_id %}
+    {% if google_analytics_id and purchase_event %}
     <script>
         gtag('event', 'purchase', {
             currency: 'USD',
-            value: {{ amount_paid | default(350) }},
+            value: {{ purchase_event.value }},
             transaction_id: '{{ order_id }}',
+            ra_selected: '{{ purchase_event.ra_selected }}',
             items: [{
                 item_id: 'virginia_llc_formation',
                 item_name: '{{ business_name | replace("'", "\\'") }}',
-                price: {{ amount_paid | default(350) }},
+                price: {{ purchase_event.value }},
                 quantity: 1
             }]
         });

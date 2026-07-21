@@ -2286,9 +2286,24 @@ async def success(request: Request, background_tasks: BackgroundTasks,
     if not resolved_order_id:
         return RedirectResponse(url="/")
 
-    order = ORDERS.document(resolved_order_id).get().to_dict()
+    order_ref = ORDERS.document(resolved_order_id)
+    order = order_ref.get().to_dict()
     if not order:
         return RedirectResponse(url="/")
+
+    # GA4 purchase event data - the real Stripe amount_total (not a
+    # hardcoded formation-price constant, which would under-report by the
+    # $110/yr RA fee for professional_ra orders), computed once and marked
+    # sent so it can never double-fire regardless of which of the two
+    # rendering paths below actually shows it. Only available when this
+    # request came from Stripe's own redirect (session_id set) - the
+    # order_id-only entry has no Stripe session to pull a real amount from.
+    purchase_event = None
+    if session_id and not order.get("purchase_event_sent"):
+        purchase_event = {
+            "value": round((session.amount_total or 0) / 100, 2),
+            "ra_selected": order.get("registered_agent_choice", "self"),
+        }
 
     # Auto-login straight into Step 3 naming - this is the one place a
     # completed Stripe Checkout is allowed to mint a dashboard session
@@ -2305,15 +2320,25 @@ async def success(request: Request, background_tasks: BackgroundTasks,
         try:
             magic_url = create_magic_link(email)
             verify_path = "/dashboard/verify" + magic_url.split("/dashboard/verify", 1)[1]
+            if purchase_event:
+                # This redirect (then /dashboard/verify's own redirect) means
+                # the purchase event can't fire on this response directly -
+                # stashed on the order doc so Step 3 (dashboard_name, always
+                # the first page a freshly-paid order reaches) can fire it
+                # once and clear it. See dashboard_name below.
+                order_ref.set({"pending_purchase_event": purchase_event, "purchase_event_sent": True}, merge=True)
             return RedirectResponse(url=verify_path, status_code=303)
         except Exception as e:
             print(f"⚠️ Could not auto-login order {resolved_order_id} after payment: {e}")
+
+    if purchase_event:
+        order_ref.set({"purchase_event_sent": True}, merge=True)
 
     return templates.TemplateResponse(request, "success_interstitial.html", {
         "email": email,
         "order_id": resolved_order_id,
         "business_name": order.get("business_name", ""),
-        "amount_paid": LLC_FORMATION_PRICE_CENTS // 100,
+        "purchase_event": purchase_event,
     })
 
 def import_ad_conversion(order_id: str, gclid: str | None, amount_cents: int, conversion_dt: datetime.datetime):
@@ -2764,6 +2789,14 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
     if reached(state, "name_selected") and state != "name_rejected":
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
 
+    # Fires the GA4 purchase event stashed by /success (see its own comment) -
+    # Step 3 is always the first page a freshly-paid order reaches, whether
+    # via the auto-login redirect or the customer's own magic-link email.
+    # Cleared immediately so a page refresh/back-button never re-fires it.
+    pending_purchase_event = order.get("pending_purchase_event")
+    if pending_purchase_event:
+        order_ref.set({"pending_purchase_event": firestore.DELETE_FIELD}, merge=True)
+
     business_idea = order.get("business_idea", "")
     name_ideas_error = None
     if not business_idea.strip():
@@ -2807,6 +2840,7 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         "scc_confirmed": False,
         "name_rejected": state == "name_rejected",
         "business_name": order.get("business_name", ""),
+        "pending_purchase_event": pending_purchase_event,
     })
 
 @app.post("/dashboard/orders/{order_id}/update-idea", response_class=HTMLResponse)

@@ -7,6 +7,22 @@
     {% include "_brand.html" %}
     <script src="/static/htmx.min.js"></script>
     {% include "_ga4.html" %}
+    {% if google_analytics_id and pending_purchase_event %}
+    <script>
+        gtag('event', 'purchase', {
+            currency: 'USD',
+            value: {{ pending_purchase_event.value }},
+            transaction_id: '{{ order_id }}',
+            ra_selected: '{{ pending_purchase_event.ra_selected }}',
+            items: [{
+                item_id: 'virginia_llc_formation',
+                item_name: '{{ business_name | replace("'", "\\'") if business_name else "Virginia LLC Formation" }}',
+                price: {{ pending_purchase_event.value }},
+                quantity: 1
+            }]
+        });
+    </script>
+    {% endif %}
     <style>
         @media (max-width: 640px) { input, textarea { font-size: 16px !important; } }
         .htmx-indicator { display: none; }
