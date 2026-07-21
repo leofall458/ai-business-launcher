@@ -20,36 +20,27 @@
             .reviews-breakout { position: relative; left: 50%; margin-left: -50vw; width: 100vw; }
             .reviews-breakout-inner { max-width: 56rem; margin: 0 auto; padding: 0 1.5rem; }
         }
-        /* Lists all reviews vertically in a slim column pushed to the right
-           edge of the viewport on wide screens, same breakout trick as
-           .reviews-breakout above. app-tailwind.css is purged and has zero
+        /* Lists all reviews vertically in a slim column next to the RA/payment
+           section on wide screens. app-tailwind.css is purged and has zero
            lg: variants in it (only sm: is used anywhere in this app), so
-           this whole layout - not just the breakout - is hand-written
-           rather than Tailwind lg: utilities.
+           this whole layout is hand-written rather than Tailwind lg: utilities.
            Below 1024px: .hero-reviews-col is display:none (fully hidden, not
-           stacked) and .hero-breakout-inner is normal block flow, so the
-           hero renders exactly as before on mobile - reviews live only in
-           the "What customers are saying" section further down the page.
-           At 1024px+: the inner becomes a 3-col grid (spacer / hero /
-           spacer-with-reviews) - the outer two 1fr tracks are equal, which
-           centers the hero exactly the way max-w-xl mx-auto centers every
-           section below it, and the review column sits at the far end
-           (justify-self: end) of the right 1fr track so it hugs the
-           viewport edge instead of crowding the hero. The "What customers
-           are saying" section is hidden, since the column now shows every
-           review instead. */
+           stacked), so the page renders exactly as before on mobile - reviews
+           live only in the "What customers are saying" section further down.
+           At 1024px+: .reviews-anchor (wrapping the RA + pricing cards) is
+           the positioning context, and the review column is position:absolute
+           inside it, hugging the right edge just past that column's width.
+           Because it's taken out of flow, it can never affect the height of
+           .reviews-anchor or push any later section down - it simply floats
+           beside the RA/payment cards. The "What customers are saying"
+           section is hidden, since the column now shows every review instead. */
         .hero-reviews-col { display: none; }
         @media (min-width: 1024px) {
-            .hero-breakout { position: relative; left: 50%; margin-left: -50vw; width: 100vw; }
-            .hero-breakout-inner {
-                max-width: 90rem; margin: 0 auto; padding: 0 1.5rem;
-                display: grid; grid-template-columns: 1fr 36rem 1fr; gap: 1rem; align-items: start;
+            .reviews-anchor { position: relative; }
+            .hero-reviews-col {
+                display: flex; flex-direction: column; gap: 0.625rem; width: 13rem;
+                position: absolute; top: 0; left: 100%; margin-left: 2rem;
             }
-            /* Explicit placement - grid auto-placement would otherwise fill
-               the empty first 1fr spacer track before these two children,
-               since there's no third element to occupy it. */
-            .hero-breakout-inner > header { grid-column: 2; }
-            .hero-reviews-col { grid-column: 3; display: flex; flex-direction: column; gap: 0.625rem; width: 13rem; justify-self: end; margin-top: 7rem; margin-right: 2rem; }
             .reviews-section-mobile-only { display: none; }
         }
         /* Truncates a review to ~3 lines with a fade-to-ellipsis; the
@@ -65,76 +56,21 @@
 
 <div class="max-w-xl mx-auto px-4">
 
-    <!-- ── HEADER (reviews listed vertically on the right on wide screens, see
-         .hero-breakout above) ── -->
-    <div class="hero-breakout">
-    <div class="hero-breakout-inner">
-
-        <header class="text-center pt-10 pb-6">
-            <div class="eyebrow mb-4">
-                <span class="live-dot w-2 h-2 bg-[#c9a227] rounded-full inline-block"></span>
-                Virginia LLC Formation
-            </div>
-            <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-3">Your Virginia LLC, launched in 72 hours</h1>
-            <p class="text-[#0e2148]/65 text-base sm:text-lg mb-5 max-w-sm mx-auto">
-                From business idea to fully-formed LLC with a website, brand kit, EIN, and Stripe account — all done for you.
-            </p>
-            <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
-                $350 flat · includes $100 Virginia state fee
-            </div>
-            <p class="text-xs text-[#0e2148]/45 mt-2">+ optional $110/year professional registered agent</p>
-        </header>
-
-        <!-- Review column — right side (hidden below 1024px; duplicated from the
-             "What customers are saying" section below, which is hidden entirely
-             at 1024px+ to avoid showing these twice) -->
-        <div class="hero-reviews-col">
-            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
-                <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
-                <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
-                <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
-                    <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
-                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
-                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-                    </svg>
-                    <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Peter Allen</span> · via Google</p>
-                </div>
-            </div>
-            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
-                <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
-                <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
-                <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
-                    <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
-                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
-                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-                    </svg>
-                    <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Lucy Hultquist</span> · via Google</p>
-                </div>
-            </div>
-            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
-                <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
-                <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
-                <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
-                <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
-                    <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
-                        <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-                        <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-                        <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
-                        <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-                    </svg>
-                    <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Austin Genova</span> · via Google</p>
-                </div>
-            </div>
+    <!-- ── HEADER ── -->
+    <header class="text-center pt-10 pb-6">
+        <div class="eyebrow mb-4">
+            <span class="live-dot w-2 h-2 bg-[#c9a227] rounded-full inline-block"></span>
+            Virginia LLC Formation
         </div>
-
-    </div>
-    </div>
+        <h1 class="font-serif text-4xl sm:text-5xl font-bold text-[#0e2148] mb-3">Your Virginia LLC, launched in 72 hours</h1>
+        <p class="text-[#0e2148]/65 text-base sm:text-lg mb-5 max-w-sm mx-auto">
+            From business idea to fully-formed LLC with a website, brand kit, EIN, and Stripe account — all done for you.
+        </p>
+        <div class="inline-flex items-center gap-2 bg-[#c9a227]/12 border border-[#c9a227]/40 rounded-full px-5 py-2 text-[#b8860b] text-sm font-bold">
+            $350 flat · includes $100 Virginia state fee
+        </div>
+        <p class="text-xs text-[#0e2148]/45 mt-2">+ optional $110/year professional registered agent</p>
+    </header>
 
     <script>
         function toggleReviewText(btn) {
@@ -166,6 +102,58 @@
     </a>
 
     {% include "_hero_idea_form.html" %}
+
+    <!-- Reviews column (hidden below 1024px; duplicated from the "What
+         customers are saying" section further down, which is hidden entirely
+         at 1024px+ to avoid showing these twice). Positioned absolutely (see
+         .reviews-anchor / .hero-reviews-col above) so it floats beside the RA
+         + pricing cards without ever affecting their height or pushing any
+         other part of the page down. -->
+    <div class="reviews-anchor">
+    <div class="hero-reviews-col">
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
+            <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
+            <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"I've always been intimidated by the idea of starting my own business, but Launch Bridge made it feel so easy and straightforward! The interface was so clean and everything was super intuitive and well explained. Definitely recommend."</p>
+            <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+            <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
+                <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                    <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                    <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                    <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                </svg>
+                <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Peter Allen</span> · via Google</p>
+            </div>
+        </div>
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
+            <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
+            <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"I'd been putting off starting my consulting LLC for months because the filing process felt overwhelming. Launch Bridge had my LLC, EIN, and a basic website live in under three days, and my Stripe account was ready to take payments by the time I got my formation documents back. For $350 flat, it was worth every penny compared to the hours I would've spent figuring it out myself and doing all the paperwork. Thanks Launch Bridge!!"</p>
+            <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+            <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
+                <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                    <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                    <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                    <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                </svg>
+                <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Lucy Hultquist</span> · via Google</p>
+            </div>
+        </div>
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-3 shadow-sm flex flex-col">
+            <div class="text-[#c9a227] text-xs mb-1" aria-label="5 out of 5 stars">★★★★★</div>
+            <p class="review-text text-xs text-[#0e2148]/75 leading-relaxed">"Launch Bridge was very helpful in starting my photography business website. The tool was quick and easy to use and got me set up and running in 10 minutes. It gave me everything from my LLC and EIN, to my personalized website and brand imagery. Definitely a must have for all small business start-ups in Virginia!"</p>
+            <button type="button" class="review-readmore-btn hidden text-left text-[10px] font-semibold text-[#c9a227] hover:text-[#b8860b] mt-1" onclick="toggleReviewText(this)">Read more</button>
+            <div class="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#0e2148]/8">
+                <svg class="w-3 h-3 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
+                    <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
+                    <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
+                    <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
+                </svg>
+                <p class="text-[10px] text-[#0e2148]/45"><span class="font-semibold text-[#0e2148]/70">Austin Genova</span> · via Google</p>
+            </div>
+        </div>
+    </div>
 
     <!-- ── REGISTERED AGENT ── -->
     <div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6">
@@ -258,6 +246,7 @@
             <span class="text-[#0e2148]">Total due today</span><span id="page-total" class="text-[#c9a227] text-lg">$350</span>
         </div>
         <p class="text-xs text-[#0e2148]/35 mt-2">We pay Virginia directly — you never pay separately.</p>
+    </div>
     </div>
 
     <!-- ── EVERYTHING INCLUDED + CTA ── -->
