@@ -70,6 +70,7 @@ MANUAL_BASELINE_MIN = {
     "ein_preparation": 20,
     "stripe_setup": 15,
     "human_review": 5,
+    "ra_selection": 5,
     "state_filing": 30,
     "delivery": 10,
 }

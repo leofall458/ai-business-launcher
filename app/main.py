@@ -2043,6 +2043,17 @@ async def start_checkout(request: Request):
         operation="prepare", autonomy="autonomous", actor="system", status="success",
         output_summary="order created, business idea captured",
     )
+    # A genuine human decision, not a review of AI-suggested work (unlike
+    # e.g. the business-category confirmation) - the customer alone picks
+    # between self and the $110/yr professional RA, with no AI involved in
+    # that choice at all, so this is its own step key rather than the
+    # generic "human_review" used for approve/edit checkpoints elsewhere.
+    ai_ops.emit_event(
+        "ra_selection", "completed", step_label="Registered Agent Selection",
+        operation="review", autonomy="human_only", actor="human", status="success",
+        output_summary=f"customer chose {registered_agent_choice} as registered agent",
+        human_touched=True, human_action=registered_agent_choice,
+    )
 
     base_url = str(request.base_url)
     try:
