@@ -26,6 +26,9 @@
                         {% elif not order.awaiting_intake %}
                         <span class="bg-[#0e2148]/5 border border-[#0e2148]/10 text-[#0e2148]/45 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Assets ⏳ Pending</span>
                         {% endif %}
+                        {% if order.website_review_status == "pending_review" and not order.website_url %}
+                        <span class="bg-amber-50 border border-amber-100 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">Website ⏳ Review</span>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -173,9 +176,7 @@
                     </form>
                     {% endif %}
 
-                    {% if order.website_url %}
-                    {% with order_id = order.id %}{% include "_admin_regenerate_button.html" %}{% endwith %}
-                    {% endif %}
+                    {% include "_admin_website_review.html" %}
 
                     {% if order.brand_result %}
                     {% with order_id = order.id %}{% include "_admin_regenerate_logo_button.html" %}{% endwith %}

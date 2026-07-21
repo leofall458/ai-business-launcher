@@ -213,6 +213,15 @@ def check_and_update_website(order_id: str) -> dict:
     if order.get("payment_button_live"):
         return {"updated": False, "reason": "Already up to date."}
 
+    # A website that hasn't been admin-approved yet (see run_website_generation/
+    # run_website_approval in main.py) has no website_url - nothing to add a
+    # payment button to, and calling run_website_regeneration below would
+    # otherwise generate+deploy straight to the live site, bypassing the
+    # review step entirely. Once approved, the next scheduler tick (or the
+    # admin's own "Check Stripe Status" button) picks this back up normally.
+    if not order.get("website_url"):
+        return {"updated": False, "reason": "Website not yet approved for publishing."}
+
     if not is_account_active(connect_id):
         return {"updated": False, "reason": "Customer hasn't completed Stripe setup yet."}
 

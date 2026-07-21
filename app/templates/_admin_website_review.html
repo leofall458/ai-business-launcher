@@ -1,0 +1,81 @@
+<div id="website-review-area-{{ order.id }}">
+    {% if order.website_url %}
+    <!-- Approved and live - same "redo it" flow as before, just renamed
+         in context now that a pre-approval draft/review stage exists too. -->
+    <div class="flex flex-wrap items-center gap-2">
+        <span class="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">✅ Website live</span>
+        {% with order_id = order.id %}{% include "_admin_regenerate_button.html" %}{% endwith %}
+    </div>
+
+    {% elif order.website_review_status == "pending_review" and order.website_draft_url %}
+    <!-- Generated, not yet shown to the customer - awaiting admin review -->
+    <div class="w-full bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p class="text-xs text-amber-700 font-semibold mb-2">
+            ⏳ Website draft ready for review (attempt #{{ order.website_generation_attempts|default(1) }}) — not visible to the customer yet.
+        </p>
+        <div class="rounded-lg overflow-hidden border border-amber-200 mb-2">
+            <iframe src="{{ order.website_draft_url }}" class="w-full h-72 bg-white" loading="lazy" title="Website draft preview"></iframe>
+        </div>
+        <a href="{{ order.website_draft_url }}" target="_blank" class="text-xs text-[#c9a227] hover:text-[#b8860b] underline">Open draft in new tab →</a>
+        <div class="flex flex-wrap gap-2 mt-3">
+            <form hx-post="/admin/{{ order.id }}/approve-website"
+                  hx-target="#website-review-area-{{ order.id }}" hx-swap="outerHTML"
+                  hx-indicator="#approve-website-loading-{{ order.id }}">
+                <button type="submit"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                    ✅ Approve &amp; Publish
+                </button>
+            </form>
+            <form hx-post="/admin/{{ order.id }}/generate-website"
+                  hx-target="#website-review-area-{{ order.id }}" hx-swap="outerHTML"
+                  hx-indicator="#regenerate-draft-loading-{{ order.id }}">
+                <button type="submit"
+                    class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                    🔄 Regenerate
+                </button>
+            </form>
+        </div>
+        <div id="approve-website-loading-{{ order.id }}" class="htmx-indicator items-center gap-2 text-sm text-[#0e2148]/50 mt-2">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span>Publishing...</span>
+        </div>
+        <div id="regenerate-draft-loading-{{ order.id }}" class="htmx-indicator items-center gap-2 text-sm text-[#0e2148]/50 mt-2">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span>🌐 Regenerating draft...</span>
+        </div>
+    </div>
+
+    {% elif not order.awaiting_intake %}
+    <!-- Intake complete, no draft generated yet -->
+    <div id="generate-website-area-{{ order.id }}">
+        <form hx-post="/admin/{{ order.id }}/generate-website"
+              hx-target="#website-review-area-{{ order.id }}" hx-swap="outerHTML"
+              hx-indicator="#generate-website-loading-{{ order.id }}">
+            <button type="submit"
+                class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+                🌐 Generate Website
+            </button>
+        </form>
+        <div id="generate-website-loading-{{ order.id }}" class="htmx-indicator items-center gap-2 text-sm text-[#0e2148]/50 mt-2">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span>🌐 Generating website...</span>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- Intake not complete yet - nothing to generate from -->
+    <button type="button" disabled title="Available once the customer completes their business details (Step 5)"
+        class="bg-[#0e2148]/10 text-[#0e2148]/40 text-sm font-semibold px-4 py-2 rounded-lg cursor-not-allowed whitespace-nowrap">
+        🌐 Generate Website
+    </button>
+    {% endif %}
+</div>

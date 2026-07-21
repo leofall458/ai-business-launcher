@@ -252,30 +252,43 @@ STATE_MESSAGES = {
     "name_selected": "Business name verified! Finish a few more details so we can start building your business.",
     "intake_complete": "We're building your business package — brand kit, website, and documents are on the way.",
     "assets_generating": "We're building your business package — brand kit, website, and documents are on the way.",
-    "assets_complete": "Your brand kit, marketing plan, and business website are ready. We're preparing to file your LLC.",
     "review_approved": "Your brand kit and documents are generating and we're preparing to file your LLC.",
-    "filing_submitted": "Your brand kit, website, and documents are ready! Your LLC has been filed with Virginia SCC — approval typically takes 1-3 business days.",
-    # filing_confirmed, ein_requested, and ein_issued have dynamic wording -
-    # see compute_state_message() below - since they depend on ein_status/
-    # next_available_window or the actual EIN value, not just the state name.
-    "finalizing": "Your brand kit, marketing plan, and business website are ready.",
+    # assets_complete, filing_submitted, finalizing, filing_confirmed,
+    # ein_requested, and ein_issued all have dynamic wording - see
+    # compute_state_message() below - since whether the website is actually
+    # live (order.website_url - now admin-approved, not automatic) or the
+    # EIN status/value aren't reflected by the state name alone.
     "complete": "Everything is ready — here's your full business package.",
 }
 
 def compute_state_message(order: dict, state: str) -> str:
-    """Most states have a fixed message (STATE_MESSAGES). filing_confirmed,
-    ein_requested, and ein_issued need live data - whether the EIN is
-    queued on IRS hours, or the actual EIN once issued - so they're built
-    here instead."""
+    """Most states have a fixed message (STATE_MESSAGES). A handful need
+    live data instead - whether the website has actually been generated
+    and approved yet (order.website_url), whether the EIN is queued on IRS
+    hours, or the actual EIN once issued - so they're built here."""
+    website_ready = bool(order.get("website_url"))
+    if state == "assets_complete":
+        if website_ready:
+            return "Your brand kit, marketing plan, and business website are ready. We're preparing to file your LLC."
+        return "Your brand kit and marketing plan are ready. We're preparing to file your LLC."
+    if state == "filing_submitted":
+        if website_ready:
+            return "Your brand kit, website, and documents are ready! Your LLC has been filed with Virginia SCC — approval typically takes 1-3 business days."
+        return "Your brand kit and documents are ready! Your LLC has been filed with Virginia SCC — approval typically takes 1-3 business days."
+    if state == "finalizing":
+        if website_ready:
+            return "Your brand kit, marketing plan, and business website are ready."
+        return "Your brand kit and marketing plan are ready."
     if state in ("filing_confirmed", "awaiting_ein_filing"):
+        website_line = "Your website is live! " if website_ready else ""
         if order.get("ein_status") == "queued" and order.get("next_available_window"):
             window = datetime.datetime.fromisoformat(order["next_available_window"])
             return (
-                f"Your LLC is approved and your website is live! Your EIN application will be submitted on "
+                f"Your LLC is approved! {website_line}Your EIN application will be submitted on "
                 f"{window.strftime('%A, %B %d')} at {window.strftime('%I:%M %p').lstrip('0')} Eastern "
                 f"when the IRS system opens."
             )
-        return "Your LLC is officially approved! Your website and brand kit are already live. We're now applying for your EIN."
+        return f"Your LLC is officially approved! {website_line}We're now applying for your EIN."
     if state == "ein_requested":
         return "Your EIN application has been submitted to the IRS. You will receive your EIN shortly."
     if state == "ein_issued":
@@ -390,7 +403,8 @@ def compute_timeline(order: dict, state: str) -> list:
         steps.append({"key": "documents", "name": "Brand Kit & Documents Ready", "status": "pending",
             "description": "Generated immediately when you complete setup."})
 
-    # 4. Website Live (generated immediately after intake)
+    # 4. Website Live (built by our team and reviewed before it goes live -
+    # see run_website_generation/run_website_approval - not automatic)
     website_url = order.get("website_url")
     if website_url:
         steps.append({"key": "website", "name": "Business Website Live", "status": "complete",
@@ -398,12 +412,15 @@ def compute_timeline(order: dict, state: str) -> list:
     elif order.get("asset_generation_error") and intake_done:
         steps.append({"key": "website", "name": "Business Website Live", "status": "on_hold",
             "description": CUSTOMER_FRIENDLY_ERROR})
+    elif order.get("website_review_status") == "pending_review":
+        steps.append({"key": "website", "name": "Business Website Live", "status": "current",
+            "description": "Your website has been built and is being finalized by our team — it'll be live shortly."})
     elif intake_done:
         steps.append({"key": "website", "name": "Business Website Live", "status": "current",
-            "description": "Building and deploying your business website..."})
+            "description": "Our team is preparing your business website."})
     else:
         steps.append({"key": "website", "name": "Business Website Live", "status": "pending",
-            "description": "Website will be generated immediately when you complete setup."})
+            "description": "Website will be created after you complete setup."})
 
     # 5. Stripe Payment Account (created immediately after intake)
     connect_id = order.get("stripe_connect_account_id")
@@ -906,7 +923,15 @@ def run_early_assets(order_id: str):
     """Triggered immediately after Step 5 (business details) is submitted.
     The business name is already cleared by Step 3 at this point. Generates
     all deliverables that don't require SCC approval or an EIN: brand kit,
-    marketing plan, LLC docs, business website, and Stripe Connect account.
+    marketing plan, LLC docs, and Stripe Connect account.
+
+    The business website is deliberately NOT generated here - it's now
+    admin-triggered (see run_website_generation / /admin/{order_id}/
+    generate-website) with a review step before it goes live to the
+    customer (run_website_approval). Keeping it out of this function is
+    what lets brand kit/docs/marketing/Stripe Connect keep completing
+    immediately after intake exactly as before, independent of whenever
+    the admin gets to generating and approving the website.
 
     assets_status (fine-grained, drives admin error banners) tracks progress:
     "generating" → "complete" | "failed". record_state's ordinal
@@ -934,11 +959,7 @@ def run_early_assets(order_id: str):
         order = order_ref.get().to_dict()
 
         business_name = order.get("business_name", "")
-        business_idea = order.get("business_idea", "")
-        target_customer = order.get("target_customer", "")
-        principal_address = order.get("principal_address", "")
         email = order.get("email", "")
-        phone = order.get("phone", "")
         asset_error = None
 
         connect_account_id = order.get("stripe_connect_account_id")
@@ -955,63 +976,14 @@ def run_early_assets(order_id: str):
                 print(f"⚠️ Could not create Stripe Connect for order {order_id}: {e}")
                 asset_error = f"Could not set up your Stripe payment account: {e}"
 
-        website_url = order.get("website_url")
-        if not website_url:
-            try:
-                services = [
-                    {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
-                    for i in (1, 2, 3)
-                ]
-                photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
-                _site_id = make_site_id(business_name, order_id)
-                result = generate_website(
-                    business_name, business_idea, target_customer,
-                    template_name=order.get("website_template", "professional"),
-                    tagline=order.get("website_tagline", ""),
-                    description=order.get("website_description", ""),
-                    services=services,
-                    hours=order.get("business_hours", ""),
-                    photos=photos,
-                    instagram_url=order.get("instagram_url", ""),
-                    facebook_url=order.get("facebook_url", ""),
-                    tiktok_url=order.get("tiktok_url", ""),
-                    linkedin_url=order.get("linkedin_url", ""),
-                    color_preference=order.get("color_preference", "default"),
-                    custom_primary_color=order.get("custom_primary_color", ""),
-                    backdrop_image_choice=order.get("backdrop_image_choice", ""),
-                    payment_link_url=None,  # Added after EIN + Stripe onboarding completes
-                    order_id=order_id,
-                    site_url=f"https://{_site_id}.web.app",
-                    show_contact=bool(order.get("website_contact_show")),
-                    contact_phone=order.get("website_contact_phone", ""),
-                    contact_email=order.get("website_contact_email", ""),
-                    contact_address=order.get("website_contact_address", ""),
-                    logo_data_uri=order.get("logo_data_uri"),
-                    favicon_data_uri=order.get("favicon_data_uri"),
-                )
-                deployed = deploy_website(business_name, result["html"], order_id=order_id)
-                if deployed:
-                    website_url = deployed["url"]
-                    order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
-                    _persist_generated_logo(order_ref, result)
-                else:
-                    print(f"⚠️ Early website deploy returned no URL for order {order_id}")
-                    asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
-            except Exception as e:
-                print(f"⚠️ Early website generation/deploy failed for order {order_id}: {e}")
-                asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed: {e}"
-
-        all_succeeded = not asset_error and bool(website_url) and bool(connect_account_id)
-        flag_update: dict = {
+        all_succeeded = not asset_error and bool(connect_account_id)
+        order_ref.set({
             "early_assets_done": True,
             "early_assets_done_at": firestore.SERVER_TIMESTAMP,
             "assets_at": firestore.SERVER_TIMESTAMP if all_succeeded else None,
             "assets_status": "complete" if all_succeeded else "failed",
             "asset_generation_error": asset_error if asset_error else firestore.DELETE_FIELD,
-        }
-        if website_url:
-            flag_update["website_url"] = website_url
-        order_ref.set(flag_update, merge=True)
+        }, merge=True)
 
         # Only advance the ordinal state on success, and only if it hasn't
         # already moved further ahead (same retry-safety concern as above) -
@@ -1021,12 +993,9 @@ def run_early_assets(order_id: str):
         if all_succeeded and not reached(current_state, "assets_complete"):
             record_state(order_ref, "assets_complete")
 
-        order = {**order, "website_url": website_url, "stripe_connect_account_id": connect_account_id}
+        order = {**order, "stripe_connect_account_id": connect_account_id}
         send_early_assets_email(order, order_id)
-        send_admin_sms(
-            f"🎨 Assets ready: {business_name}" +
-            (f" — {website_url}" if website_url else " — website failed, check logs")
-        )
+        send_admin_sms(f"🎨 Assets ready: {business_name}")
     except Exception as e:
         print(f"⚠️ run_early_assets crashed for order {order_id}: {e}")
         order_ref.set({
@@ -1487,14 +1456,46 @@ async def scc_health_check_scheduler():
             send_admin_sms(f"⚠️ SCC health check crashed unexpectedly: {e}")
         await asyncio.sleep(SCC_HEALTH_CHECK_INTERVAL_SECONDS)
 
+def _maybe_finalize_order(order_id: str) -> None:
+    """Advances an order the rest of the way to "complete" once its website
+    is live (website_url set - see run_website_approval) AND the EIN/Stripe
+    side of the pipeline already reached "finalizing" (see
+    run_asset_generation). Website approval and EIN/Stripe finishing can
+    happen in either order now that website generation is admin-triggered
+    rather than automatic, so both run_asset_generation and
+    run_website_approval call this at their own tail - whichever one
+    finishes second is the one that actually flips the order to complete.
+    No-op if the website isn't live yet, finalizing hasn't been reached
+    yet, or the order is already complete - re-fetches fresh from
+    Firestore rather than trusting a caller's possibly-stale dict, since
+    it can run well after the caller loaded its copy of the order."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return
+    website_url = order.get("website_url")
+    state = order.get("state", "draft")
+    if not website_url or state == "complete" or not reached(state, "finalizing"):
+        return
+
+    record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP, complete_at=firestore.SERVER_TIMESTAMP)
+    business_name = order.get("business_name", "")
+    send_everything_complete_email(order, order_id)
+    send_admin_sms(f"🎉 Done! {business_name} fully onboarded")
+
 def run_asset_generation(order_id: str):
     """Triggered once the admin records the real EIN (or immediately for
     skip_ein orders). Documents (brand kit, marketing plan, signed LLC PDF)
     are already done by now - see run_document_generation, which runs much
     earlier, right after name verification. This step just sets up the
     customer's Stripe Connect Standard account and a pay-what-you-want
-    Payment Link on it, then deploys the business website with that link
-    already embedded."""
+    Payment Link on it.
+
+    The website itself is never (re)generated here - see run_early_assets
+    for why - so this only ever reads whatever website_url already exists
+    (None if the admin hasn't generated/approved one yet); see
+    _maybe_finalize_order for how "complete" eventually gets set once both
+    this and the website approval have happened, in whichever order."""
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if not order:
@@ -1502,16 +1503,12 @@ def run_asset_generation(order_id: str):
 
     try:
         business_name = order["business_name"]
-        business_idea = order["business_idea"]
-        target_customer = order["target_customer"]
-        principal_address = order["principal_address"]
         email = order["email"]
-        phone = order["phone"]
 
         # Re-entrant by field, not by a single all-or-nothing flag - a
         # retry (see /admin/{order_id}/retry-agents) only redoes whichever
-        # of Stripe/website didn't already succeed, instead of recreating
-        # a second Stripe Connect account or re-deploying a working site.
+        # of these didn't already succeed, instead of recreating a second
+        # Stripe Connect account.
         connect_account_id = order.get("stripe_connect_account_id")
         payment_link_url = order.get("stripe_payment_link_url")
         asset_error = None
@@ -1542,85 +1539,167 @@ def run_asset_generation(order_id: str):
                 print(f"⚠️ Could not create payment link for order {order_id}: {e}")
                 asset_error = ((asset_error + " ") if asset_error else "") + f"Could not create your payment link: {e}"
 
-        website_url = order.get("website_url")
-        if not website_url:
-            try:
-                services = [
-                    {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
-                    for i in (1, 2, 3)
-                ]
-                photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
-                _site_id = make_site_id(business_name, order_id)
-                result = generate_website(
-                    business_name, business_idea, target_customer,
-                    template_name=order.get("website_template", "professional"),
-                    tagline=order.get("website_tagline", ""),
-                    description=order.get("website_description", ""),
-                    services=services,
-                    hours=order.get("business_hours", ""),
-                    photos=photos,
-                    instagram_url=order.get("instagram_url", ""),
-                    facebook_url=order.get("facebook_url", ""),
-                    tiktok_url=order.get("tiktok_url", ""),
-                    linkedin_url=order.get("linkedin_url", ""),
-                    color_preference=order.get("color_preference", "default"),
-                    custom_primary_color=order.get("custom_primary_color", ""),
-                    backdrop_image_choice=order.get("backdrop_image_choice", ""),
-                    payment_link_url=payment_link_url,
-                    order_id=order_id,
-                    site_url=f"https://{_site_id}.web.app",
-                    show_contact=bool(order.get("website_contact_show")),
-                    contact_phone=order.get("website_contact_phone", ""),
-                    contact_email=order.get("website_contact_email", ""),
-                    contact_address=order.get("website_contact_address", ""),
-                    logo_data_uri=order.get("logo_data_uri"),
-                    favicon_data_uri=order.get("favicon_data_uri"),
-                )
-                deployed = deploy_website(business_name, result["html"], order_id=order_id)
-                if deployed:
-                    website_url = deployed["url"]
-                    order_ref.set({"website_template": result["template"], "website_content": result["content"]}, merge=True)
-                    _persist_generated_logo(order_ref, result)
-                else:
-                    print(f"⚠️ Website deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
-                    asset_error = ((asset_error + " ") if asset_error else "") + "Could not deploy your business website - check server logs, then retry."
-            except Exception as e:
-                print(f"⚠️ Website generation/deploy failed for order {order_id}: {e}")
-                asset_error = ((asset_error + " ") if asset_error else "") + f"Website generation crashed unexpectedly: {e}"
-
         record_state(order_ref, "finalizing",
-            website_url=website_url,
+            website_url=order.get("website_url"),
             stripe_connect_account_id=connect_account_id,
             stripe_payment_link_url=payment_link_url,
             assets_generated_at=firestore.SERVER_TIMESTAMP,
             asset_generation_error=asset_error if asset_error else firestore.DELETE_FIELD,
         )
-
-        # Only the live website actually proves this order is done - a
-        # Stripe or website failure must never be masked by a state that
-        # tells the customer everything is ready.
-        if website_url:
-            record_state(order_ref, "complete", fulfilled_at=firestore.SERVER_TIMESTAMP, complete_at=firestore.SERVER_TIMESTAMP)
-            order["website_url"] = website_url
-            order["stripe_connect_account_id"] = connect_account_id
-            if not order.get("early_assets_done"):
-                # Only send website-live email when we didn't already send the
-                # early-assets email (which already told the customer about the site).
-                send_website_live_email(order, order_id)
-                send_admin_sms(f"🌐 Site live! {business_name}")
-            send_everything_complete_email(order, order_id)
-            send_admin_sms(f"🎉 Done! {business_name} fully onboarded")
+        _maybe_finalize_order(order_id)
     except Exception as e:
         print(f"⚠️ Asset generation crashed for order {order_id}: {e}")
         order_ref.set({"asset_generation_error": f"Asset generation crashed unexpectedly: {e}. Check server logs."}, merge=True)
 
+def run_website_generation(order_id: str) -> dict:
+    """Admin-triggered (see /admin/{order_id}/generate-website) - the only
+    way a website is ever generated now, since run_early_assets/
+    run_asset_generation no longer do it automatically. Doubles as the
+    "Regenerate" action in the pre-approval review panel: safe to call
+    repeatedly, each call just overwrites the previous draft.
+
+    Deploys with live=False, so deploy_website/save_website_to_order write
+    website_draft_url/website_draft_template/website_draft_content instead
+    of the live website_* fields - the customer-facing dashboard and
+    timeline only ever read website_url, so the draft is completely inert
+    until an admin reviews it and calls run_website_approval. It's still
+    deployed to the same real Firebase Hosting site_id the live site will
+    eventually use (see make_site_id), so approval never needs a second
+    deploy - it just copies the draft fields over.
+
+    Returns {"success": True, "url": ...} or {"success": False, "error": ...}
+    so the admin's synchronous button can show the real draft URL (or
+    error) immediately."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return {"success": False, "error": "Order not found."}
+
+    try:
+        business_name = order["business_name"]
+        business_idea = order["business_idea"]
+        target_customer = order["target_customer"]
+        services = [
+            {"name": order.get(f"service_{i}_name", ""), "description": order.get(f"service_{i}_desc", "")}
+            for i in (1, 2, 3)
+        ]
+        photos = [order.get(f"photo_{i}_data") for i in (1, 2, 3)]
+        _site_id = make_site_id(business_name, order_id)
+        result = generate_website(
+            business_name, business_idea, target_customer,
+            template_name=order.get("website_template", "professional"),
+            tagline=order.get("website_tagline", ""),
+            description=order.get("website_description", ""),
+            services=services,
+            hours=order.get("business_hours", ""),
+            photos=photos,
+            instagram_url=order.get("instagram_url", ""),
+            facebook_url=order.get("facebook_url", ""),
+            tiktok_url=order.get("tiktok_url", ""),
+            linkedin_url=order.get("linkedin_url", ""),
+            color_preference=order.get("color_preference", "default"),
+            custom_primary_color=order.get("custom_primary_color", ""),
+            backdrop_image_choice=order.get("backdrop_image_choice", ""),
+            payment_link_url=order.get("stripe_payment_link_url"),
+            order_id=order_id,
+            site_url=f"https://{_site_id}.web.app",
+            show_contact=bool(order.get("website_contact_show")),
+            contact_phone=order.get("website_contact_phone", ""),
+            contact_email=order.get("website_contact_email", ""),
+            contact_address=order.get("website_contact_address", ""),
+            logo_data_uri=order.get("logo_data_uri"),
+            favicon_data_uri=order.get("favicon_data_uri"),
+        )
+        deployed = deploy_website(business_name, result["html"], order_id=order_id, live=False)
+        if deployed:
+            order_ref.set({
+                "website_draft_template": result["template"],
+                "website_draft_content": result["content"],
+                "website_review_status": "pending_review",
+                "website_generation_attempts": firestore.Increment(1),
+                "asset_generation_error": firestore.DELETE_FIELD,
+            }, merge=True)
+            _persist_generated_logo(order_ref, result)
+            print(f"✅ Website draft generated for order {order_id}: {deployed['url']}")
+            return {"success": True, "url": deployed["url"]}
+        else:
+            error = "Could not deploy your business website draft - check server logs, then retry."
+            print(f"⚠️ Website draft deploy returned no URL for order {order_id} - check Firebase deploy logs above.")
+            order_ref.set({"asset_generation_error": error}, merge=True)
+            return {"success": False, "error": error}
+    except Exception as e:
+        error = f"Website generation crashed unexpectedly: {e}. Check server logs."
+        print(f"⚠️ Website generation crashed for order {order_id}: {e}")
+        order_ref.set({"asset_generation_error": error}, merge=True)
+        return {"success": False, "error": error}
+
+def run_website_approval(order_id: str) -> dict:
+    """Admin-triggered (see /admin/{order_id}/approve-website) - the only
+    place a generated website draft (see run_website_generation) actually
+    becomes visible to the customer. Copies the reviewed draft fields over
+    to the live website_* fields - the same fields the old fully-automatic
+    pipeline used to set the moment generation finished, so every
+    customer-facing surface that already keys off website_url (dashboard
+    timeline, the "Share Your Business Launch" panel) lights up exactly as
+    before, just on the admin's decision instead of automatically.
+
+    website_live_email_sent guards send_website_live_email so re-approving
+    after a later post-approval "Regenerate Website" never re-sends it -
+    that email is about the site's first appearance to the customer, not
+    every subsequent content change.
+
+    Also opportunistically calls check_and_update_website - if the
+    customer's Stripe account happened to finish onboarding before the
+    website was approved, check_and_update_website would otherwise have
+    skipped adding the payment button (see its own website_url guard) and
+    waited for the next hourly scheduler run.
+
+    Finally calls _maybe_finalize_order, covering the case where EIN/Stripe
+    (run_asset_generation) already reached "finalizing" before this
+    website was approved.
+
+    Returns {"success": True, "url": ...} or {"success": False, "error": ...}."""
+    order_ref = ORDERS.document(order_id)
+    order = order_ref.get().to_dict()
+    if not order:
+        return {"success": False, "error": "Order not found."}
+
+    draft_url = order.get("website_draft_url")
+    if not draft_url:
+        return {"success": False, "error": "No generated website draft to approve yet - click Generate Website first."}
+
+    order_ref.set({
+        "website_url": draft_url,
+        "website_site_id": order.get("website_draft_site_id"),
+        "website_template": order.get("website_draft_template"),
+        "website_content": order.get("website_draft_content"),
+        "website_review_status": "approved",
+        "website_approved_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+    order["website_url"] = draft_url
+
+    if not order.get("website_live_email_sent"):
+        send_website_live_email(order, order_id)
+        order_ref.set({"website_live_email_sent": True}, merge=True)
+        send_admin_sms(f"🌐 Site live! {order.get('business_name', '')}")
+
+    try:
+        check_and_update_website(order_id)
+    except Exception as e:
+        print(f"⚠️ check_and_update_website failed right after approving website for order {order_id}: {e}")
+
+    _maybe_finalize_order(order_id)
+    return {"success": True, "url": draft_url}
+
 def run_website_regeneration(order_id: str) -> dict:
-    """Admin-triggered (see /admin/{order_id}/regenerate-website) - unlike
-    run_asset_generation, this always re-generates and re-deploys the
-    website even if order.website_url is already set, since the whole
-    point is to redo a website the admin wasn't happy with. Deliberately
-    only touches the website - Stripe Connect/payment link are untouched,
-    so this never risks creating a second Connect account.
+    """Admin-triggered (see /admin/{order_id}/regenerate-website) - for an
+    already-APPROVED, already-live website only (order.website_url already
+    set). Unlike run_website_generation, this always re-generates and
+    re-deploys straight to the live site, no review step - the whole point
+    is to redo a website the admin wasn't happy with after it was already
+    shown to the customer. Deliberately only touches the website - Stripe
+    Connect/payment link are untouched, so this never risks creating a
+    second Connect account.
 
     Returns {"success": True, "url": ...} or {"success": False, "error": ...}
     so the admin's synchronous regenerate button can show a real result -
@@ -2322,7 +2401,7 @@ def status_context(order_id: str, order: dict) -> dict:
         "state_message": compute_state_message(order, state),
         "timeline": compute_timeline(order, state),
         "estimated_completion": estimate_completion(order, state),
-        "estimate_breakdown": "LLC approval: 1-3 business days · EIN: same day after approval · Website: automatic",
+        "estimate_breakdown": "LLC approval: 1-3 business days · EIN: same day after approval · Website: built and published by our team",
         "last_updated": datetime.datetime.now().strftime("%I:%M:%S %p").lstrip("0"),
     }
 
@@ -3213,6 +3292,14 @@ async def dashboard_order_timeline(request: Request, owned: tuple = Depends(get_
 async def dashboard_download_website(request: Request, owned: tuple = Depends(get_owned_order)):
     order_ref, order, _ = owned
     order_id = order_ref.id
+    # get_website_html reads back whatever's currently in GCS, which a
+    # not-yet-approved draft (see run_website_generation) would have
+    # overwritten too - gate on website_url (only set once an admin
+    # approves, see run_website_approval) so an unapproved draft can never
+    # be fetched by guessing this URL, matching the two UI surfaces that
+    # link here (both already only render once state == "complete").
+    if not order.get("website_url"):
+        raise HTTPException(status_code=404, detail="Website file not found.")
     html = get_website_html(order_id)
     if not html:
         raise HTTPException(status_code=404, detail="Website file not found.")
@@ -3635,9 +3722,11 @@ async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: 
 async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, authorized: bool = Depends(verify_admin)):
     """Re-runs whichever asset steps haven't succeeded yet for an existing,
     already-paid order. run_early_assets covers brand kit, marketing plan,
-    LLC docs, website, and Stripe Connect — all idempotent, so it skips
-    anything already done. If the EIN has already been issued, also retries
-    run_asset_generation (payment link + state advancement)."""
+    LLC docs, and Stripe Connect — all idempotent, so it skips anything
+    already done. The website is separate - see /admin/{order_id}/
+    generate-website - not retried here. If the EIN has already been
+    issued, also retries run_asset_generation (payment link + state
+    advancement)."""
     order_ref = ORDERS.document(order_id)
     order_snap = order_ref.get()
     if not order_snap.exists:
@@ -3648,11 +3737,48 @@ async def admin_retry_agents(order_id: str, background_tasks: BackgroundTasks, a
         background_tasks.add_task(run_asset_generation, order_id)
     return RedirectResponse(url="/admin", status_code=303)
 
+@app.post("/admin/{order_id}/generate-website", response_class=HTMLResponse)
+async def admin_generate_website(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    """First-generation (or pre-approval "Regenerate") of an order's
+    website - see run_website_generation. Always re-renders the same
+    review-panel partial the admin's button lives in, whether this attempt
+    succeeded or failed, so the admin sees the fresh draft/preview (or the
+    error) in place immediately.
+
+    Synchronous (blocking this one admin request), same as the SCC
+    verify-and-approve button - a real Gemini call plus a Firebase deploy
+    takes real time, which is fine for a single manual click and is the
+    only way to show the admin the actual draft (or actual error) instead
+    of firing a background task and hoping they refresh later."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return HTMLResponse("Order not found.", status_code=404)
+
+    run_website_generation(order_id)
+    order = order_ref.get().to_dict()
+    order["id"] = order_id
+    return templates.TemplateResponse(request, "_admin_website_review.html", {"order": order})
+
+@app.post("/admin/{order_id}/approve-website", response_class=HTMLResponse)
+async def admin_approve_website(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
+    """Publishes the reviewed draft - see run_website_approval. The only
+    place a generated website actually becomes visible to the customer.
+    Re-renders the same review-panel partial, now showing the live state."""
+    order_ref = ORDERS.document(order_id)
+    if not order_ref.get().exists:
+        return HTMLResponse("Order not found.", status_code=404)
+
+    run_website_approval(order_id)
+    order = order_ref.get().to_dict()
+    order["id"] = order_id
+    return templates.TemplateResponse(request, "_admin_website_review.html", {"order": order})
+
 @app.post("/admin/{order_id}/regenerate-website", response_class=HTMLResponse)
 async def admin_regenerate_website(request: Request, order_id: str, authorized: bool = Depends(verify_admin)):
-    """Force-redeploys just the website, even if one already exists - for
-    when the admin isn't happy with what generated and wants a fresh
-    attempt. Never touches Stripe Connect/payment link.
+    """Force-redeploys just the website, straight back to live, for an
+    order whose website was already approved - for when the admin isn't
+    happy with the live site and wants a fresh attempt without going
+    through review again. Never touches Stripe Connect/payment link.
 
     Synchronous (blocking this one admin request), same as the SCC
     verify-and-approve button - a real Gemini call plus a Firebase deploy

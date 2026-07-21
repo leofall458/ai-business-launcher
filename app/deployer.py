@@ -193,24 +193,36 @@ def update_firebase_site(site_id: str, html_content: str) -> bool:
         print(f"[deployer] ⚠️ Firebase update failed for {site_id}: {e}")
         return False
 
-def save_website_to_order(order_id: str, url: str, site_id: str) -> None:
+def save_website_to_order(order_id: str, url: str, site_id: str, live: bool = True) -> None:
+    """live=False writes to the website_draft_* fields instead of the live
+    website_* ones - used while a generated site is awaiting admin review
+    (see run_website_generation in main.py) so the customer-facing app,
+    which only ever reads website_url, stays completely unaware of it
+    until an admin explicitly approves and the *_draft_* values get copied
+    over (see run_website_approval)."""
+    prefix = "website" if live else "website_draft"
     try:
         db = firestore.Client(project=FIREBASE_PROJECT_ID)
         db.collection(ORDERS_COLLECTION).document(order_id).set(
             {
-                "website_url": url,
-                "website_site_id": site_id,
-                "website_hosting": "firebase",
-                "website_deployed_at": firestore.SERVER_TIMESTAMP,
+                f"{prefix}_url": url,
+                f"{prefix}_site_id": site_id,
+                f"{prefix}_hosting": "firebase",
+                f"{prefix}_deployed_at": firestore.SERVER_TIMESTAMP,
             },
             merge=True,
         )
     except Exception as e:
         print(f"[deployer] ⚠️ Could not save website to Firestore order {order_id}: {e}")
 
-def deploy_website(business_name: str, html_content: str, order_id: str = None) -> dict | None:
+def deploy_website(business_name: str, html_content: str, order_id: str = None, live: bool = True) -> dict | None:
     """Deploy HTML to Firebase Hosting. Returns {"url": ..., "site_id": ...} or None on failure.
-    If order_id is given, saves URL + site_id to Firestore and backs up HTML to GCS."""
+    If order_id is given, saves URL + site_id to Firestore and backs up HTML to GCS.
+
+    live=False deploys a reviewable draft: same Firebase Hosting site_id (so
+    an eventual approval doesn't need a second deploy), but Firestore gets
+    the website_draft_* fields instead of website_url - see
+    save_website_to_order."""
     site_id = make_site_id(business_name, order_id or "00000000")
     try:
         url = deploy_to_firebase(site_id, html_content)
@@ -221,7 +233,7 @@ def deploy_website(business_name: str, html_content: str, order_id: str = None) 
 
     if order_id:
         _save_to_gcs(order_id, html_content)
-        save_website_to_order(order_id, url, site_id)
+        save_website_to_order(order_id, url, site_id, live=live)
 
     return {"url": url, "site_id": site_id}
 
