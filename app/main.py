@@ -21,6 +21,7 @@ from app.config import (
     FIREBASE_PROJECT_ID, ADMIN_PASSWORD, ORDERS_COLLECTION, STATUS_SESSION_SECRET,
     APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
     STRIPE_PUBLISHABLE_KEY, PAGE_VIEWS_COLLECTION,
+    AGENT_EVENTS_COLLECTION, ORDER_RUNS_COLLECTION, DAILY_METRICS_COLLECTION,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.category_agent import classify_business_category, CATEGORY_TAXONOMY, LOW_CONFIDENCE_THRESHOLD
@@ -38,6 +39,7 @@ from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
 from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS, get_backdrop_image_options
 from app.deployer import deploy_website, make_site_id, get_website_html, check_iframe_embeddable
+from app import ai_ops
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
 from app.stripe_service import (
     create_checkout_session,
@@ -102,6 +104,9 @@ ORDERS = db.collection(ORDERS_COLLECTION)
 LEADS = db.collection("leads")
 DOCUMENT_ACCESS_LOG = db.collection("document_access_log")
 ERRORS = db.collection("errors")
+AGENT_EVENTS = db.collection(AGENT_EVENTS_COLLECTION)
+ORDER_RUNS = db.collection(ORDER_RUNS_COLLECTION)
+DAILY_METRICS = db.collection(DAILY_METRICS_COLLECTION)
 
 # The one message every customer-facing error path collapses to - never
 # stack traces, HTTP codes, or raw exception/library text. Admins still see
@@ -802,6 +807,7 @@ def run_document_generation(order_id: str):
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     business_name = order.get("business_name", "")
     full_name = order.get("full_name", "")
@@ -943,6 +949,7 @@ def run_early_assets(order_id: str):
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     order_ref.set({"assets_status": "generating"}, merge=True)
     # Guarded by reached() - this can be re-triggered by /admin/{id}/retry-agents
@@ -1109,6 +1116,7 @@ def run_scc_filing(order_id: str):
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     if order.get("state") in SCC_FILED_STATES:
         return
@@ -1128,7 +1136,16 @@ def run_scc_filing(order_id: str):
             "duration": order.get("duration", "Perpetual"),
             "registered_agent_choice": order.get("registered_agent_choice", "self"),
         }
-        llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
+        # state_filing wraps just the real filing call, not this whole
+        # function - run_scc_filing has its own early-return skip-guard
+        # above (already-filed orders) that must never look like a step ran.
+        with ai_ops.step(
+            "state_filing", operation="file", autonomy="human_assisted", actor="agent",
+            step_label="Virginia SCC LLC Filing",
+            input_summary="Virginia SCC Articles of Organization filing",
+        ) as s:
+            llc_filed = file_llc_on_scc(llc_customer_data, interactive=False)
+            s.output_summary = "LLC filed with Virginia SCC" if llc_filed else "SCC filing did not complete"
         if not llc_filed:
             order_ref.set({"filing_error": "SCC filing did not complete - check server screenshots, then re-approve to retry."}, merge=True)
             return
@@ -1187,6 +1204,7 @@ def run_ein_filing(order_id: str):
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     if order.get("ein_submitted_to_irs"):
         order_ref.set({
@@ -1240,7 +1258,15 @@ def run_ein_filing(order_id: str):
             "members": str(len(order.get("all_signatures", []))),
             "business_description": order["business_purpose"],
         }
-        result = file_ein_with_irs(ein_customer_data, interactive=False, on_submitted=on_submitted)
+        # ein_customer_data (built just above) contains the customer's SSN -
+        # input_summary here must be a fixed string, never derived from it.
+        with ai_ops.step(
+            "ein_preparation", operation="file", autonomy="autonomous", actor="agent",
+            step_label="EIN (SS-4) Filing with IRS",
+            input_summary="EIN application data assembled for IRS submission",
+        ) as s:
+            result = file_ein_with_irs(ein_customer_data, interactive=False, on_submitted=on_submitted)
+            s.output_summary = "EIN issued" if result.get("success") else "EIN application not completed"
 
         cp575_bytes = result.get("cp575_bytes")
         if cp575_bytes:
@@ -1473,6 +1499,7 @@ def _maybe_finalize_order(order_id: str) -> None:
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
     website_url = order.get("website_url")
     state = order.get("state", "draft")
     if not website_url or state == "complete" or not reached(state, "finalizing"):
@@ -1482,6 +1509,11 @@ def _maybe_finalize_order(order_id: str) -> None:
     business_name = order.get("business_name", "")
     send_everything_complete_email(order, order_id)
     send_admin_sms(f"🎉 Done! {business_name} fully onboarded")
+    ai_ops.emit_event(
+        "delivery", "completed", step_label="Business Package Delivered",
+        operation="assemble", autonomy="autonomous", actor="system", status="success",
+        output_summary="LLC, EIN, brand kit, marketing plan, and website all delivered",
+    )
 
 def run_asset_generation(order_id: str):
     """Triggered once the admin records the real EIN (or immediately for
@@ -1500,6 +1532,7 @@ def run_asset_generation(order_id: str):
     order = order_ref.get().to_dict()
     if not order:
         return
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     try:
         business_name = order["business_name"]
@@ -1574,6 +1607,7 @@ def run_website_generation(order_id: str) -> dict:
     order = order_ref.get().to_dict()
     if not order:
         return {"success": False, "error": "Order not found."}
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     try:
         business_name = order["business_name"]
@@ -1663,6 +1697,7 @@ def run_website_approval(order_id: str) -> dict:
     order = order_ref.get().to_dict()
     if not order:
         return {"success": False, "error": "Order not found."}
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     draft_url = order.get("website_draft_url")
     if not draft_url:
@@ -1677,6 +1712,13 @@ def run_website_approval(order_id: str) -> dict:
         "website_approved_at": firestore.SERVER_TIMESTAMP,
     }, merge=True)
     order["website_url"] = draft_url
+
+    ai_ops.emit_event(
+        "human_review", "completed", step_label="Website Approve & Publish",
+        operation="review", autonomy="human_only", actor="human", status="success",
+        output_summary="admin approved and published the generated website draft",
+        human_touched=True, human_action="approve",
+    )
 
     if not order.get("website_live_email_sent"):
         send_website_live_email(order, order_id)
@@ -1709,6 +1751,7 @@ def run_website_regeneration(order_id: str) -> dict:
     order = order_ref.get().to_dict()
     if not order:
         return {"success": False, "error": "Order not found."}
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     try:
         business_name = order["business_name"]
@@ -1964,6 +2007,18 @@ async def start_checkout(request: Request):
 
     order_ref = ORDERS.document()
     order_id = order_ref.id
+    # run_id groups every AI Operations Evidence Layer event for this order
+    # (see app/ai_ops.py) - generated here, at the very first moment the
+    # order exists, and persisted on the order doc itself (below) so every
+    # later step just reads it back via ai_ops.set_current_order instead of
+    # threading it through every function signature.
+    run_id = ai_ops.new_run_id()
+    ai_ops.set_current_order(order_id, run_id)
+    ai_ops.emit_event(
+        "idea_intake", "started", step_label="Business Idea Captured",
+        operation="prepare", autonomy="autonomous", actor="system",
+        input_summary=f"business idea, {len((business_idea or '').strip())} chars",
+    )
     # Written immediately, before the Stripe call below - so the idea is
     # never lost even if checkout-session creation fails or the browser
     # closes before the redirect. No business_name/first_name/email yet -
@@ -1978,11 +2033,16 @@ async def start_checkout(request: Request):
     # capture) just skips classification until Step 3's update-idea runs
     # it instead.
     category_fields = _classify_category_fields(business_idea)
-    record_state(order_ref, "draft", business_idea=business_idea, **extra, **attribution, **category_fields,
+    record_state(order_ref, "draft", business_idea=business_idea, run_id=run_id, **extra, **attribution, **category_fields,
                  **ra_fields,
                  created_at=firestore.SERVER_TIMESTAMP, checkout_at=firestore.SERVER_TIMESTAMP,
                  awaiting_intake=True,
                  consent=True, consent_at=firestore.SERVER_TIMESTAMP)
+    ai_ops.emit_event(
+        "idea_intake", "completed", step_label="Business Idea Captured",
+        operation="prepare", autonomy="autonomous", actor="system", status="success",
+        output_summary="order created, business idea captured",
+    )
 
     base_url = str(request.base_url)
     try:
@@ -2714,8 +2774,9 @@ async def dashboard_name(request: Request, owned: tuple = Depends(get_owned_orde
         name_ideas_error = "You've hit the name-suggestion limit for this hour - please wait a bit, or just type your own name below."
     else:
         try:
+            ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
             loop = asyncio.get_event_loop()
-            name_ideas = await loop.run_in_executor(None, generate_name_ideas, business_idea)
+            name_ideas = await ai_ops.run_in_executor_with_context(loop, None, generate_name_ideas, business_idea)
         except Exception as e:
             print(f"⚠️ Could not generate name ideas for order {order_id}: {e}")
             name_ideas = []
@@ -2767,6 +2828,7 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
     # overwrite: reclassifies category fresh from whatever text is here
     # now, immediately with source "ai", well before Step 5 shows the
     # confirm-or-change UI built off it.
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
     order_ref.set({"business_idea": business_idea, **_classify_category_fields(business_idea)}, merge=True)
 
     if _rate_limited("name_ideas_requests", "order_id", order_id, NAME_IDEAS_RATE_WINDOW, NAME_IDEAS_RATE_LIMIT):
@@ -2777,7 +2839,7 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
 
     loop = asyncio.get_event_loop()
     try:
-        name_ideas = await loop.run_in_executor(None, generate_name_ideas, business_idea)
+        name_ideas = await ai_ops.run_in_executor_with_context(loop, None, generate_name_ideas, business_idea)
     except Exception as e:
         print(f"⚠️ Could not regenerate name ideas for order {order_id}: {e}")
         name_ideas = []
@@ -2795,6 +2857,8 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
 
     if reached(state, "name_selected") and state != "name_rejected":
         return RedirectResponse(url=f"/dashboard/orders/{order_id}/details", status_code=303)
+
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
 
     form = await request.form()
     if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
@@ -2835,6 +2899,17 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
             field="scc_confirmed",
         )
 
+    # The customer's own attestation that they checked Virginia SCC
+    # availability themselves - a real human confirmation checkpoint,
+    # distinct from (and defense-in-depth on top of) the automated
+    # name_scc_check below.
+    ai_ops.emit_event(
+        "human_review", "completed", step_label="Customer SCC Self-Certification",
+        operation="review", autonomy="human_only", actor="human", status="success",
+        output_summary="customer confirmed SCC availability check", human_touched=True,
+        human_action="approve",
+    )
+
     if skip_llc:
         existing_llc_name = (form.get("existing_llc_name") or "").strip()
         if not existing_llc_name:
@@ -2853,7 +2928,7 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
         else:
             loop = asyncio.get_event_loop()
             try:
-                result = await loop.run_in_executor(None, check_llc_exists_on_scc, existing_llc_name)
+                result = await ai_ops.run_in_executor_with_context(loop, None, check_llc_exists_on_scc, existing_llc_name)
             except Exception as e:
                 result = {"exists": None, "message": str(e)}
         order_ref.set({
@@ -2873,7 +2948,7 @@ async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_own
         else:
             loop = asyncio.get_event_loop()
             try:
-                result = await loop.run_in_executor(None, check_name_on_scc, business_name)
+                result = await ai_ops.run_in_executor_with_context(loop, None, check_name_on_scc, business_name)
             except Exception as e:
                 result = {"status": "UNAVAILABLE", "message": str(e)}
         order_ref.set({
@@ -3575,12 +3650,126 @@ async def admin_resolve_error(error_id: str, authorized: bool = Depends(verify_a
     ERRORS.document(error_id).set({"resolved": True, "resolved_at": firestore.SERVER_TIMESTAMP}, merge=True)
     return RedirectResponse(url="/admin", status_code=303)
 
+def _fmt_step_event(event: dict) -> dict:
+    """Shapes one agent_events doc for display - both the live feed and the
+    per-run timeline use this, so formatting (time, duration, model badge)
+    never drifts between the two views."""
+    ts = event.get("timestamp", "")
+    time_label = ""
+    if isinstance(ts, str) and len(ts) >= 16:
+        try:
+            time_label = datetime.datetime.fromisoformat(ts).strftime("%H:%M:%S")
+        except ValueError:
+            time_label = ts[11:16]
+    latency = event.get("latency_ms")
+    latency_label = f"{latency / 1000:.1f}s" if isinstance(latency, (int, float)) else ""
+    return {
+        **event,
+        "time_label": time_label,
+        "latency_label": latency_label,
+        "order_short": (event.get("order_ref") or "")[:8],
+    }
+
+@app.get("/admin/ai-ops", response_class=HTMLResponse)
+async def admin_ai_ops(request: Request, authorized: bool = Depends(verify_admin)):
+    """AI Operations Evidence Layer dashboard (design doc §4.11, Phase 1) -
+    read-only: aggregate KPIs (from daily_metrics), a live activity feed,
+    and recent runs to drill into (see admin_ai_ops_run below). Same admin
+    auth as the rest of /admin, nothing new to configure.
+
+    KPI totals are summed in Python over daily_metrics docs (one per day)
+    rather than a Firestore aggregation query - this collection stays small
+    (one doc/day) for years, so streaming and summing it here is simpler
+    than provisioning/reasoning about aggregation query semantics for what
+    is, in practice, a tiny read."""
+    totals = {
+        "orders_processed": 0, "total_steps": 0, "autonomous_steps": 0,
+        "failed_steps": 0, "gemini_calls": 0, "tokens_in": 0, "tokens_out": 0,
+        "cost_estimate_usd": 0.0, "human_touch_minutes": 0.0, "founder_minutes_saved": 0.0,
+    }
+    for doc in DAILY_METRICS.stream():
+        d = doc.to_dict() or {}
+        for key in totals:
+            totals[key] += d.get(key) or 0
+
+    autonomy_ratio = (totals["autonomous_steps"] / totals["total_steps"]) if totals["total_steps"] else 0.0
+    avg_human_minutes = (totals["human_touch_minutes"] / totals["orders_processed"]) if totals["orders_processed"] else 0.0
+
+    feed = []
+    for doc in AGENT_EVENTS.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(50).stream():
+        event = doc.to_dict() or {}
+        if event.get("phase") not in ("completed", "failed"):
+            continue
+        feed.append(_fmt_step_event(event))
+
+    recent_runs = []
+    for doc in ORDER_RUNS.order_by("last_event_at", direction=firestore.Query.DESCENDING).limit(20).stream():
+        run = doc.to_dict() or {}
+        run["run_id"] = doc.id
+        run["display_status"] = "error" if run.get("failed_steps") else ("complete" if run.get("completed_at") else "in_progress")
+        recent_runs.append(run)
+
+    return templates.TemplateResponse(request, "admin_ai_ops.html", {
+        "totals": totals,
+        "autonomy_ratio": autonomy_ratio,
+        "avg_human_minutes": avg_human_minutes,
+        "founder_hours_saved": totals["founder_minutes_saved"] / 60.0,
+        "feed": feed,
+        "recent_runs": recent_runs,
+        "manual_baseline_min": ai_ops.MANUAL_BASELINE_MIN,
+    })
+
+@app.get("/admin/ai-ops/runs/{run_id}", response_class=HTMLResponse)
+async def admin_ai_ops_run(request: Request, run_id: str, authorized: bool = Depends(verify_admin)):
+    """Per-order run timeline - every agent_events doc for one run_id, in
+    order. This is the "real, exportable evidence that AI runs the
+    business" view for a single order: every instrumented step it went
+    through, which were autonomous vs human-touched, how long each took."""
+    run_doc = ORDER_RUNS.document(run_id).get()
+    run = run_doc.to_dict() if run_doc.exists else None
+    if run:
+        run["run_id"] = run_id
+        run["display_status"] = "error" if run.get("failed_steps") else ("complete" if run.get("completed_at") else "in_progress")
+
+    # Single equality filter, sorted in Python rather than adding
+    # .order_by("timestamp") - that combination needs a composite index
+    # that doesn't exist for this collection (same tradeoff as
+    # admin_dashboard's recent_errors above), and a run's event count is
+    # small enough (~13 steps) that sorting in memory is trivial.
+    raw_events = [doc.to_dict() or {} for doc in AGENT_EVENTS.where("run_id", "==", run_id).stream()]
+    raw_events.sort(key=lambda e: (e.get("timestamp") or "", e.get("seq") or 0))
+    events = [_fmt_step_event(e) for e in raw_events]
+
+    return templates.TemplateResponse(request, "admin_ai_ops_run.html", {
+        "run_id": run_id,
+        "run": run,
+        "events": events,
+    })
+
+@app.get("/admin/ai-ops/lookup", response_class=HTMLResponse)
+async def admin_ai_ops_lookup(request: Request, order_id: str = "", authorized: bool = Depends(verify_admin)):
+    """Convenience redirect for the admin's own order card, which knows an
+    order_id but not its run_id - looks it up once and forwards to the
+    canonical per-run timeline."""
+    order = ORDERS.document(order_id).get().to_dict() if order_id else None
+    if not order or not order.get("run_id"):
+        return RedirectResponse(url="/admin/ai-ops", status_code=303)
+    return RedirectResponse(url=f"/admin/ai-ops/runs/{order['run_id']}", status_code=303)
+
 def _approve_and_trigger_filing(order_ref, order_id: str, background_tasks: BackgroundTasks) -> None:
     """Shared by both the "name verified" and "admin manually confirmed"
     approve paths below. Kicks off filing + asset generation in parallel -
     run_early_assets is idempotent (skips whatever the customer's intake
     already triggered), a safety net for the rare case assets haven't run
     yet."""
+    order = order_ref.get().to_dict() or {}
+    ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
+    ai_ops.emit_event(
+        "human_review", "completed", step_label="Admin Approve → File with SCC",
+        operation="review", autonomy="human_only", actor="human", status="success",
+        output_summary="admin approved order for SCC filing", human_touched=True,
+        human_action="approve",
+    )
     record_state(order_ref, "review_approved", review_approved_at=firestore.SERVER_TIMESTAMP)
     background_tasks.add_task(run_scc_filing, order_id)
     background_tasks.add_task(run_early_assets, order_id)
@@ -3715,6 +3904,13 @@ async def admin_mark_ein(order_id: str, background_tasks: BackgroundTasks, ein: 
     order_ref = ORDERS.document(order_id)
     order = order_ref.get().to_dict()
     if order:
+        ai_ops.set_current_order(order_id, ai_ops.ensure_run_id(order_ref, order))
+        ai_ops.emit_event(
+            "human_review", "completed", step_label="Admin Manual EIN Entry",
+            operation="review", autonomy="human_only", actor="human", status="success",
+            output_summary="admin manually recorded EIN from IRS confirmation",
+            human_touched=True, human_action="edit",
+        )
         mark_ein_issued(order_ref, order, order_id, ein, background_tasks)
     return RedirectResponse(url="/admin", status_code=303)
 

@@ -5,6 +5,7 @@ import httpx
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from app.secrets import get_secret
+from app.ai_ops import instrumented
 
 SCC_USERNAME = get_secret("SCC_USERNAME")
 SCC_PASSWORD = get_secret("SCC_PASSWORD")
@@ -418,6 +419,11 @@ def _check_name_chrome(business_name: str) -> dict:
 
 # ── Public entrypoint ───────────────────────────────────────────────────────
 
+@instrumented(
+    "name_scc_check", model=None, provider="none", operation="check",
+    autonomy="autonomous", actor="agent", step_label="Virginia SCC Name Check",
+    input_summary_fn=lambda business_name="", *a, **k: "new LLC name availability check",
+)
 def check_name_on_scc(business_name: str) -> dict:
     """Check Virginia SCC name availability.
     Order: (1) public HTTP search — works anywhere; (2) logged-in Chrome CDP
@@ -445,6 +451,11 @@ def check_name_on_scc(business_name: str) -> dict:
     return {**_UNAVAILABLE, "needs_manual_name_check": True}
 
 
+@instrumented(
+    "name_scc_check", model=None, provider="none", operation="check",
+    autonomy="autonomous", actor="agent", step_label="Virginia SCC Name Check",
+    input_summary_fn=lambda business_name="", *a, **k: "existing LLC name verification",
+)
 def check_llc_exists_on_scc(business_name: str) -> dict:
     """Verifies an LLC a customer claims to already have is actually on the
     Virginia SCC's public Business Entity Search. Tries public HTTP first,

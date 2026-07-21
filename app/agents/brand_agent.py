@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from google.genai import types
 from app.agents import generate_content
 from app.agents.brand_pdf import build_brand_kit_pdf
+from app.ai_ops import instrumented
 
 MODEL = "gemini-2.5-flash"
 
@@ -280,6 +281,14 @@ def svg_to_data_uri(svg: str) -> str:
         return ""
     return f"data:image/svg+xml;base64,{base64.b64encode(svg.encode()).decode()}"
 
+@instrumented(
+    "brand_kit_generation", model=MODEL, provider="vertex_ai", operation="generate",
+    autonomy="autonomous", actor="agent", step_label="Brand Kit Generation",
+    # Fixed string, deliberately ignoring every argument - full_name/email/
+    # phone are PII and are literal parameters of this function, so the
+    # safest input_summary here is one that can never touch them.
+    input_summary_fn=lambda *a, **k: "brand kit request",
+)
 def generate_brand_kit(business_name: str, business_idea: str, target_customer: str,
                         full_name: str = "", email: str = "", phone: str = "",
                         website_url: str = "") -> dict:

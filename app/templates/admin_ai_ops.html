@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Operations - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-10">
+    <div class="max-w-4xl mx-auto p-6">
+
+        <div class="mb-8 flex items-center justify-between flex-wrap gap-3">
+            <div>
+                <p class="eyebrow mb-1">Launch Bridge LLC</p>
+                <h1 class="font-serif text-2xl font-bold text-[#0e2148]">AI Operations Evidence Layer</h1>
+                <p class="text-[#0e2148]/45 text-sm mt-1">Phase 1 - instrumentation on top of the existing order pipeline (design doc §4.11)</p>
+            </div>
+            <a href="/admin" class="text-sm font-semibold text-[#c9a227] hover:text-[#b8860b]">← Back to Admin</a>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-xs text-amber-800">
+            ⚠️ manual_baseline_min (used for "human minutes"/"founder-hours saved" below) is an unsourced placeholder per step - see MANUAL_BASELINE_MIN in app/ai_ops.py. Not yet defensible for external reporting.
+        </div>
+
+        <!-- KPI cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Orders Processed</p>
+                <p class="text-2xl font-bold text-[#0e2148]">{{ totals.orders_processed }}</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Autonomy Ratio</p>
+                <p class="text-2xl font-bold text-emerald-600">{{ (autonomy_ratio * 100) | round(1) }}%</p>
+                <p class="text-[10px] text-[#0e2148]/35 mt-0.5">{{ totals.autonomous_steps }} / {{ totals.total_steps }} steps</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Avg Human-Touch Min/Order</p>
+                <p class="text-2xl font-bold text-[#0e2148]">{{ avg_human_minutes | round(1) }}</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Gemini Calls</p>
+                <p class="text-2xl font-bold text-[#0e2148]">{{ totals.gemini_calls }}</p>
+                <p class="text-[10px] text-[#0e2148]/35 mt-0.5">{{ totals.tokens_in + totals.tokens_out }} tokens · ${{ "%.2f"|format(totals.cost_estimate_usd) }} est.</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Founder-Hours Saved (est.)</p>
+                <p class="text-2xl font-bold text-[#c9a227]">{{ founder_hours_saved | round(1) }}</p>
+                <p class="text-[10px] text-[#0e2148]/35 mt-0.5">from autonomous steps, baseline placeholder</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-[#0e2148]/10 shadow-sm">
+                <p class="text-xs text-[#0e2148]/45 mb-1">Failed Steps</p>
+                <p class="text-2xl font-bold {{ 'text-red-600' if totals.failed_steps else 'text-[#0e2148]' }}">{{ totals.failed_steps }}</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Live activity feed -->
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 shadow-sm">
+                <h2 class="text-xs font-semibold text-[#0e2148]/45 mb-4 uppercase tracking-widest">Live Activity Feed</h2>
+                <div class="space-y-2 max-h-[32rem] overflow-y-auto">
+                    {% for e in feed %}
+                    <div class="flex items-start gap-2 text-xs border-b border-[#0e2148]/5 pb-2">
+                        <span class="text-[#0e2148]/35 font-mono shrink-0">{{ e.time_label }}</span>
+                        <span class="shrink-0">{{ "✅" if e.status == "success" else "❌" }}</span>
+                        <div class="min-w-0">
+                            <a href="/admin/ai-ops/runs/{{ e.run_id }}" class="text-[#0e2148] hover:text-[#c9a227] font-medium">
+                                {{ e.step_label or e.step }}
+                            </a>
+                            <span class="text-[#0e2148]/45">
+                                — order {{ e.order_short }}{% if e.model %} · {{ e.model }}{% endif %}{% if e.latency_label %} · {{ e.latency_label }}{% endif %}
+                            </span>
+                            {% if e.status != "success" and e.error_summary %}
+                            <p class="text-red-600 mt-0.5">{{ e.error_summary }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-[#0e2148]/40 text-sm">No events yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Recent runs -->
+            <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 shadow-sm">
+                <h2 class="text-xs font-semibold text-[#0e2148]/45 mb-4 uppercase tracking-widest">Recent Order Runs</h2>
+                <div class="space-y-2 max-h-[32rem] overflow-y-auto">
+                    {% for r in recent_runs %}
+                    <a href="/admin/ai-ops/runs/{{ r.run_id }}" class="block border border-[#0e2148]/8 rounded-lg p-3 hover:border-[#c9a227]/50 transition">
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <span class="text-xs font-mono text-[#0e2148]/50">{{ r.order_ref[:8] if r.order_ref else "" }}</span>
+                            {% if r.display_status == "complete" %}
+                            <span class="bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">Complete</span>
+                            {% elif r.display_status == "error" %}
+                            <span class="bg-red-50 text-red-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">Error</span>
+                            {% else %}
+                            <span class="bg-blue-50 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">In Progress</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-[#0e2148]/60">{{ r.total_steps|default(0) }} steps · {{ r.autonomous_steps|default(0) }} autonomous · {{ r.gemini_calls|default(0) }} Gemini calls</p>
+                    </a>
+                    {% else %}
+                    <p class="text-[#0e2148]/40 text-sm">No runs yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

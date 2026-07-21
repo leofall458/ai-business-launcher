@@ -38,7 +38,17 @@ def generate_content(model: str, contents, config=None, max_attempts: int = 4):
     client = get_client()
     for attempt in range(max_attempts):
         try:
-            return client.models.generate_content(**kwargs)
+            response = client.models.generate_content(**kwargs)
+            # Best-effort usage reporting for the AI Operations Evidence
+            # Layer (app/ai_ops.py) - a no-op unless an @instrumented step
+            # is currently in progress, and never allowed to affect this
+            # call's real result even if it errors.
+            try:
+                from app import ai_ops
+                ai_ops.record_gemini_usage(model, getattr(response, "usage_metadata", None))
+            except Exception:
+                pass
+            return response
         except genai_errors.APIError as e:
             if e.code != 429 or attempt == max_attempts - 1:
                 raise

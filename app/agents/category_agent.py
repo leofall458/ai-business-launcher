@@ -2,6 +2,7 @@ import json
 
 from google.genai import types
 from app.agents import generate_content
+from app.ai_ops import instrumented
 
 MODEL = "gemini-2.5-flash"
 
@@ -45,6 +46,11 @@ CATEGORY_SCHEMA = {
 _FALLBACK = {"category": "Other / Not sure", "confidence": 0.0, "government_contracting_signal": False}
 
 
+@instrumented(
+    "business_classification", model=MODEL, provider="vertex_ai", operation="generate",
+    autonomy="autonomous", actor="agent", step_label="Business Category Classification",
+    input_summary_fn=lambda business_idea, *a, **k: f"business idea, {len((business_idea or '').strip())} chars",
+)
 def classify_business_category(business_idea: str) -> dict:
     """Classifies a free-text business idea into one of CATEGORY_TAXONOMY,
     for the AI-suggested category shown (and editable) in Step 5. Never

@@ -46,6 +46,14 @@ ORDERS_COLLECTION = os.getenv("ORDERS_COLLECTION", "orders")
 # dashboard shows.
 PAGE_VIEWS_COLLECTION = "staging_page_views" if APP_ENV == "staging" else "page_views"
 
+# AI Operations Evidence Layer (design doc §4.11) - same staging isolation
+# rationale as PAGE_VIEWS_COLLECTION: derived from APP_ENV directly so a
+# staging test run (or the E2E PII-safety test) can never land in the same
+# collection the production dashboard reads from.
+AGENT_EVENTS_COLLECTION = "staging_agent_events" if APP_ENV == "staging" else "agent_events"
+ORDER_RUNS_COLLECTION = "staging_order_runs" if APP_ENV == "staging" else "order_runs"
+DAILY_METRICS_COLLECTION = "staging_daily_metrics" if APP_ENV == "staging" else "daily_metrics"
+
 GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")
 

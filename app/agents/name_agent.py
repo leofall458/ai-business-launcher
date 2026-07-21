@@ -1,8 +1,14 @@
 import re
 
 from app.agents import generate_content
+from app.ai_ops import instrumented
 
 MODEL = "gemini-2.5-flash"
+
+_NAME_GEN_KWARGS = dict(
+    model=MODEL, provider="vertex_ai", operation="generate",
+    autonomy="autonomous", actor="agent", step_label="LLC Name Generation",
+)
 
 def screen_business_name(business_idea: str) -> dict:
     prompt = f"""
@@ -37,6 +43,10 @@ def screen_business_name(business_idea: str) -> dict:
     }
 
 
+@instrumented(
+    "name_generation", **_NAME_GEN_KWARGS,
+    input_summary_fn=lambda business_idea, count=5, *a, **k: f"business idea, requesting {count} names",
+)
 def generate_name_ideas(business_idea: str, count: int = 5) -> list[str]:
     """Generate fresh LLC name ideas for Step 3 of the dashboard flow, before
     the customer has tried (and had rejected) any specific name - unlike
@@ -69,6 +79,10 @@ Example format:
     return names[:count]
 
 
+@instrumented(
+    "name_generation", **_NAME_GEN_KWARGS,
+    input_summary_fn=lambda taken_name, business_idea="", *a, **k: "alternative names after SCC rejection",
+)
 def suggest_alternative_names(taken_name: str, business_idea: str) -> list[str]:
     """Generate up to 5 LLC name alternatives when the requested name is taken."""
     context = f'Business idea: {business_idea}' if business_idea else f'Similar concept to "{taken_name}"'

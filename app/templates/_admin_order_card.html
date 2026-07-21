@@ -3,6 +3,9 @@
                     <div>
                         <h2 class="font-serif text-lg font-semibold text-[#0e2148]">{{ order.business_name or "(no business name)" }}</h2>
                         <p class="text-xs text-[#0e2148]/40 font-mono">{{ order.id }}</p>
+                        {% if order.run_id %}
+                        <a href="/admin/ai-ops/runs/{{ order.run_id }}" class="text-[10px] text-[#0e2148]/40 hover:text-[#c9a227]">🤖 AI ops run →</a>
+                        {% endif %}
                         {% if order.website_url %}
                         <a href="{{ order.website_url }}" target="_blank" class="text-xs text-[#c9a227] hover:text-[#b8860b] hover:underline">🌐 {{ order.website_url }}</a>
                         {% endif %}

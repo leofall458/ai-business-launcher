@@ -6,7 +6,15 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from app.ai_ops import instrumented
 
+@instrumented(
+    "document_assembly", model=None, provider="none", operation="assemble",
+    autonomy="autonomous", actor="agent", step_label="LLC Document Assembly",
+    # owner_name/principal_address/signature are PII and are literal
+    # arguments of this function - fixed string only, nothing derived from args.
+    input_summary_fn=lambda *a, **k: "Articles of Organization + Operating Agreement",
+)
 def generate_llc_pdf(
     business_name: str,
     owner_name: str,

@@ -4,6 +4,7 @@ from app.config import (
     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, LLC_FORMATION_PRICE_CENTS,
     FIREBASE_PROJECT_ID, ORDERS_COLLECTION, RA_ANNUAL_FEE_CENTS, RA_ANNUAL_PRICE_ID,
 )
+from app.ai_ops import instrumented
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -103,6 +104,12 @@ def create_checkout_session(
 def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id)
 
+@instrumented(
+    "stripe_setup", model=None, provider="none", operation="prepare",
+    autonomy="autonomous", actor="agent", step_label="Stripe Connect Account Setup",
+    # email is PII and a literal argument here - fixed string only.
+    input_summary_fn=lambda *a, **k: "Stripe Connect Standard account request",
+)
 def create_connect_account(email: str, business_name: str, multi_member: bool):
     """Standard account for the customer, pre-filled as an LLC. Stripe's
     company.structure enum is what actually encodes "LLC" (there's no

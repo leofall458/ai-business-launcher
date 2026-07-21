@@ -4,6 +4,7 @@ from jinja2 import Environment, FileSystemLoader
 from google.genai import types
 from app.agents import generate_content
 from app.agents.brand_agent import generate_logo_variations, generate_favicon_svg, svg_to_data_uri
+from app.ai_ops import instrumented
 
 MODEL = "gemini-2.5-flash"
 
@@ -341,6 +342,14 @@ def render_website_html(content: dict, business_name: str,
         favicon_data_uri=favicon_data_uri,
     )
 
+@instrumented(
+    "website_generation", model=MODEL, provider="vertex_ai", operation="generate",
+    autonomy="autonomous", actor="agent", step_label="Website Generation",
+    # Fixed-shape summary only (template name, from a 3-value enum) -
+    # contact_phone/contact_email/contact_address are PII and are literal
+    # kwargs of this function, so nothing else from args/kwargs is touched.
+    input_summary_fn=lambda *a, **k: f"template={k.get('template_name', a[3] if len(a) > 3 else 'professional')}",
+)
 def generate_website(
     business_name: str, business_idea: str, target_customer: str,
     template_name: str = "professional",

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Run Timeline - Launch Bridge LLC</title>
+    {% include "_brand.html" %}
+</head>
+<body class="bg-[#FAF8F3] text-[#0e2148] min-h-screen py-10">
+    <div class="max-w-3xl mx-auto p-6">
+
+        <div class="mb-8 flex items-center justify-between flex-wrap gap-3">
+            <div>
+                <p class="eyebrow mb-1">Launch Bridge LLC</p>
+                <h1 class="font-serif text-2xl font-bold text-[#0e2148]">Order Run Timeline</h1>
+                <p class="text-[#0e2148]/40 text-xs font-mono mt-1">run {{ run_id }}{% if run and run.order_ref %} · order {{ run.order_ref }}{% endif %}</p>
+            </div>
+            <a href="/admin/ai-ops" class="text-sm font-semibold text-[#c9a227] hover:text-[#b8860b]">← Back to AI Ops</a>
+        </div>
+
+        {% if run %}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+            <div class="bg-white rounded-xl p-3 border border-[#0e2148]/10 shadow-sm text-center">
+                <p class="text-[10px] text-[#0e2148]/45 mb-1">Status</p>
+                <p class="text-sm font-bold {{ 'text-emerald-600' if run.display_status == 'complete' else ('text-red-600' if run.display_status == 'error' else 'text-blue-600') }}">
+                    {{ run.display_status }}
+                </p>
+            </div>
+            <div class="bg-white rounded-xl p-3 border border-[#0e2148]/10 shadow-sm text-center">
+                <p class="text-[10px] text-[#0e2148]/45 mb-1">Steps</p>
+                <p class="text-sm font-bold text-[#0e2148]">{{ run.total_steps|default(0) }}</p>
+            </div>
+            <div class="bg-white rounded-xl p-3 border border-[#0e2148]/10 shadow-sm text-center">
+                <p class="text-[10px] text-[#0e2148]/45 mb-1">Autonomous</p>
+                <p class="text-sm font-bold text-emerald-600">{{ run.autonomous_steps|default(0) }}</p>
+            </div>
+            <div class="bg-white rounded-xl p-3 border border-[#0e2148]/10 shadow-sm text-center">
+                <p class="text-[10px] text-[#0e2148]/45 mb-1">Gemini Calls</p>
+                <p class="text-sm font-bold text-[#0e2148]">{{ run.gemini_calls|default(0) }}</p>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-800">
+            No order_runs summary found for this run yet - showing raw events below, if any.
+        </div>
+        {% endif %}
+
+        <div class="bg-white border border-[#0e2148]/10 rounded-xl p-5 shadow-sm">
+            <h2 class="text-xs font-semibold text-[#0e2148]/45 mb-4 uppercase tracking-widest">Steps</h2>
+            <div class="space-y-2">
+                {% for e in events %}
+                <div class="flex items-start gap-3 rounded-lg border p-3
+                    {% if e.status == 'success' %}border-emerald-100 bg-emerald-50/30
+                    {% elif e.phase == 'started' %}border-[#0e2148]/8 bg-[#FAF8F3]
+                    {% else %}border-red-200 bg-red-50{% endif %}">
+                    <div class="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-bold
+                        {% if e.human_touched %}bg-[#c9a227]/20 text-[#b8860b]
+                        {% elif e.status == 'success' %}bg-emerald-100 text-emerald-700
+                        {% elif e.phase == 'started' %}bg-[#0e2148]/10 text-[#0e2148]/50
+                        {% else %}bg-red-100 text-red-700{% endif %}">
+                        {{ e.seq or "·" }}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                            <p class="text-sm font-semibold text-[#0e2148]">
+                                {{ e.step_label or e.step }}
+                                {% if e.human_touched %}<span class="text-[10px] font-bold uppercase text-[#b8860b] ml-1">Human</span>{% endif %}
+                            </p>
+                            <span class="text-xs text-[#0e2148]/40 font-mono">{{ e.time_label }}</span>
+                        </div>
+                        <p class="text-xs text-[#0e2148]/55 mt-0.5">
+                            {{ e.phase }}
+                            {% if e.model %}· <span class="bg-[#0e2148]/5 px-1.5 py-0.5 rounded font-mono">{{ e.model }}</span>{% endif %}
+                            {% if e.latency_label %}· {{ e.latency_label }}{% endif %}
+                            {% if e.tokens_in or e.tokens_out %}· {{ e.tokens_in }}/{{ e.tokens_out }} tokens{% endif %}
+                            {% if e.autonomy %}· <span class="italic">{{ e.autonomy }}</span>{% endif %}
+                        </p>
+                        {% if e.output_summary %}
+                        <p class="text-xs text-[#0e2148]/70 mt-1">{{ e.output_summary }}</p>
+                        {% endif %}
+                        {% if e.error_summary %}
+                        <p class="text-xs text-red-600 mt-1">⚠️ {{ e.error_summary }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-[#0e2148]/40 text-sm">No events recorded for this run.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

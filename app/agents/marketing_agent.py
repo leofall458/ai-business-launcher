@@ -2,6 +2,7 @@ import io
 import json
 from google.genai import types
 from app.agents import generate_content
+from app.ai_ops import instrumented
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -213,6 +214,11 @@ def _render_html(plan: dict, business_name: str) -> str:
     )
 
 
+@instrumented(
+    "marketing_plan_generation", model=MODEL, provider="vertex_ai", operation="generate",
+    autonomy="autonomous", actor="agent", step_label="Marketing Plan Generation",
+    input_summary_fn=lambda business_name, business_idea, target_customer, industry, location="Virginia", *a, **k: f"industry={industry}",
+)
 def generate_marketing_plan(business_name: str, business_idea: str, target_customer: str,
                              industry: str, location: str = "Virginia") -> dict:
     """Generates a complete Starter Marketing Plan. Returns {"html": ...,
