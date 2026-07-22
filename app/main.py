@@ -2151,6 +2151,7 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     # to look the order up from the "sign in" form either. Re-fetched by
     # session ID here (not passed in) so both /success and /webhook - either
     # of which can be first to reach this function - land on the same result.
+    checkout_session = None
     if not order.get("email") and order.get("stripe_checkout_session_id"):
         try:
             checkout_session = retrieve_checkout_session(order["stripe_checkout_session_id"])
@@ -2167,7 +2168,23 @@ def process_paid_order(order_id: str, payment_status: str, background_tasks: Bac
     # business_name/full_name don't exist yet at this point (Steps 3-4,
     # post-payment) - business_idea is the only descriptive field known
     # this early, captured back at Step 1.
+    #
+    # amount_paid uses the real Stripe amount_total (same fix pattern as the
+    # GA4 purchase event - see success_interstitial.html/dashboard_name.html) -
+    # LLC_FORMATION_PRICE_CENTS alone under-reports by the $110/yr RA fee for
+    # every professional_ra order. Reuses the session already fetched above
+    # when email capture needed it; otherwise fetches it fresh here. Falls
+    # back to the base price only if the Stripe call itself fails, so a
+    # transient API error can never crash or blank out this notification.
     amount_paid = LLC_FORMATION_PRICE_CENTS // 100
+    if checkout_session is None and order.get("stripe_checkout_session_id"):
+        try:
+            checkout_session = retrieve_checkout_session(order["stripe_checkout_session_id"])
+        except Exception as e:
+            print(f"⚠️ Could not retrieve Stripe session for order {order_id} (SMS amount falling back to base price): {e}")
+    if checkout_session and checkout_session.amount_total:
+        amount_paid = checkout_session.amount_total // 100
+
     if APP_ENV == "staging":
         send_admin_sms(
             f"🧪 [TEST] New payment! {order.get('business_idea', '')[:50]} - ${amount_paid} paid. "
