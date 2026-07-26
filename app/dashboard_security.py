@@ -14,6 +14,22 @@ site, and 'none' would silently blank that preview out exactly like the
 stale X-Frame-Options: DENY bug documented in deployer.py's
 _VERSION_CONFIG comment. /dashboard, /orders, and /admin have no such
 same-origin iframe and keep the stricter 'none'.
+
+script-src/connect-src give the SSN page's "no third-party scripts" rule
+(see _brand.html's needs_ssn_entry guard around _clarity.html, and
+_ga4.html's own guard) real policy backing instead of resting on those
+Jinja conditionals alone - a future template regression that accidentally
+reintroduces a tracker tag on that page would still be blocked by the
+browser. The flag those conditionals already key off, needs_ssn_entry, is
+computed deep inside a route handler (_dashboard_order_context in
+app/main.py), not something this middleware can see from the URL alone -
+it's threaded out via request.state.needs_ssn_entry, which the handler
+sets before returning its response. This works because BaseHTTPMiddleware
+and the route handler share the same ASGI scope, so request.state (backed
+by scope["state"]) set inside call_next() is still visible here
+afterward, even though dispatch() only sees a bare Request/Response pair.
+Any route that never sets it (i.e. everything except the order dashboard)
+defaults to False - permissive, tracking allowed - via getattr below.
 """
 
 import hashlib
@@ -25,6 +41,24 @@ from app.config import STATUS_SESSION_SECRET
 
 DASHBOARD_PATH_PREFIXES = ("/dashboard", "/orders", "/admin")
 
+# Actual hosts contacted by _ga4.html (GA4) and _clarity.html (Microsoft
+# Clarity) - verified against live network traffic, not guessed: gtag.js's
+# script tag + collect beacon, Clarity's script tag + its sharded collector
+# subdomains (scripts./b./c.clarity.ms - Clarity load-balances across
+# lettered subdomains) + its Bing/Ads correlation ping (Clarity is a
+# Microsoft product and pings c.bing.com). No Google Ads client-side tag
+# exists in this app today - ad conversion import is server-side (see
+# app/google_ads_service.py) - but linking a Google Ads account to this GA4
+# property can start client-side calls to *.doubleclick.net with no code
+# change on this end, so it's allowlisted defensively here and is exactly
+# what must stay excluded on the SSN page below.
+TRACKING_SCRIPT_SRC = "https://www.googletagmanager.com https://www.clarity.ms https://scripts.clarity.ms"
+TRACKING_CONNECT_SRC = (
+    "https://www.google-analytics.com https://www.googletagmanager.com "
+    "https://www.clarity.ms https://*.clarity.ms https://c.bing.com "
+    "https://googleads.g.doubleclick.net"
+)
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """setdefault, not direct assignment, so a route that already set a
     more specific header (e.g. a tighter CSP) is never overridden."""
@@ -34,7 +68,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if is_dashboard:
             response.headers.setdefault("Cache-Control", "no-store")
         frame_ancestors = "'none'" if is_dashboard else "'self'"
-        response.headers.setdefault("Content-Security-Policy", f"frame-ancestors {frame_ancestors}")
+
+        # 'unsafe-inline' stays in both branches - this app's own JS is
+        # almost entirely inline <script> blocks (onclick handlers, the GA4
+        # snippet itself, htmx wiring), and CSP blocks ALL inline script
+        # unless 'unsafe-inline' (or a nonce/hash) is present, regardless of
+        # 'self'. Only the third-party origins differ between the two cases.
+        needs_ssn_entry = getattr(request.state, "needs_ssn_entry", False)
+        if needs_ssn_entry:
+            script_src = "'self' 'unsafe-inline'"
+            connect_src = "'self'"
+        else:
+            script_src = f"'self' 'unsafe-inline' {TRACKING_SCRIPT_SRC}"
+            connect_src = f"'self' {TRACKING_CONNECT_SRC}"
+
+        csp = f"frame-ancestors {frame_ancestors}; script-src {script_src}; connect-src {connect_src}"
+        response.headers.setdefault("Content-Security-Policy", csp)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-XSS-Protection", "1; mode=block")

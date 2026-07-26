@@ -2738,6 +2738,13 @@ def _dashboard_order_context(
     llc_documents_emailed = reached(order.get("state", "draft"), "filing_confirmed") and bool(
         available_documents.get("articles") or available_documents.get("operating_agreement"))
 
+    needs_ssn_entry = (bool(order.get("awaiting_ssn")) or ssn_expired) and not order.get("awaiting_intake")
+    # Threaded onto request.state so SecurityHeadersMiddleware (which only
+    # sees the Request/Response, not this function's return value) can
+    # serve a stricter script-src/connect-src CSP on this response - see
+    # app/dashboard_security.py.
+    request.state.needs_ssn_entry = needs_ssn_entry
+
     return {
         **status_context(order_id, order),
         "order": order,
@@ -2751,7 +2758,7 @@ def _dashboard_order_context(
         "onboarding_url": f"/connect/onboard/{order_id}" if order.get("stripe_connect_account_id") else None,
         "awaiting_intake": bool(order.get("awaiting_intake")),
         "google_places_api_key": GOOGLE_PLACES_API_KEY,
-        "needs_ssn_entry": (bool(order.get("awaiting_ssn")) or ssn_expired) and not order.get("awaiting_intake"),
+        "needs_ssn_entry": needs_ssn_entry,
         "ssn_expired": ssn_expired,
         "ssn_error": ssn_error,
         "intake_errors": intake_errors or {},
