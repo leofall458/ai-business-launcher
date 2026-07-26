@@ -155,9 +155,15 @@
     document.addEventListener('DOMContentLoaded', () => {
         const leadId = localStorage.getItem('lb_lead_id');
         if (leadId) document.getElementById('lead_id_input').value = leadId;
+        try { if (typeof gtag !== 'undefined') gtag('event', 'offer_viewed', { ra_preselected: '{{ preselected_ra_choice }}' }); } catch(e) {}
     });
     document.getElementById('checkout-form').addEventListener('htmx:beforeRequest', function() {
         try { if (typeof gtag !== 'undefined') gtag('event', 'begin_checkout', { currency: 'USD' }); } catch(e) {}
+        // Our own funnel-events name, kept separate from GA4's standard
+        // begin_checkout above - some GA4 tooling expects that exact
+        // standard name, but the attribution funnel (§4.12) tracks its own
+        // checkout_started event specifically.
+        try { if (typeof gtag !== 'undefined') gtag('event', 'checkout_started', { currency: 'USD' }); } catch(e) {}
     });
 </script>
 </body>
