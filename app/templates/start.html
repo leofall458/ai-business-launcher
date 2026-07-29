@@ -53,12 +53,15 @@
                 agent — let ours handle it instead.
             </p>
             <div class="space-y-2">
-                <label id="ra-option-professional_ra" class="flex items-start gap-3 p-3 rounded-lg cursor-pointer {% if preselected_ra_choice != 'self' %}border-2 border-[#c9a227] bg-[#c9a227]/10{% else %}border border-[#0e2148]/15{% endif %}">
-                    <input type="radio" name="registered_agent_choice" value="professional_ra" {% if preselected_ra_choice != 'self' %}checked{% endif %}
+                <label id="ra-option-professional_ra" class="flex items-start gap-3 p-3 rounded-lg cursor-pointer {% if preselected_ra_choice == 'professional_ra' %}border-2 border-[#c9a227] bg-[#c9a227]/10{% else %}border border-[#0e2148]/15{% endif %}">
+                    <input type="radio" name="registered_agent_choice" value="professional_ra" {% if preselected_ra_choice == 'professional_ra' %}checked{% endif %}
                         onchange="updateRaTotal()"
                         class="mt-1 w-4 h-4 accent-[#c9a227] shrink-0"/>
                     <span>
-                        <span class="block text-sm font-semibold text-[#0e2148]">Professional Registered Agent — $110/year</span>
+                        <span class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-[#0e2148]">Professional Registered Agent — $110/year</span>
+                            <span class="inline-block bg-[#c9a227] text-[#0e2148] text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full">Recommended</span>
+                        </span>
                         <span class="block text-xs text-[#0e2148]/55 mt-0.5 leading-relaxed">
                             Randolph Law, PLLC serves as your registered agent, with attorney Christopher Shiplett
                             handling your account and legal correspondence. Billed annually at $110, separate from

@@ -1954,7 +1954,9 @@ async def start(request: Request):
     # Carries the RA choice made on page 1's hero form (see _hero_idea_form.html's
     # ?ra= param) so Step 2 starts pre-selected on whatever the customer already
     # picked, instead of always resetting to the default.
-    preselected_ra_choice = "self" if request.query_params.get("ra") == "self" else "professional_ra"
+    # Default is "self" (unchecked professional RA) - the customer must actively
+    # opt in to the paid RA add-on rather than having it pre-selected for them.
+    preselected_ra_choice = "professional_ra" if request.query_params.get("ra") == "professional_ra" else "self"
     return templates.TemplateResponse(request, "start.html", {
         "business_idea": request.query_params.get("idea", ""),
         "preselected_ra_choice": preselected_ra_choice,

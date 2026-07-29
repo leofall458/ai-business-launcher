@@ -64,9 +64,10 @@
 
         localStorage.setItem('lb_business_idea', idea);
         // lb_ra_choice is set by index.html's Registered Agent picker, if this
-        // page has one - defaults to professional_ra (Step 2's own default)
-        // for pages that don't, so nothing changes for them.
-        const raChoice = localStorage.getItem('lb_ra_choice') || 'professional_ra';
+        // page has one - defaults to self (unchecked professional RA) for pages
+        // that don't, matching Step 2's own default so the RA add-on always
+        // requires an active opt-in.
+        const raChoice = localStorage.getItem('lb_ra_choice') || 'self';
         try { if (typeof gtag !== 'undefined') gtag('event', 'idea_submitted', { idea_length: idea.length }); } catch(e) {}
 
         fetch('/api/capture-lead', {
