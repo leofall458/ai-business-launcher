@@ -59,7 +59,7 @@ from app.ssn_vault import (
 from app.log_scrub import scrub_ssn
 from app.validators import (
     validate_business_idea, validate_step4_details, validate_post_payment_intake,
-    validate_ssn, CHECKOUT_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
+    validate_ssn, normalize_ssn, CHECKOUT_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
 )
 from app.email_service import (
     send_order_received_email,
@@ -3116,7 +3116,7 @@ async def dashboard_submit_ssn(request: Request, background_tasks: BackgroundTas
     if not order.get("awaiting_ssn") and not expired:
         return RedirectResponse(url=f"/dashboard/orders/{order_id}", status_code=303)
 
-    ssn = (form.get("ssn") or "").strip()
+    ssn = normalize_ssn((form.get("ssn") or "").strip())
     error = validate_ssn(ssn)
     if not error and not encrypt_ssn(ssn, order_id):
         error = "Could not securely store your SSN - please try again, or contact support@launchbridge.ai if this keeps happening."

@@ -70,7 +70,7 @@
                 {% endif %}
                 <div>
                     <label class="block text-xs text-[#0e2148]/55 mb-1">Social Security Number</label>
-                    <input name="ssn" type="text" inputmode="numeric" autocomplete="off" required placeholder="XXX-XX-XXXX"
+                    <input id="ssn-input" name="ssn" type="text" inputmode="numeric" autocomplete="off" required placeholder="XXX-XX-XXXX" maxlength="11"
                         class="w-full bg-white border border-[#c9a227]/35 rounded-lg p-3 text-[#0e2148] text-sm focus:border-[#c9a227] focus:outline-none"/>
                 </div>
                 {% if ssn_error %}
@@ -335,6 +335,28 @@
                 setTimeout(() => { label.textContent = 'Copy Link'; }, 2000);
             });
         }
+    </script>
+    <script>
+        (function() {
+            // Auto-inserts the XXX-XX-XXXX dashes as the customer types -
+            // mobile's inputmode="numeric" keypad has no "-" key on iOS/
+            // Android, so without this a phone user has no way to produce
+            // them by hand. Server-side (validators.normalize_ssn) is the
+            // real safety net if this JS doesn't run for any reason; this
+            // is just so the field visibly matches its own placeholder.
+            var input = document.getElementById('ssn-input');
+            if (!input) return;
+            input.addEventListener('input', function() {
+                var digits = input.value.replace(/\D/g, '').slice(0, 9);
+                var formatted = digits;
+                if (digits.length > 5) {
+                    formatted = digits.slice(0, 3) + '-' + digits.slice(3, 5) + '-' + digits.slice(5);
+                } else if (digits.length > 3) {
+                    formatted = digits.slice(0, 3) + '-' + digits.slice(3);
+                }
+                input.value = formatted;
+            });
+        })();
     </script>
     {% if google_analytics_id and not needs_ssn_entry %}
     <script>

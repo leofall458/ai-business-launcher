@@ -88,6 +88,20 @@ def validate_zip(zip_str: str) -> str | None:
         return "ZIP code must be a valid Virginia ZIP code."
     return None
 
+def normalize_ssn(ssn: str) -> str:
+    """Reformats to XXX-XX-XXXX if exactly 9 digits are present, regardless
+    of how they were typed - dashes, spaces, or none at all. Mobile browsers
+    put SSN inputs in a digits-only keypad (inputmode="numeric" has no "-"
+    key on iOS/Android), so a mobile customer physically cannot type the
+    dashes validate_ssn used to require; this lets 9 raw digits through
+    while leaving anything that isn't 9 digits untouched so validate_ssn's
+    regex still rejects it with its normal error message instead of this
+    silently passing through something malformed."""
+    digits = re.sub(r"\D", "", ssn or "")
+    if len(digits) == 9:
+        return f"{digits[0:3]}-{digits[3:5]}-{digits[5:9]}"
+    return ssn
+
 def validate_ssn(ssn: str) -> str | None:
     ssn = (ssn or "").strip()
     if not re.fullmatch(r"\d{3}-\d{2}-\d{4}", ssn):
