@@ -144,8 +144,14 @@ def ensure_run_id(order_ref, order: dict) -> str:
         print(f"⚠️ ai_ops: could not persist run_id: {e}")
     return run_id
 
-def set_current_order(order_id: str, run_id: str | None) -> None:
-    _ctx.set({"order_id": order_id, "run_id": run_id})
+def set_current_order(order_id: str, run_id: str | None, run_type: str = "customer") -> None:
+    """run_type defaults to "customer" - every existing call site (route
+    handlers, the EIN/SCC pollers) calls this with two args and gets exactly
+    today's behavior. Pass run_type="off_product" (or similar) for bespoke/
+    one-off work that isn't a real formation order - see _update_rollups in
+    this module for how that keeps it out of daily_metrics/{date}'s real
+    customer rollup while still producing a normal order_runs entry."""
+    _ctx.set({"order_id": order_id, "run_id": run_id, "run_type": run_type})
 
 def run_in_executor_with_context(loop, executor, fn, *args):
     """A drop-in replacement for loop.run_in_executor(executor, fn, *args)
@@ -245,6 +251,16 @@ def _update_rollups(db, event: dict) -> None:
     saved_minutes = (event.get("manual_baseline_min") or 0) if (is_success and is_autonomous) else 0.0
 
     day = event["timestamp"][:10] if isinstance(event.get("timestamp"), str) else time.strftime("%Y-%m-%d")
+    # Off-product/bespoke work (run_type != "customer") gets its own
+    # daily_metrics document (date__run_type) rather than merging into
+    # daily_metrics/{date} - that document is the real customer-facing
+    # daily rollup (orders_processed, founder-hours-saved, etc. per
+    # MANUAL_BASELINE_MIN's external-reporting caveat above), and a
+    # one-off build's tokens/cost/steps have no business landing in it.
+    # Default "customer" keeps every existing call site (which never
+    # passes run_type) writing to exactly the same document as before.
+    run_type = event.get("run_type") or "customer"
+    day_doc_id = day if run_type == "customer" else f"{day}__{run_type}"
 
     common = {
         "steps_completed": firestore.Increment(1),
@@ -272,6 +288,7 @@ def _update_rollups(db, event: dict) -> None:
         run_fields.update({
             "run_id": run_id,
             "order_ref": order_id,
+            "run_type": run_type,
             "last_event_at": firestore.SERVER_TIMESTAMP,
             "last_step": event.get("step"),
             "last_status": event.get("status"),
@@ -284,9 +301,11 @@ def _update_rollups(db, event: dict) -> None:
 
     day_fields = dict(common)
     day_fields["date"] = day
+    if run_type != "customer":
+        day_fields["run_type"] = run_type
     if event.get("step") == "idea_intake" and is_success:
         day_fields["orders_processed"] = firestore.Increment(1)
-    db.collection(DAILY_METRICS_COLLECTION).document(day).set(day_fields, merge=True)
+    db.collection(DAILY_METRICS_COLLECTION).document(day_doc_id).set(day_fields, merge=True)
 
 def emit_event(
     step: str,
@@ -321,11 +340,13 @@ def emit_event(
     ctx = current_context() or {}
     order_id = ctx.get("order_id")
     run_id = ctx.get("run_id")
+    run_type = ctx.get("run_type") or "customer"
     cost = estimate_cost_usd(model, tokens_in, tokens_out)
     event = {
         "event_id": uuid.uuid4().hex,
         "run_id": run_id,
         "order_ref": order_id,
+        "run_type": run_type,
         "seq": _next_seq(run_id),
         # A plain ISO8601 UTC string rather than firestore.SERVER_TIMESTAMP -
         # _update_rollups (below) needs a real, immediately-readable value to
