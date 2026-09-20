@@ -1447,13 +1447,21 @@ async def abandoned_cart_scheduler():
             for doc in LEADS.where("converted", "==", False).stream():
                 lead = doc.to_dict()
                 lead_id = doc.id
-                email = lead.get("email", "").strip()
+                email = lead.get("email", "").strip().lower()
                 if not email:
                     continue
-                # Detect conversion: any non-draft order for this email
+                # Detect conversion: any non-draft order for this email.
+                # Case-insensitive - lead.email is always lowercase (see
+                # /api/capture-lead), but order.email carries whatever
+                # casing Stripe Checkout captured (see process_paid_order),
+                # so an exact match here could miss a real conversion and
+                # send an already-paying customer a needless "come back and
+                # finish" email - same root cause as the dashboard sign-in
+                # bug fixed above.
                 paid = next(
-                    (d for d in ORDERS.where("email", "==", email).limit(5).stream()
-                     if d.to_dict().get("state", "draft") != "draft"),
+                    (d for d in ORDERS.stream()
+                     if (d.to_dict().get("email") or "").strip().lower() == email
+                     and d.to_dict().get("state", "draft") != "draft"),
                     None,
                 )
                 if paid:
