@@ -109,6 +109,32 @@ AGENT_EVENTS = db.collection(AGENT_EVENTS_COLLECTION)
 ORDER_RUNS = db.collection(ORDER_RUNS_COLLECTION)
 DAILY_METRICS = db.collection(DAILY_METRICS_COLLECTION)
 
+# system_config/flags.payments_enabled is the live source of truth for the
+# payments kill switch - launch_bridge_admin.py (the local desktop admin
+# app) flips it directly in Firestore so pausing/resuming new checkout
+# never needs a redeploy. PAYMENTS_ENABLED (the env var, see app/config.py)
+# is only the fallback for the one-time case where that document doesn't
+# exist yet or Firestore itself is unreachable - keeping it as the
+# fallback (not a hardcoded True) means a Firestore hiccup can never
+# silently re-open payments that were deliberately closed.
+_payments_enabled_cache = {"value": None, "checked_at": None}
+PAYMENTS_ENABLED_CACHE_SECONDS = 15
+
+def payments_enabled() -> bool:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cached_at = _payments_enabled_cache["checked_at"]
+    if cached_at and (now - cached_at).total_seconds() < PAYMENTS_ENABLED_CACHE_SECONDS:
+        return _payments_enabled_cache["value"]
+    try:
+        doc = db.collection("system_config").document("flags").get()
+        value = bool(doc.to_dict().get("payments_enabled", PAYMENTS_ENABLED)) if doc.exists else PAYMENTS_ENABLED
+    except Exception as e:
+        print(f"⚠️ Could not read system_config/flags (payments_enabled) - falling back to last known value: {e}")
+        value = _payments_enabled_cache["value"] if _payments_enabled_cache["value"] is not None else PAYMENTS_ENABLED
+    _payments_enabled_cache["value"] = value
+    _payments_enabled_cache["checked_at"] = now
+    return value
+
 # The one message every customer-facing error path collapses to - never
 # stack traces, HTTP codes, or raw exception/library text. Admins still see
 # full detail via the Errors section on /admin (see log_customer_error
@@ -1961,7 +1987,7 @@ async def start(request: Request):
     return templates.TemplateResponse(request, "start.html", {
         "business_idea": request.query_params.get("idea", ""),
         "preselected_ra_choice": preselected_ra_choice,
-        "payments_enabled": PAYMENTS_ENABLED,
+        "payments_enabled": payments_enabled(),
         **_wizard_context(),
     })
 
@@ -1978,7 +2004,7 @@ async def start_checkout(request: Request):
     # matters for a direct POST (bookmark, bypassed JS, retried request).
     # Bounces back to the same page with no order created and no error
     # banner - deliberately quiet, not an outage message.
-    if not PAYMENTS_ENABLED:
+    if not payments_enabled():
         return Response(status_code=200, headers={"HX-Redirect": "/start"})
 
     form_raw = await request.form()
