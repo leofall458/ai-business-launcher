@@ -2664,7 +2664,13 @@ def get_owned_order(order_id: str, request: Request):
     if not order_snap.exists:
         raise HTTPException(status_code=404)
     order = order_snap.to_dict()
-    if (order.get("email") or "").strip().lower() != customer_id:
+    # customer_id is whatever casing order.email happened to have at the
+    # moment the session was minted (see create_session callers - every one
+    # passes order.email through as-is, never pre-lowercased) - lowercasing
+    # only the left side here meant this 404'd for any order whose email
+    # wasn't already all-lowercase, same root cause as the dashboard_login_submit
+    # fix below.
+    if (order.get("email") or "").strip().lower() != (customer_id or "").strip().lower():
         raise HTTPException(status_code=404)
     return order_ref, order, customer_id
 
@@ -2680,13 +2686,32 @@ async def dashboard_login_submit(request: Request):
     so neither response shape nor timing reveals which emails have
     orders, or that a sender has been rate-limited."""
     form = await request.form()
-    email = (form.get("email") or "").strip().lower()
+    typed_email = (form.get("email") or "").strip().lower()
 
-    if email:
-        over_limit = _rate_limited("magic_link_requests", "email", email, MAGIC_LINK_RATE_WINDOW, MAGIC_LINK_RATE_LIMIT)
-        has_order = next(iter(ORDERS.where("email", "==", email).limit(1).stream()), None) is not None
-        if has_order and not over_limit:
-            send_magic_link_email(email, create_magic_link(email))
+    if typed_email:
+        over_limit = _rate_limited("magic_link_requests", "email", typed_email, MAGIC_LINK_RATE_WINDOW, MAGIC_LINK_RATE_LIMIT)
+        # Firestore's == is case-sensitive, but the email on an order is
+        # whatever casing Stripe Checkout happened to capture (see
+        # process_paid_order) - often not lowercase - while a customer
+        # typing their own email into this form overwhelmingly types it
+        # lowercase. A raw case-sensitive match against typed_email above
+        # silently found nothing for a real, paid order (confirmed against
+        # Nancy Sharkey Consulting's order, 2026-09-20) - not "no order
+        # exists", just a casing mismatch. Small collection (see the same
+        # fetch-then-filter convention used elsewhere in this file), so a
+        # full scan compared case-insensitively is simpler than maintaining
+        # a second lowercase-mirror field.
+        matched_order = next(
+            (doc for doc in ORDERS.stream() if (doc.to_dict().get("email") or "").strip().lower() == typed_email),
+            None,
+        )
+        if matched_order and not over_limit:
+            # Use the order's own stored casing, not typed_email - every
+            # other session in this codebase (auto-login after Stripe
+            # Checkout, etc.) is minted from order.email as-is, and
+            # dashboard_orders below matches on that same exact string.
+            order_email = matched_order.to_dict().get("email")
+            send_magic_link_email(order_email, create_magic_link(order_email))
 
     return templates.TemplateResponse(request, "dashboard_check_email.html", {})
 
@@ -2727,7 +2752,15 @@ async def dashboard_orders(request: Request):
     if not customer_id:
         return RedirectResponse(url="/dashboard")
 
-    orders = [doc for doc in ORDERS.where("email", "==", customer_id).stream()]
+    # Case-insensitive on both sides - customer_id carries whatever casing
+    # order.email happened to have when the session was minted (see
+    # get_owned_order's comment above), so comparing only one side
+    # lowercased reproduces the exact bug this was meant to fix.
+    customer_id_lower = (customer_id or "").strip().lower()
+    orders = [
+        doc for doc in ORDERS.stream()
+        if (doc.to_dict().get("email") or "").strip().lower() == customer_id_lower
+    ]
     if len(orders) == 1:
         order_id = orders[0].id
         # Land mid-flow customers back on the step they haven't finished yet
