@@ -117,8 +117,8 @@
         </label>
         <span id="error-consent" class="text-red-500 text-xs mt-1 block"></span>
 
-        <button type="submit" id="pay-button"
-            class="w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
+        <button type="submit" id="pay-button" {% if not payments_enabled %}disabled{% endif %}
+            class="w-full bg-[#c9a227] {% if payments_enabled %}hover:bg-[#b8860b]{% else %}opacity-60 cursor-not-allowed{% endif %} text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
             💳 Pay ${{ "350" if preselected_ra_choice == "self" else "460" }} &amp; Launch My LLC →
         </button>
         <p class="text-center text-xs text-[#0e2148]/50">

@@ -22,6 +22,7 @@ from app.config import (
     APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
     STRIPE_PUBLISHABLE_KEY, PAGE_VIEWS_COLLECTION,
     AGENT_EVENTS_COLLECTION, ORDER_RUNS_COLLECTION, DAILY_METRICS_COLLECTION,
+    PAYMENTS_ENABLED,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.category_agent import classify_business_category, CATEGORY_TAXONOMY, LOW_CONFIDENCE_THRESHOLD
@@ -1960,6 +1961,7 @@ async def start(request: Request):
     return templates.TemplateResponse(request, "start.html", {
         "business_idea": request.query_params.get("idea", ""),
         "preselected_ra_choice": preselected_ra_choice,
+        "payments_enabled": PAYMENTS_ENABLED,
         **_wizard_context(),
     })
 
@@ -1971,6 +1973,14 @@ async def start_checkout(request: Request):
     the dashboard (Steps 3-5). Checkout collects email/phone itself and
     already renders Apple Pay/Google Pay natively above the card form, so
     there's no separate PaymentIntent/Payment Request Button path anymore."""
+    # PAYMENTS_ENABLED is the manual kill switch (see app/config.py) - the
+    # Pay button is already disabled client-side when it's off, so this only
+    # matters for a direct POST (bookmark, bypassed JS, retried request).
+    # Bounces back to the same page with no order created and no error
+    # banner - deliberately quiet, not an outage message.
+    if not PAYMENTS_ENABLED:
+        return Response(status_code=200, headers={"HX-Redirect": "/start"})
+
     form_raw = await request.form()
     form = dict(form_raw)
 

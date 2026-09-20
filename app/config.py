@@ -9,6 +9,15 @@ PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ai-biz-launcher")
 LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 MODEL = "gemini-2.5-flash"
 
+# Manual kill switch for new payments only - the marketing site, idea intake,
+# and everything else stay up as normal. Checked at the top of POST /start
+# (the only place a new Stripe Checkout Session gets created) and passed to
+# start.html to disable the Pay button itself, so a customer isn't left
+# submitting into a silent no-op. Defaults on; flip via the PAYMENTS_ENABLED
+# env var (Cloud Run service update, no rebuild needed) rather than editing
+# this default, so re-enabling never needs a redeploy.
+PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() != "false"
+
 # "staging" picks up the _STAGING-suffixed Secret Manager entries (test-mode
 # Stripe keys, a separate webhook signing secret) instead of the production
 # ones - same project, same secrets list, just a different version of each
@@ -53,6 +62,14 @@ PAGE_VIEWS_COLLECTION = "staging_page_views" if APP_ENV == "staging" else "page_
 AGENT_EVENTS_COLLECTION = "staging_agent_events" if APP_ENV == "staging" else "agent_events"
 ORDER_RUNS_COLLECTION = "staging_order_runs" if APP_ENV == "staging" else "order_runs"
 DAILY_METRICS_COLLECTION = "staging_daily_metrics" if APP_ENV == "staging" else "daily_metrics"
+
+# send_admin_sms only ever printed on failure - a silently dropped alert
+# (SMTP accepted the message but the carrier's email-to-SMS gateway ate it,
+# or ADMIN_PHONE_EMAIL is stale) looked identical to a successful send with
+# nothing in Cloud Run logs to tell them apart. Every attempt now gets
+# logged here instead so a dropped alert is visible without digging through
+# logs. Same staging isolation as the collections above.
+SMS_LOG_COLLECTION = "staging_sms_log" if APP_ENV == "staging" else "sms_log"
 
 GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")
