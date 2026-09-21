@@ -760,6 +760,14 @@ def send_name_check_result_email(email: str, result: dict, start_url: str = NAME
         "determination when it reviews the filing.</p>"
     )
 
+    # SCC availability is not trademark clearance - say so whenever we're pointing them at a name to use.
+    tm_txt = ("\nOne more check: SCC availability isn't trademark clearance. Before you build a brand around a name, "
+              "search the USPTO trademark database: https://tmsearch.uspto.gov/\n")
+    tm_html = ("<p style='margin:0 0 8px;'><strong>One more check:</strong> SCC availability isn't trademark clearance. "
+               "Before you build a brand around a name, "
+               "<a href='https://tmsearch.uspto.gov/' style='color:#2563eb;'>search the USPTO trademark database</a>.</p>")
+    show_tm = status == "AVAILABLE" or (status == "TAKEN" and bool(alternatives))
+
     if status == "AVAILABLE":
         subject = f"Good news - {name} is available in Virginia"
         lead_txt = f'Good news: "{name}" is available on the Virginia SCC right now.\n\n'
@@ -801,11 +809,11 @@ def send_name_check_result_email(email: str, result: dict, start_url: str = NAME
         cta = "Start my LLC \u2192"
 
     body = (
-        "Hi there,\n\n" + lead_txt + included_txt + f"\nContinue here: {start_url}\n" + fine_print_txt +
+        "Hi there,\n\n" + lead_txt + (tm_txt if show_tm else "") + "\n" + included_txt + f"\nContinue here: {start_url}\n" + fine_print_txt +
         "\nQuestions? Just reply to this email.\n\n- Launch Bridge LLC"
     )
     html_body = _wrap_html(
-        "<p>Hi there,</p>" + lead_html + included_html + fine_print_html,
+        "<p>Hi there,</p>" + lead_html + (tm_html if show_tm else "") + included_html + fine_print_html,
         cta_text=cta, cta_url=start_url,
     )
     # Internal review copy (skipped when the visitor IS the review address, so it isn't delivered twice).

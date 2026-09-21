@@ -95,6 +95,12 @@
                        el('p', 'text-xs mt-1', 'No problem - our team verifies every name with the SCC before filing anything.'));
         }
         resultEl.append(box);
+        if (data.status === 'AVAILABLE' || (data.status === 'TAKEN' && data.alternatives && data.alternatives.length)) {
+            const tm = el('p', 'text-xs text-[#0e2148]/60 mt-3', "Heads up: SCC availability isn't trademark clearance. Before you build a brand around a name, ");
+            const link = el('a', 'underline', 'search the USPTO trademark database');
+            link.href = 'https://tmsearch.uspto.gov/'; link.target = '_blank'; link.rel = 'noopener';
+            tm.append(link, '.'); resultEl.append(tm);
+        }
         resultEl.append(el('p', 'text-xs text-[#0e2148]/55 mt-3', "📧 We're emailing this result to " + email + '.'));
         if (data.status !== 'TAKEN' || (data.alternatives && data.alternatives.length)) {
             const a = el('a', 'mt-3 block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25', cta);

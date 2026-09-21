@@ -9,6 +9,7 @@
     <p class="text-xs text-green-700 mt-1">If you're happy with it, use it below and tick the box to continue. We re-verify it before filing.</p>
     <button type="button" data-use-name="{{ result.name }}"
         class="mt-2 text-xs font-semibold underline text-green-900">Use this name</button>
+    <p class="text-xs text-[#0e2148]/60 mt-2">SCC availability isn't trademark clearance - before building a brand around it, <a href="https://tmsearch.uspto.gov/" target="_blank" rel="noopener" class="underline">search the USPTO trademark database</a>.</p>
   </div>
   {% elif result.status == 'TAKEN' %}
   <div class="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
@@ -24,6 +25,7 @@
           class="text-xs bg-white border border-[#0e2148]/20 hover:border-[#c9a227] rounded-full px-3 py-1.5 text-[#0e2148] transition">{{ alt }}</button>
       {% endfor %}
     </div>
+    <p class="text-xs text-[#0e2148]/60 mt-2">SCC availability isn't trademark clearance - <a href="https://tmsearch.uspto.gov/" target="_blank" rel="noopener" class="underline">search the USPTO trademark database</a> before building a brand.</p>
     {% else %}
     <p class="text-xs text-red-700 mt-1">Try a different name, or add a distinguishing word.</p>
     {% endif %}
