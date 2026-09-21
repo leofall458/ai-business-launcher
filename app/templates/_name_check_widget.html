@@ -26,7 +26,7 @@
             <input id="nc-website" type="text" tabindex="-1" autocomplete="off"/>
         </div>
         <button type="submit" id="nc-submit"
-            class="w-full bg-[#0e2148] hover:bg-[#0e2148]/90 disabled:opacity-60 text-white font-semibold py-3.5 rounded-full text-base transition">
+            class="w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-4 rounded-full text-base transition">
             Check availability →
         </button>
         <p class="text-center text-xs text-[#0e2148]/45">
@@ -39,6 +39,7 @@
     <p id="nc-error" class="hidden text-sm text-red-600 mt-4"></p>
     <div id="nc-result" class="hidden mt-4" aria-live="polite"></div>
 </div>
+<style>#nc-submit:disabled { opacity: .6; cursor: not-allowed; }</style>
 
 <script>
 (function () {
@@ -70,12 +71,12 @@
         const box = el('div', 'rounded-xl border p-4 text-sm');
         let cta = 'Start my LLC →';
         if (data.status === 'AVAILABLE') {
-            box.classList.add('bg-green-50', 'border-green-200', 'text-green-800');
+            box.classList.add('bg-green-50', 'border-green-200', 'text-green-900');
             const p = el('p'); p.append('✅ ', el('strong', '', data.name), ' looks available on the Virginia SCC right now.');
             box.append(p, el('p', 'text-xs mt-1', "Names aren't held for anyone until an LLC is filed, so it's worth moving soon."));
             cta = 'Claim this name - start my LLC →';
         } else if (data.status === 'TAKEN') {
-            box.classList.add('bg-red-50', 'border-red-200', 'text-red-800');
+            box.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
             const p = el('p'); p.append('❌ ', el('strong', '', data.name), " isn't available on the Virginia SCC.");
             box.append(p);
             if (data.conflicts && data.conflicts.length) box.append(el('p', 'text-xs mt-1', 'Already on file: ' + data.conflicts.join(', ')));
@@ -96,7 +97,7 @@
         resultEl.append(box);
         resultEl.append(el('p', 'text-xs text-[#0e2148]/55 mt-3', "📧 We're emailing this result to " + email + '.'));
         if (data.status !== 'TAKEN' || (data.alternatives && data.alternatives.length)) {
-            const a = el('a', 'mt-3 block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-3.5 rounded-full text-base transition shadow-md shadow-[#c9a227]/25', cta);
+            const a = el('a', 'mt-3 block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-4 rounded-full text-base transition shadow-md shadow-[#c9a227]/25', cta);
             a.href = startUrl();
             a.addEventListener('click', () => track('name_check_cta_click', { status: data.status }));
             resultEl.append(a);
