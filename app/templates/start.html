@@ -41,7 +41,7 @@
 
     <div id="form-top-errors"></div>
 
-    <form id="checkout-form" hx-post="/start" hx-swap="none" hx-indicator="#spinner" class="space-y-4">
+    <form id="checkout-form" hx-post="/start" hx-swap="none" hx-indicator="#spinner" hx-disabled-elt="#pay-button" class="space-y-4">
         <input type="hidden" name="business_idea" value="{{ business_idea }}"/>
         <input type="hidden" name="lead_id" id="lead_id_input" value=""/>
 
@@ -167,6 +167,17 @@
         if (leadId) document.getElementById('lead_id_input').value = leadId;
         try { if (typeof gtag !== 'undefined') gtag('event', 'offer_viewed', { ra_preselected: '{{ preselected_ra_choice }}' }); } catch(e) {}
     });
+    // The consent box uses the browser's built-in `required` check, whose only feedback is a small tooltip that
+    // vanishes - so a customer who clicks Pay first sees nothing happen. Show a persistent message as well.
+    (function () {
+        const consent = document.querySelector('input[name="consent"]');
+        const err = document.getElementById('error-consent');
+        if (!consent || !err) return;
+        consent.addEventListener('invalid', function () {
+            err.textContent = 'Please check the box above to agree to the terms before paying.';
+        });
+        consent.addEventListener('change', function () { if (consent.checked) err.textContent = ''; });
+    })();
     document.getElementById('checkout-form').addEventListener('htmx:beforeRequest', function() {
         try { if (typeof gtag !== 'undefined') gtag('event', 'begin_checkout', { currency: 'USD' }); } catch(e) {}
         // Our own funnel-events name, kept separate from GA4's standard
