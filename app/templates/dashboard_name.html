@@ -110,15 +110,36 @@
             <p class="text-xs text-[#0e2148]/40 mt-1">Enter your existing LLC's full name, including LLC at the end.</p>
         </div>
 
-        <!-- Manual SCC availability check -->
-        <div class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-xl p-4">
+        <!-- Automatic SCC availability check (new LLC names only) -->
+        <div id="auto-check-section" class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-xl p-4 {% if skip_llc_formation %}hidden{% endif %}">
             <p class="text-sm font-semibold text-[#0e2148] mb-1">🔍 Check if your name is available:</p>
-            <p class="text-xs text-[#0e2148]/60 mb-3">Virginia requires all LLC names to be unique.</p>
+            <p class="text-xs text-[#0e2148]/60 mb-3">Virginia requires all LLC names to be unique. We'll check the SCC's live records for you.</p>
+            <button type="button" id="auto-check-btn"
+                hx-post="/dashboard/orders/{{ order_id }}/name-check"
+                hx-include="#business_name"
+                hx-vals='{"csrf_token":"{{ csrf_token }}"}'
+                hx-target="#name-check-result"
+                hx-swap="innerHTML"
+                hx-indicator="#name-check-spinner"
+                hx-disabled-elt="this"
+                class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2 disabled:opacity-60">
+                Check availability now →
+            </button>
+            <p id="name-check-spinner" class="htmx-indicator text-xs text-[#0e2148]/60 text-center">Checking with the Virginia SCC - usually a few seconds, occasionally up to 30…</p>
+            <div id="name-check-result" aria-live="polite"></div>
+            <p class="text-xs text-[#0e2148]/50 mt-2">
+                Prefer to look yourself?
+                <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank" rel="noopener" class="underline">Check on Virginia SCC →</a>
+            </p>
+        </div>
+
+        <!-- Manual SCC availability check (existing-LLC path keeps just the link) -->
+        <div id="manual-check-section" class="bg-[#FAF8F3] border border-[#0e2148]/10 rounded-xl p-4 {% if not skip_llc_formation %}hidden{% endif %}">
+            <p class="text-sm font-semibold text-[#0e2148] mb-1">🔍 Look up your LLC on Virginia SCC:</p>
             <a href="https://cis.scc.virginia.gov/Account/NameCheckAvailability" target="_blank" rel="noopener"
                 class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2">
                 Check on Virginia SCC →
             </a>
-            <p class="text-xs text-[#0e2148]/50">Search for your chosen name — if no results appear it's available!</p>
         </div>
 
         <label class="flex items-start gap-3 cursor-pointer group">
@@ -144,7 +165,18 @@
         const skip = document.getElementById('skip_llc_formation').checked;
         document.getElementById('existing-llc-section').classList.toggle('hidden', !skip);
         document.getElementById('new-llc-section').classList.toggle('hidden', skip);
+        document.getElementById('auto-check-section').classList.toggle('hidden', skip);
+        document.getElementById('manual-check-section').classList.toggle('hidden', !skip);
     }
+    // "Use this name" buttons inside the automatic check's result (names travel in
+    // data-name, never inline JS, so a name can't break out of an attribute).
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-use-name]');
+        if (!btn) return;
+        document.getElementById('business_name').value = btn.dataset.useName;
+        document.getElementById('name-check-result').innerHTML = '';
+        document.getElementById('business_name').focus();
+    });
     function pickName(name) {
         document.getElementById('skip_llc_formation').checked = false;
         toggleExistingLLC();

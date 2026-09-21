@@ -1,0 +1,144 @@
+<!-- Free, automatic Virginia SCC name-availability check for visitors who haven't paid.
+     POSTs to /api/name-check, which checks the SCC live, records the lead, and emails
+     the result with a button to continue. Included by index.html and the done-for-you page. -->
+<div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6" id="name-check">
+    <h2 class="text-lg sm:text-xl font-bold text-[#0e2148] mb-1">Is your business name available in Virginia?</h2>
+    <p class="text-sm text-[#0e2148]/60 mb-4">Check it against the Virginia SCC's live records in seconds - free. We'll email you the result.</p>
+
+    <form id="nc-form" novalidate class="space-y-3">
+        <div>
+            <label for="nc-name" class="block text-xs text-[#0e2148]/55 mb-1.5">Business name *</label>
+            <input id="nc-name" type="text" maxlength="120" autocomplete="off" placeholder="e.g. Apex Federal Advisors LLC"
+                style="font-size:16px"
+                class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
+            <p id="nc-name-error" class="text-red-500 text-xs mt-1 hidden"></p>
+        </div>
+        <div>
+            <label for="nc-email" class="block text-xs text-[#0e2148]/55 mb-1.5">Where should we send the result? *</label>
+            <input id="nc-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com"
+                style="font-size:16px"
+                class="w-full bg-white rounded-xl p-3 text-[#0e2148] placeholder-[#0e2148]/30 border border-[#0e2148]/20 focus:border-[#c9a227] focus:outline-none text-sm"/>
+            <p id="nc-email-error" class="text-red-500 text-xs mt-1 hidden"></p>
+        </div>
+        <!-- Honeypot: real visitors never see or fill this. -->
+        <div aria-hidden="true" style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden;">
+            <label for="nc-website">Website</label>
+            <input id="nc-website" type="text" tabindex="-1" autocomplete="off"/>
+        </div>
+        <button type="submit" id="nc-submit"
+            class="w-full bg-[#0e2148] hover:bg-[#0e2148]/90 disabled:opacity-60 text-white font-semibold py-3.5 rounded-full text-base transition">
+            Check availability →
+        </button>
+        <p class="text-center text-xs text-[#0e2148]/45">
+            We'll email your result and may follow up about finishing your LLC - unsubscribe any time.
+            Availability isn't guaranteed until the SCC accepts your filing.
+        </p>
+    </form>
+
+    <p id="nc-working" class="hidden text-sm text-[#0e2148]/60 text-center mt-4">Checking with the Virginia SCC - usually a few seconds, occasionally up to 30…</p>
+    <p id="nc-error" class="hidden text-sm text-red-600 mt-4"></p>
+    <div id="nc-result" class="hidden mt-4" aria-live="polite"></div>
+</div>
+
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const form = $('nc-form'), submit = $('nc-submit'), resultEl = $('nc-result');
+    if (!form) return;
+
+    function track(name, params) { try { if (typeof gtag !== 'undefined') gtag('event', name, params || {}); } catch (e) {} }
+    function show(el, text) { el.textContent = text; el.classList.remove('hidden'); }
+    function clearErrors() {
+        ['nc-name-error', 'nc-email-error', 'nc-error'].forEach((id) => { $(id).classList.add('hidden'); $(id).textContent = ''; });
+    }
+    function el(tag, cls, text) {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text !== undefined) n.textContent = text;
+        return n;
+    }
+
+    function startUrl() {
+        // Carry over whatever the visitor already entered on the hero form.
+        const idea = localStorage.getItem('lb_business_idea') || '';
+        const ra = localStorage.getItem('lb_ra_choice') || 'self';
+        return '/start?idea=' + encodeURIComponent(idea) + '&ra=' + encodeURIComponent(ra) + '&utm_source=name_check&utm_medium=site';
+    }
+
+    function render(data, email) {
+        resultEl.replaceChildren();
+        const box = el('div', 'rounded-xl border p-4 text-sm');
+        let cta = 'Start my LLC →';
+        if (data.status === 'AVAILABLE') {
+            box.classList.add('bg-green-50', 'border-green-200', 'text-green-800');
+            const p = el('p'); p.append('✅ ', el('strong', '', data.name), ' looks available on the Virginia SCC right now.');
+            box.append(p, el('p', 'text-xs mt-1', "Names aren't held for anyone until an LLC is filed, so it's worth moving soon."));
+            cta = 'Claim this name - start my LLC →';
+        } else if (data.status === 'TAKEN') {
+            box.classList.add('bg-red-50', 'border-red-200', 'text-red-800');
+            const p = el('p'); p.append('❌ ', el('strong', '', data.name), " isn't available on the Virginia SCC.");
+            box.append(p);
+            if (data.conflicts && data.conflicts.length) box.append(el('p', 'text-xs mt-1', 'Already on file: ' + data.conflicts.join(', ')));
+            if (data.alternatives && data.alternatives.length) {
+                box.append(el('p', 'text-xs font-semibold text-[#0e2148] mt-3', 'These close variations are available right now:'));
+                const wrap = el('div', 'flex flex-wrap gap-2 mt-2');
+                data.alternatives.forEach((a) => wrap.append(el('span', 'text-xs bg-white border border-[#0e2148]/20 rounded-full px-3 py-1.5 text-[#0e2148]', a)));
+                box.append(wrap, el('p', 'text-xs mt-2', "You pick your final name right after checkout, and we re-verify it before filing."));
+                cta = 'Start my LLC with an available name →';
+            } else {
+                box.append(el('p', 'text-xs mt-1', 'Try a different name, or add a distinguishing word.'));
+            }
+        } else {
+            box.classList.add('bg-amber-50', 'border-amber-200', 'text-amber-800');
+            box.append(el('p', '', "⚠️ We couldn't reach the Virginia SCC just now."),
+                       el('p', 'text-xs mt-1', 'No problem - our team verifies every name with the SCC before filing anything.'));
+        }
+        resultEl.append(box);
+        resultEl.append(el('p', 'text-xs text-[#0e2148]/55 mt-3', "📧 We're emailing this result to " + email + '.'));
+        if (data.status !== 'TAKEN' || (data.alternatives && data.alternatives.length)) {
+            const a = el('a', 'mt-3 block text-center w-full bg-[#c9a227] hover:bg-[#b8860b] text-[#0e2148] font-bold py-3.5 rounded-full text-base transition shadow-md shadow-[#c9a227]/25', cta);
+            a.href = startUrl();
+            a.addEventListener('click', () => track('name_check_cta_click', { status: data.status }));
+            resultEl.append(a);
+            resultEl.append(el('p', 'text-center text-xs text-[#0e2148]/50 mt-2', '↩️ 100% refund until we file · ⏱️ Filed within 72 hours · 💳 $350 flat'));
+        }
+        resultEl.classList.remove('hidden');
+    }
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        clearErrors(); resultEl.classList.add('hidden');
+        const name = $('nc-name').value.trim(), email = $('nc-email').value.trim();
+        if (!name) { show($('nc-name-error'), 'Please enter a business name.'); $('nc-name').focus(); return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { show($('nc-email-error'), 'Enter a valid email address.'); $('nc-email').focus(); return; }
+
+        submit.disabled = true; $('nc-working').classList.remove('hidden');
+        track('name_check_submitted');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 75000);  // the SCC can be slow; don't spin forever
+        try {
+            const resp = await fetch('/api/name-check', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
+                body: JSON.stringify({ name: name, email: email, lead_id: localStorage.getItem('lb_lead_id') || '', website: $('nc-website').value }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.ok) {
+                if (data.field === 'name') show($('nc-name-error'), data.error);
+                else if (data.field === 'email') show($('nc-email-error'), data.error);
+                else show($('nc-error'), data.error || 'Something went wrong - please try again.');
+                return;
+            }
+            if (data.lead_id) localStorage.setItem('lb_lead_id', data.lead_id);
+            track('name_check_result', { status: data.status });
+            render(data, data.emailed_to || email);
+        } catch (err) {
+            show($('nc-error'), err && err.name === 'AbortError'
+                ? 'The Virginia SCC is responding slowly right now - please try again in a minute. (Our team verifies every name before filing either way.)'
+                : 'We could not reach our server - please check your connection and try again.');
+        } finally {
+            clearTimeout(timer);
+            submit.disabled = false; $('nc-working').classList.add('hidden');
+        }
+    });
+})();
+</script>
