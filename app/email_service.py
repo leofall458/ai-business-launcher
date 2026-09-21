@@ -21,7 +21,7 @@ from urllib.parse import quote
 
 from app.config import (
     GMAIL_USER, GMAIL_APP_PASSWORD, SUPPORT_EMAIL,
-    LLC_FORMATION_PRICE_CENTS,
+    LLC_FORMATION_PRICE_CENTS, EMAIL_REVIEW_COPY,
 )
 from app.dashboard_auth import create_magic_link
 
@@ -29,7 +29,7 @@ FROM_NAME = "Launch Bridge LLC"
 
 def _send(to_email: str, subject: str, body: str, html_body: str = None,
           attachment_path: str = None, attachment_filename: str = None,
-          attachment_bytes: bytes = None) -> bool:
+          attachment_bytes: bytes = None, bcc: str = None) -> bool:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         print(f"⚠️ Gmail credentials not configured - skipping email '{subject}' to {to_email}")
         return False
@@ -40,6 +40,8 @@ def _send(to_email: str, subject: str, body: str, html_body: str = None,
     msg["Subject"] = subject
     msg["From"] = f"{FROM_NAME} <{GMAIL_USER}>"
     msg["To"] = to_email
+    if bcc:
+        msg["Bcc"] = bcc  # smtplib delivers to it, then strips the header
     msg.set_content(body)
     if html_body:
         msg.add_alternative(html_body, subtype="html")
@@ -806,7 +808,9 @@ def send_name_check_result_email(email: str, result: dict, start_url: str = NAME
         "<p>Hi there,</p>" + lead_html + included_html + fine_print_html,
         cta_text=cta, cta_url=start_url,
     )
-    sent = _send(email, subject, body, html_body=html_body)
+    # Internal review copy (skipped when the visitor IS the review address, so it isn't delivered twice).
+    review_copy = EMAIL_REVIEW_COPY if EMAIL_REVIEW_COPY and EMAIL_REVIEW_COPY.lower() != email.lower() else None
+    sent = _send(email, subject, body, html_body=html_body, bcc=review_copy)
     if sent:
         local, _, domain = email.partition("@")
         print(f"\U0001F4E7 name-check result email ({status}) sent to {local[:2]}***@{domain}")
