@@ -15,7 +15,7 @@ from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -63,8 +63,11 @@ from app.log_scrub import scrub_ssn
 from app.validators import (
     validate_business_idea, validate_step4_details, validate_post_payment_intake,
     validate_ssn, normalize_ssn, CHECKOUT_VALIDATED_FIELDS, POST_PAYMENT_VALIDATED_FIELDS,
+    validate_email,
 )
+from app.name_check_flow import check_name_with_alternatives, normalize_input_name
 from app.email_service import (
+    send_name_check_result_email,
     send_order_received_email,
     send_early_assets_email,
     send_llc_filed_email,
@@ -769,7 +772,80 @@ async def api_capture_lead(request: Request):
     return {"ok": True, "lead_id": lead_id}
 
 
-# Note: name checking is now handled in /dashboard/orders/{id}/name (Step 3)
+# ── Name check (pre-payment) ────────────────────────────────────────────────
+# Unauthenticated and it sends email, so it is throttled per IP and - more
+# tightly - per address, otherwise it could be used to pester someone else's
+# inbox or to hammer the SCC through us.
+NAME_CHECK_PUBLIC_IP_WINDOW = datetime.timedelta(hours=1)
+NAME_CHECK_PUBLIC_IP_LIMIT = 10
+NAME_CHECK_PUBLIC_EMAIL_WINDOW = datetime.timedelta(hours=24)
+NAME_CHECK_PUBLIC_EMAIL_LIMIT = 3
+
+@app.post("/api/name-check")
+async def api_name_check(request: Request, background_tasks: BackgroundTasks):
+    """Automatic Virginia SCC availability check for a visitor who hasn't paid:
+    checks the name live against SCC (plus available alternatives if it's
+    taken), records/updates their lead, and emails them the result with a
+    button to continue into the product (see app/name_check_flow.py and
+    send_name_check_result_email)."""
+    generic_error = {"ok": False, "error": "Something went wrong - please try again."}
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(generic_error, status_code=400)
+    if not isinstance(data, dict) or (data.get("website") or "").strip():  # hidden honeypot field
+        return JSONResponse(generic_error, status_code=400)
+
+    raw_name = str(data.get("name") or "")[:120]
+    email = str(data.get("email") or "").strip().lower()[:254]
+    lead_id = str(data.get("lead_id") or "").strip()[:64]
+    loop = asyncio.get_event_loop()
+
+    _, name_error = sanitize_business_name(normalize_input_name(raw_name))
+    if name_error:
+        return JSONResponse({"ok": False, "error": name_error, "field": "name"}, status_code=400)
+    email_error = await loop.run_in_executor(None, validate_email, email)
+    if email_error:
+        return JSONResponse({"ok": False, "error": email_error, "field": "email"}, status_code=400)
+
+    if (_rate_limited("name_check_public_ip", "ip", get_client_ip(request), NAME_CHECK_PUBLIC_IP_WINDOW, NAME_CHECK_PUBLIC_IP_LIMIT)
+            or _rate_limited("name_check_public_email", "email", email, NAME_CHECK_PUBLIC_EMAIL_WINDOW, NAME_CHECK_PUBLIC_EMAIL_LIMIT)):
+        return JSONResponse({
+            "ok": False, "rate_limited": True,
+            "error": "You've checked a few names already - please try again later, or start your LLC and we'll verify your name for you.",
+        }, status_code=429)
+
+    result = await loop.run_in_executor(None, check_name_with_alternatives, raw_name)
+    if not result.get("ok"):
+        return JSONResponse({"ok": False, "error": result.get("error") or generic_error["error"], "field": "name"}, status_code=400)
+
+    # Lead capture is best-effort - a Firestore hiccup must never cost the visitor their result.
+    try:
+        lead_update = {
+            "email": email, "desired_name": result["name"], "name_check_status": result["status"],
+            "name_check_at": firestore.SERVER_TIMESTAMP, "app_env": APP_ENV, "source": "name_checker",
+        }
+        existing = LEADS.document(lead_id) if lead_id else None
+        if existing is not None and existing.get().exists:
+            existing.set(lead_update, merge=True)
+            lead_id = existing.id
+        else:
+            ref = LEADS.document()
+            ref.set({**lead_update, "landing_page": "name-check", "converted": False})
+            lead_id = ref.id
+    except Exception as e:
+        print(f"⚠️ Could not save name-check lead: {e}")
+        lead_id = ""
+
+    background_tasks.add_task(send_name_check_result_email, email, result)
+
+    return {
+        "ok": True, "lead_id": lead_id, "emailed_to": email,
+        **{k: result[k] for k in ("name", "status", "available", "message", "conflicts", "alternatives")},
+    }
+
+# Note: name checking after payment is handled in /dashboard/orders/{id}/name (Step 3),
+# including the inline check at /dashboard/orders/{id}/name-check.
 
 def parse_step4_details(form: dict) -> dict:
     """Pulls derived fields out of Step 4 (personal info): full_name and the
@@ -3059,6 +3135,40 @@ async def dashboard_update_idea(request: Request, owned: tuple = Depends(get_own
     return templates.TemplateResponse(request, "_name_ideas_chips.html", {
         "name_ideas": name_ideas,
     })
+
+NAME_CHECK_INLINE_RATE_WINDOW = datetime.timedelta(hours=1)
+NAME_CHECK_INLINE_RATE_LIMIT = 15
+
+@app.post("/dashboard/orders/{order_id}/name-check", response_class=HTMLResponse)
+async def dashboard_name_check(request: Request, owned: tuple = Depends(get_owned_order)):
+    """Step 3's inline "Check availability" button - runs the same automatic
+    SCC check as the public widget and shows the customer the answer right
+    there (with available alternatives if taken), instead of only sending
+    them off to SCC's own site to search by hand. Purely informational: the
+    self-certification checkbox and our own pre-filing verification still gate
+    the actual filing."""
+    order_ref, order, customer_id = owned
+    order_id = order_ref.id
+    session_id = request.cookies.get(DASHBOARD_SESSION_COOKIE, "")
+
+    form = await request.form()
+    if not verify_csrf_token(session_id, (form.get("csrf_token") or "").strip()):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+
+    raw_name = (form.get("business_name") or "").strip()[:120]
+    _, name_error = sanitize_business_name(normalize_input_name(raw_name))
+    if name_error:
+        return templates.TemplateResponse(request, "_name_check_inline_result.html", {"error": name_error})
+    if _rate_limited("scc_name_check_inline_requests", "order_id", order_id, NAME_CHECK_INLINE_RATE_WINDOW, NAME_CHECK_INLINE_RATE_LIMIT):
+        return templates.TemplateResponse(request, "_name_check_inline_result.html", {
+            "error": "You've run several checks in the last hour - please wait a bit, or check on the SCC's site below.",
+        })
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, check_name_with_alternatives, raw_name)
+    if not result.get("ok"):
+        return templates.TemplateResponse(request, "_name_check_inline_result.html", {"error": result.get("error")})
+    return templates.TemplateResponse(request, "_name_check_inline_result.html", {"result": result})
 
 @app.post("/dashboard/orders/{order_id}/name", response_class=HTMLResponse)
 async def dashboard_name_submit(request: Request, owned: tuple = Depends(get_owned_order)):

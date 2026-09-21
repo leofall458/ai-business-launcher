@@ -13,6 +13,7 @@ either, and the dark-blue-header/white-card/CTA-button/footer chrome looks
 the same across all of them.
 """
 
+import html as _html_lib
 import smtplib
 import mimetypes
 from email.message import EmailMessage
@@ -706,3 +707,107 @@ def send_everything_complete_email(order: dict, order_id: str):
     )
     html = _wrap_html(html_inner, cta_text="View Your Dashboard", cta_url=url)
     _send(email, f"🚀 {business_name} is Ready for Business!", body, html_body=html)
+
+
+NAME_CHECK_START_URL = (
+    "https://launchbridge.ai/start?utm_source=name_check&utm_medium=email&utm_campaign=result"
+)
+
+def send_name_check_result_email(email: str, result: dict, start_url: str = NAME_CHECK_START_URL) -> bool:
+    """Emails a visitor the outcome of their pre-payment Virginia SCC name check
+    (see app/name_check_flow.py) with a button to continue into the product.
+
+    Sent because they asked for the result, so it leads with the result and
+    stays factual: names are not reserved until the LLC is actually filed (the
+    only urgency stated), and availability is informational - SCC makes the
+    final call at filing. `result` is check_name_with_alternatives' dict; every
+    value in it is HTML-escaped here since the name is visitor-supplied."""
+    if not email:
+        return False
+    esc = _html_lib.escape
+    name = result.get("name") or "your business name"
+    status = result.get("status") or "UNAVAILABLE"
+    alternatives = result.get("alternatives") or []
+    conflicts = result.get("conflicts") or []
+    price = LLC_FORMATION_PRICE_CENTS // 100
+
+    included_txt = (
+        f"Launch Bridge forms your Virginia LLC for ${price} flat (the $100 state filing fee is included):\n"
+        "  - We prepare and file your Articles of Organization\n"
+        "  - We apply for your federal EIN\n"
+        "  - Brand kit and a professional website\n"
+        "100% refund until we file. Filed within 72 hours.\n"
+    )
+    included_html = (
+        f"<p><strong>Launch Bridge forms your Virginia LLC for ${price} flat</strong> "
+        "(the $100 state filing fee is included):</p>"
+        "<ul style='margin:0 0 16px;padding-left:20px;'>"
+        "<li>We prepare and file your Articles of Organization</li>"
+        "<li>We apply for your federal EIN</li>"
+        "<li>Brand kit and a professional website</li>"
+        "</ul>"
+        "<p style='margin:0 0 8px;'>100% refund until we file. Filed within 72 hours.</p>"
+    )
+    fine_print_txt = (
+        "\nThis check reflects Virginia SCC's records at the moment we looked. A name isn't reserved for you "
+        "until your LLC is filed, and SCC makes the final determination when it reviews the filing.\n"
+    )
+    fine_print_html = (
+        "<p style='color:#6b7280;font-size:12px;margin-top:16px;'>This check reflects Virginia SCC's records at "
+        "the moment we looked. A name isn't reserved for you until your LLC is filed, and SCC makes the final "
+        "determination when it reviews the filing.</p>"
+    )
+
+    if status == "AVAILABLE":
+        subject = f"Good news - {name} is available in Virginia"
+        lead_txt = f'Good news: "{name}" is available on the Virginia SCC right now.\n\n'
+        lead_html = (
+            f"<p>Good news: <strong>{esc(name)}</strong> is <strong style='color:#15803d;'>available</strong> "
+            "on the Virginia SCC right now.</p>"
+            "<p>Names aren't held for anyone until an LLC is filed, so if you like it, it's worth "
+            "moving on it soon.</p>"
+        )
+        cta = "Claim my name - start my LLC \u2192"
+    elif status == "TAKEN":
+        subject = f"{name} isn't available - but these names are"
+        lead_txt = f'"{name}" isn\'t available on the Virginia SCC.\n'
+        lead_html = f"<p><strong>{esc(name)}</strong> isn't available on the Virginia SCC.</p>"
+        if conflicts:
+            lead_txt += "Already on file: " + ", ".join(conflicts) + "\n"
+            lead_html += f"<p style='color:#6b7280;'>Already on file: {esc(', '.join(conflicts))}</p>"
+        if alternatives:
+            lead_txt += "\nThese close variations are available right now:\n" + "".join(f"  - {a}\n" for a in alternatives)
+            lead_html += (
+                "<p><strong>These close variations are available right now:</strong></p>"
+                "<ul style='margin:0 0 16px;padding-left:20px;'>"
+                + "".join(f"<li>{esc(a)}</li>" for a in alternatives) + "</ul>"
+            )
+        lead_txt += "\nYou pick your final name right after checkout, and we re-verify it before filing.\n\n"
+        lead_html += "<p>You pick your final name right after checkout, and we re-verify it before filing.</p>"
+        cta = "Start my LLC with an available name \u2192"
+    else:
+        subject = f"Your Virginia name check for {name}"
+        lead_txt = (
+            f'We couldn\'t complete the automatic check for "{name}" just now - the SCC site was slow to respond.\n'
+            "That's fine: our team verifies every name with the SCC before filing anything.\n\n"
+        )
+        lead_html = (
+            f"<p>We couldn't complete the automatic check for <strong>{esc(name)}</strong> just now - "
+            "the SCC site was slow to respond.</p>"
+            "<p>That's fine: our team verifies every name with the SCC before filing anything.</p>"
+        )
+        cta = "Start my LLC \u2192"
+
+    body = (
+        "Hi there,\n\n" + lead_txt + included_txt + f"\nContinue here: {start_url}\n" + fine_print_txt +
+        "\nQuestions? Just reply to this email.\n\n- Launch Bridge LLC"
+    )
+    html_body = _wrap_html(
+        "<p>Hi there,</p>" + lead_html + included_html + fine_print_html,
+        cta_text=cta, cta_url=start_url,
+    )
+    sent = _send(email, subject, body, html_body=html_body)
+    if sent:
+        local, _, domain = email.partition("@")
+        print(f"\U0001F4E7 name-check result email ({status}) sent to {local[:2]}***@{domain}")
+    return sent

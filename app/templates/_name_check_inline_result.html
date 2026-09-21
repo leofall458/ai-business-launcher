@@ -1,0 +1,37 @@
+{# Result of the Step 3 "Check availability now" button (POST /dashboard/orders/{id}/name-check).
+   Names only ever appear as escaped text or in data-* attributes - never inline JS. #}
+{% if error %}
+<p class="mt-2 text-xs text-red-600">{{ error }}</p>
+{% elif result %}
+  {% if result.status == 'AVAILABLE' %}
+  <div class="mt-3 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+    <p>✅ <strong>{{ result.name }}</strong> looks available on the Virginia SCC right now.</p>
+    <p class="text-xs text-green-700 mt-1">If you're happy with it, use it below and tick the box to continue. We re-verify it before filing.</p>
+    <button type="button" data-use-name="{{ result.name }}"
+        class="mt-2 text-xs font-semibold underline text-green-800">Use this name</button>
+  </div>
+  {% elif result.status == 'TAKEN' %}
+  <div class="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+    <p>❌ <strong>{{ result.name }}</strong> isn't available on the Virginia SCC.</p>
+    {% if result.conflicts %}
+    <p class="text-xs text-red-700 mt-1">Already on file: {{ result.conflicts | join(', ') }}</p>
+    {% endif %}
+    {% if result.alternatives %}
+    <p class="text-xs font-semibold text-[#0e2148] mt-3">These close variations are available right now:</p>
+    <div class="flex flex-wrap gap-2 mt-2">
+      {% for alt in result.alternatives %}
+      <button type="button" data-use-name="{{ alt }}"
+          class="text-xs bg-white border border-[#0e2148]/20 hover:border-[#c9a227] rounded-full px-3 py-1.5 text-[#0e2148] transition">{{ alt }}</button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-red-700 mt-1">Try a different name, or add a distinguishing word.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+    <p>⚠️ We couldn't reach the Virginia SCC just now.</p>
+    <p class="text-xs mt-1">Try again in a moment, or check on the SCC's site below. Either way, our team verifies your name before filing.</p>
+  </div>
+  {% endif %}
+{% endif %}
