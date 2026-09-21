@@ -40,6 +40,11 @@ def _log_attempt(message: str, success: bool, error: str = None) -> None:
     try:
         if _log_client is None:
             _log_client = firestore.Client(project=FIREBASE_PROJECT_ID)
+        # Bounded, no retries: this runs synchronously right after the SMTP
+        # send inside whatever payment/filing task raised the alert, so a
+        # stalled Firestore write must cost that task seconds, not minutes.
+        # A log line that's occasionally dropped is fine; a stuck filing
+        # isn't.
         _log_client.collection(SMS_LOG_COLLECTION).add({
             "message": message,
             "success": success,
@@ -47,7 +52,7 @@ def _log_attempt(message: str, success: bool, error: str = None) -> None:
             "admin_phone_email": ADMIN_PHONE_EMAIL,
             "app_env": APP_ENV,
             "sent_at": datetime.datetime.now(datetime.timezone.utc),
-        })
+        }, retry=None, timeout=5.0)
     except Exception as e:
         # Logging the attempt must never be why the attempt itself looks
         # like it crashed the caller.

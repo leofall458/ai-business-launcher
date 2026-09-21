@@ -13,10 +13,25 @@ MODEL = "gemini-2.5-flash"
 # and everything else stay up as normal. Checked at the top of POST /start
 # (the only place a new Stripe Checkout Session gets created) and passed to
 # start.html to disable the Pay button itself, so a customer isn't left
-# submitting into a silent no-op. Defaults on; flip via the PAYMENTS_ENABLED
-# env var (Cloud Run service update, no rebuild needed) rather than editing
-# this default, so re-enabling never needs a redeploy.
+# submitting into a silent no-op.
+#
+# Two independent inputs, and payments are open only if BOTH allow it (see
+# resolve_payments_enabled below) - so either one can always close them:
+#   - PAYMENTS_ENABLED (this env var, Cloud Run service update, no rebuild):
+#     the hard override. "false" closes payments no matter what the flag says.
+#   - system_config/flags.payments_enabled in Firestore: the live toggle the
+#     local admin app flips without any redeploy.
+# Defaults on.
 PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() != "false"
+
+
+def resolve_payments_enabled(flag_value) -> bool:
+    """The one definition of "are new payments open", shared by app/main.py
+    and launch_bridge_admin.py so they can never disagree. flag_value is the
+    Firestore flag (None = the flag document/field doesn't exist yet, which
+    counts as open); the PAYMENTS_ENABLED env var can only ever close things
+    further, never re-open a flag that was closed."""
+    return PAYMENTS_ENABLED and (True if flag_value is None else bool(flag_value))
 
 # "staging" picks up the _STAGING-suffixed Secret Manager entries (test-mode
 # Stripe keys, a separate webhook signing secret) instead of the production
@@ -70,6 +85,11 @@ DAILY_METRICS_COLLECTION = "staging_daily_metrics" if APP_ENV == "staging" else 
 # logged here instead so a dropped alert is visible without digging through
 # logs. Same staging isolation as the collections above.
 SMS_LOG_COLLECTION = "staging_sms_log" if APP_ENV == "staging" else "sms_log"
+
+# Holds the payments kill-switch flag document (see PAYMENTS_ENABLED above).
+# Staging-prefixed like every collection above so closing payments on prod
+# from the admin app can never close staging checkout, or the reverse.
+SYSTEM_CONFIG_COLLECTION = "staging_system_config" if APP_ENV == "staging" else "system_config"
 
 GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")

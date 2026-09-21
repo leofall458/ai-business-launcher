@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from jinja2 import Environment, FileSystemLoader
 from google.genai import types
@@ -17,6 +18,14 @@ TEMPLATE_FILES = {
 
 # Used whenever color_preference is "default" - each template has its own
 # baked-in look, not an AI-invented palette.
+_HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
+
+def _is_hex_color(value) -> bool:
+    """Custom colors are interpolated verbatim into the generated site's CSS,
+    so only a plain #RRGGBB is trusted - anything else falls back to the
+    template's own default rather than reaching the stylesheet."""
+    return isinstance(value, str) and _HEX_COLOR_RE.fullmatch(value.strip()) is not None
+
 TEMPLATE_DEFAULT_COLORS = {
     "professional": ("#0e2148", "#c9a227"),
     "local": ("#d97706", "#78350f"),
@@ -216,8 +225,11 @@ CONTENT_SCHEMA = {
         },
         "primary_color": {"type": "STRING", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Hex color code, e.g. #1A4D8F"},
         "secondary_color": {"type": "STRING", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "Hex color code, e.g. #F2A93B"},
+        "booking_intro": {"type": "STRING", "description": "2-3 sentences explaining how a prospective customer books/gets started with this specific business and what to expect from reaching out. Must NOT state or imply any specific price, dollar amount, or rate - the business owner hasn't set pricing yet, so inventing a number would be actively misleading to a real customer."},
+        "testimonial_invite_heading": {"type": "STRING", "description": "A short (3-6 word), warm heading for a section inviting a brand-new business's very first clients to share their experience later - e.g. 'Be Our First Story'. This business has NO clients/reviews yet."},
+        "testimonial_invite_subtext": {"type": "STRING", "description": "1-2 sentences inviting early clients to submit a testimonial once they've had a session. Must NOT contain any fabricated quote, review, client name, or made-up testimonial text - only an honest invitation, since none exist yet."},
     },
-    "required": ["tagline", "hero_subheadline", "about_text", "differentiators", "services", "why_choose_us", "cta_text", "faq", "primary_color", "secondary_color"]
+    "required": ["tagline", "hero_subheadline", "about_text", "differentiators", "services", "why_choose_us", "cta_text", "faq", "primary_color", "secondary_color", "booking_intro", "testimonial_invite_heading", "testimonial_invite_subtext"]
 }
 
 def generate_website_content(business_name: str, business_idea: str, target_customer: str) -> dict:
@@ -251,6 +263,13 @@ def generate_website_content(business_name: str, business_idea: str, target_cust
       "Get a Quote", "Reserve Your Spot" - pick or invent whatever fits best)
     - 4-5 FAQ questions a real prospective customer of this business would actually ask, with answers
     - A primary/secondary hex color pair that fits the business's vibe
+    - A short booking_intro (2-3 sentences) explaining how someone books/gets started, and what to
+      expect from reaching out. This business has not set its pricing yet - do NOT state, imply, or
+      invent any specific price, dollar figure, or rate anywhere in this response.
+    - A testimonial_invite_heading and testimonial_invite_subtext inviting this brand-new business's
+      very first clients to share a testimonial once they've had a session. This business has ZERO
+      clients or reviews so far - do NOT invent a testimonial, quote, review, or client name anywhere
+      in this response; write only an honest, warm invitation for future clients to contribute one.
     """
 
     response = generate_content(
@@ -289,7 +308,8 @@ def render_website_html(content: dict, business_name: str,
                          service_area: str = "Virginia",
                          contact_phone: str = None, contact_email: str = None,
                          contact_address: str = None,
-                         logo_data_uri: str = None, favicon_data_uri: str = None) -> str:
+                         logo_data_uri: str = None, favicon_data_uri: str = None,
+                         testimonials: list = None) -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
     caller).
@@ -340,6 +360,10 @@ def render_website_html(content: dict, business_name: str,
         contact_address=contact_address,
         logo_data_uri=logo_data_uri,
         favicon_data_uri=favicon_data_uri,
+        booking_intro=content.get("booking_intro", ""),
+        testimonial_invite_heading=content.get("testimonial_invite_heading", ""),
+        testimonial_invite_subtext=content.get("testimonial_invite_subtext", ""),
+        testimonials=testimonials or [],
     )
 
 @instrumented(
@@ -360,12 +384,14 @@ def generate_website(
     instagram_url: str = None, facebook_url: str = None, tiktok_url: str = None,
     linkedin_url: str = None,
     color_preference: str = "default", custom_primary_color: str = None,
+    custom_secondary_color: str = None,
     payment_link_url: str = None, order_id: str = None, site_url: str = None,
     show_contact: bool = False, contact_phone: str = None,
     contact_email: str = None, contact_address: str = None,
     industry: str = None,
     logo_data_uri: str = None, favicon_data_uri: str = None,
     backdrop_image_choice: str = "",
+    testimonials: list = None,
 ) -> dict:
     """Top-level entry point used by main.py's asset generation step.
     Accepts every customer-provided customization field and fills any gap
@@ -373,6 +399,14 @@ def generate_website(
     Gemini-generated content, field by field rather than all-or-nothing.
     cta_text, faq, differentiators, and why_choose_us have no
     customer-provided equivalent, so Gemini is always called for those.
+
+    testimonials is deliberately customer/admin-provided only, never
+    Gemini-generated - a brand-new business has no real client quotes yet,
+    and inventing fabricated reviews attributed to fictitious people is not
+    something this pipeline does. Until real ones exist, the template shows
+    an honest invitation (testimonial_invite_heading/_subtext) with a form
+    that submits straight to the business owner via the existing /contact
+    route instead.
 
     logo_data_uri/favicon_data_uri are deliberately inputs here, not
     generated internally - the logo should stay stable across repeated
@@ -424,9 +458,10 @@ def generate_website(
 
     if color_preference == "brand_kit":
         primary_color, secondary_color = ai_content["primary_color"], ai_content["secondary_color"]
-    elif color_preference == "custom" and custom_primary_color:
+    elif color_preference == "custom" and _is_hex_color(custom_primary_color):
         _, default_secondary = TEMPLATE_DEFAULT_COLORS[template_name]
-        primary_color, secondary_color = custom_primary_color, default_secondary
+        primary_color = custom_primary_color.strip()
+        secondary_color = custom_secondary_color.strip() if _is_hex_color(custom_secondary_color) else default_secondary
     else:
         primary_color, secondary_color = TEMPLATE_DEFAULT_COLORS[template_name]
 
@@ -441,6 +476,9 @@ def generate_website(
         "faq": ai_content["faq"],
         "primary_color": primary_color,
         "secondary_color": secondary_color,
+        "booking_intro": ai_content.get("booking_intro", ""),
+        "testimonial_invite_heading": ai_content.get("testimonial_invite_heading", ""),
+        "testimonial_invite_subtext": ai_content.get("testimonial_invite_subtext", ""),
     }
 
     # Generated once, the first time a website is generated for this order
@@ -451,7 +489,7 @@ def generate_website(
     # regenerating. generated_logo is returned below so the first caller
     # can persist it for all future calls to reuse.
     generated_logo = None
-    if logo_data_uri is None:
+    if not logo_data_uri:
         logo_variations = generate_logo_variations(business_name, primary_color, secondary_color, industry)
         favicon_svg = generate_favicon_svg(business_name, primary_color)
         logo_data_uri = svg_to_data_uri(logo_variations["horizontal"])
@@ -485,6 +523,7 @@ def generate_website(
         contact_address=(contact_address or "").strip() or None,
         logo_data_uri=logo_data_uri,
         favicon_data_uri=favicon_data_uri,
+        testimonials=testimonials or [],
     )
 
     return {"html": html, "template": template_name, "content": content, "generated_logo": generated_logo}

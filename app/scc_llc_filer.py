@@ -289,6 +289,22 @@ def verify_name_before_filing(business_name: str) -> dict:
         return {"available": None, "message": f"Could not verify: {e}"}
 
 
+def _find_logged_in_cis_page(context):
+    """Reuses an already-authenticated CIS tab if one is open in this
+    browser (e.g. a human logged in manually to hand off the session)
+    instead of opening a second tab and logging in again with
+    SCC_USERNAME/SCC_PASSWORD - CIS enforces one active session per
+    account and rejects a second concurrent login with "This account
+    has an active session in progress," which fails the filing outright
+    (confirmed live: a human tab left logged in caused exactly this)."""
+    for p in context.pages:
+        try:
+            if "cis.scc.virginia.gov" in p.url and "Hi," in p.inner_text("body"):
+                return p
+        except Exception:
+            continue
+    return None
+
 def file_llc_on_scc(customer_data: dict, interactive=True):
     business_name = customer_data["business_name"]
     first_name = customer_data["first_name"]
@@ -324,26 +340,30 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(CDP_URL)
         context = browser.contexts[0]
-        page = context.new_page()
 
-        # Log in with real browser (CDP-connected, not a fresh automated
-        # Chromium) so SCC's bot detection doesn't block the login attempt.
-        print("📌 Logging into SCC...")
-        page.goto("https://cis.scc.virginia.gov/Account/Login")
-        page.wait_for_load_state("networkidle")
-        if page.locator('#txtUsername').count() > 0:
-            page.fill('#txtUsername', SCC_USERNAME)
-            page.fill('#txtPassword', SCC_PASSWORD)
-            page.click('#Login')
+        page = _find_logged_in_cis_page(context)
+        if page is not None:
+            print("✅ Reusing already-logged-in SCC tab")
+        else:
+            page = context.new_page()
+            # Log in with real browser (CDP-connected, not a fresh automated
+            # Chromium) so SCC's bot detection doesn't block the login attempt.
+            print("📌 Logging into SCC...")
+            page.goto("https://cis.scc.virginia.gov/Account/Login")
             page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
+            if page.locator('#txtUsername').count() > 0:
+                page.fill('#txtUsername', SCC_USERNAME)
+                page.fill('#txtPassword', SCC_PASSWORD)
+                page.click('#Login')
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
 
-        if "Hi," not in page.inner_text("body"):
-            print("❌ Login failed - check SCC_USERNAME/SCC_PASSWORD in .env")
-            page.screenshot(path="/tmp/scc_login_failed.png")
-            browser.close()
-            return False
-        print("✅ Logged into SCC")
+            if "Hi," not in page.inner_text("body"):
+                print("❌ Login failed - check SCC_USERNAME/SCC_PASSWORD in .env")
+                page.screenshot(path="/tmp/scc_login_failed.png")
+                browser.close()
+                return False
+            print("✅ Logged into SCC")
 
         # Step 1
         print("📌 Step 1: Virginia Entity...")
@@ -511,8 +531,10 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
             # registered SCC agent, so this is a search-and-select against the
             # existing agent search rather than the Create Individual RA flow -
             # selecting from search results sets the RA's address from SCC's
-            # own records (Falls Church, VA per SCC - no address entry or
-            # address-verification step on this path).
+            # own records (Falls Church, VA per SCC). That address can still
+            # trigger SCC's own Address Verification dialog on the next
+            # click_next (see the handling right before Principal Office
+            # Address below) - it's just prefilled rather than user-entered.
             print("📌 Searching for existing RA (Randolph Law, PLLC)...")
             page.wait_for_selector('#rdnNewLLCFormation_Entity', timeout=15000)
             js_check(page, '#rdnNewLLCFormation_Entity')
@@ -546,6 +568,66 @@ def file_llc_on_scc(customer_data: dict, interactive=True):
         print("📌 Going to Principal Office Address...")
         click_next(page)
         page.wait_for_timeout(3000)
+
+        # The professional-RA path (registered_agent_choice != "self") was
+        # assumed above to have "no address entry or address-verification
+        # step" - selecting an existing agent was believed to just reuse
+        # SCC's own address for that agent's record. Confirmed live
+        # (2026-09-20, Randolph Law PLLC / Whispering Tails LLC filing) that
+        # this click_next can *also* surface an Address Verification dialog
+        # for the RA's on-file address, same as every other transition in
+        # this wizard - it just uses a third checkbox ID
+        # (#StatutoryAgentModal_PrincipalAddessVerifiedAddress) that's
+        # distinct from both the "create agent" modal's checkbox and the
+        # Principal Office Address section's own one below. Left unhandled,
+        # it silently blocks every click on the page underneath it until
+        # the whole run times out - this must be cleared before attempting
+        # to fill the Principal Office Address fields at all.
+        # Professional-RA path only: the checkbox ID below belongs to the
+        # existing-agent panel, so on the self-RA path (whose own address
+        # dialogs are handled in the create-agent modal above and in the
+        # Principal Office Address section below) this would look for a
+        # checkbox that isn't there and wrongly treat a normal dialog as an
+        # unverifiable address.
+        if registered_agent_choice != "self" and "could not be verified" in page.inner_text("body").lower():
+            print("⚠️  Address Verification dialog appeared for the registered agent - checking 'Use this address'...")
+            resolved = resolve_address_verification(page, '#StatutoryAgentModal_PrincipalAddessVerifiedAddress')
+            if resolved:
+                print("✅ Registered agent address verified")
+            else:
+                print("❌ Address has no suggested match - SCC cannot verify it online.")
+                page.screenshot(path="/tmp/scc_ra_search_address_unverified.png")
+                if not interactive:
+                    print("Bailing out (non-interactive mode) - this address needs manual correction.")
+                    browser.close()
+                    return False
+                print("Press ENTER once resolved in the browser to continue...")
+                input()
+            page.wait_for_timeout(1000)
+            # Confirmed live (2026-09-20, second Whispering Tails LLC retry):
+            # dismissing the dialog does NOT complete the navigation the
+            # original click_next above was attempting - it leaves the page
+            # sitting back on "Update Registered Agent Information" with its
+            # own Next button, not on Principal Office Address. Without this
+            # second click_next, every fill_field call below targets fields
+            # that don't exist on the still-showing RA page and silently
+            # fails ("element not visible"), so Principal Office Address
+            # ends up submitted blank and SCC's own validation blocks the
+            # next step.
+            #
+            # Conditional, though: in interactive mode the operator may have
+            # resolved the dialog by hand and already pressed Next
+            # themselves, in which case a second click here would advance
+            # past (or submit blank) the Principal Office Address page.
+            # Only click if that page's first field still isn't showing.
+            principal_street = page.locator('#PrincipalOfficeAddress_StreetAddress1')
+            already_on_principal_office = principal_street.count() > 0 and principal_street.first.is_visible()
+            if already_on_principal_office:
+                print("✅ Already on Principal Office Address - not clicking Next again.")
+            else:
+                print("📌 Continuing to Principal Office Address...")
+                click_next(page)
+                page.wait_for_timeout(3000)
 
         fill_field(page, '#PrincipalOfficeAddress_StreetAddress1', street)
         fill_field(page, '#PrincipalOfficeAddress_Zip5', zipcode)
