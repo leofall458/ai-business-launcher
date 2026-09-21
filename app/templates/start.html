@@ -117,8 +117,15 @@
         </label>
         <span id="error-consent" class="text-red-500 text-xs mt-1 block"></span>
 
-        <button type="submit" id="pay-button" {% if not payments_enabled %}disabled{% endif %}
-            class="w-full bg-[#c9a227] {% if payments_enabled %}hover:bg-[#b8860b]{% else %}opacity-60 cursor-not-allowed{% endif %} text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
+        {# Only closed when the route explicitly says so - a render that forgets to pass payments_enabled must never silently disable checkout. #}
+        {% set payments_closed = payments_enabled is defined and not payments_enabled %}
+        {% if payments_closed %}
+        <p id="payments-paused-notice" role="status" class="text-center text-sm font-medium text-[#0e2148] bg-[#c9a227]/15 border border-[#c9a227]/40 rounded-lg px-4 py-3">
+            New orders are temporarily paused. Please check back shortly{% if support_email %} or email <a href="mailto:{{ support_email }}" class="underline">{{ support_email }}</a> and we'll help you directly{% endif %}.
+        </p>
+        {% endif %}
+        <button type="submit" id="pay-button" {% if payments_closed %}disabled aria-disabled="true"{% endif %}
+            class="w-full bg-[#c9a227] {% if payments_closed %}opacity-60 cursor-not-allowed{% else %}hover:bg-[#b8860b]{% endif %} text-[#0e2148] font-bold py-4 rounded-full text-lg shadow-md shadow-[#c9a227]/25 transition">
             💳 Pay ${{ "350" if preselected_ra_choice == "self" else "460" }} &amp; Launch My LLC →
         </button>
         <p class="text-center text-xs text-[#0e2148]/50">

@@ -8,6 +8,8 @@ import hmac
 import hashlib
 import asyncio
 import datetime
+import threading
+import time
 from urllib.parse import quote, unquote
 from google.cloud import firestore
 from fastapi import FastAPI, Request, BackgroundTasks, Form, Depends, HTTPException
@@ -22,7 +24,7 @@ from app.config import (
     APP_ENV, SUPPORT_EMAIL, GOOGLE_PLACES_API_KEY, GOOGLE_ANALYTICS_ID, CLARITY_ID, SAMPLE_WEBSITE_URL,
     STRIPE_PUBLISHABLE_KEY, PAGE_VIEWS_COLLECTION,
     AGENT_EVENTS_COLLECTION, ORDER_RUNS_COLLECTION, DAILY_METRICS_COLLECTION,
-    PAYMENTS_ENABLED,
+    SYSTEM_CONFIG_COLLECTION, resolve_payments_enabled,
 )
 from app.agents.name_agent import screen_business_name, generate_name_ideas
 from app.agents.category_agent import classify_business_category, CATEGORY_TAXONOMY, LOW_CONFIDENCE_THRESHOLD
@@ -109,14 +111,16 @@ AGENT_EVENTS = db.collection(AGENT_EVENTS_COLLECTION)
 ORDER_RUNS = db.collection(ORDER_RUNS_COLLECTION)
 DAILY_METRICS = db.collection(DAILY_METRICS_COLLECTION)
 
-# system_config/flags.payments_enabled is the live source of truth for the
-# payments kill switch - launch_bridge_admin.py (the local desktop admin
-# app) flips it directly in Firestore so pausing/resuming new checkout
-# never needs a redeploy. PAYMENTS_ENABLED (the env var, see app/config.py)
-# is only the fallback for the one-time case where that document doesn't
-# exist yet or Firestore itself is unreachable - keeping it as the
-# fallback (not a hardcoded True) means a Firestore hiccup can never
-# silently re-open payments that were deliberately closed.
+# The payments kill switch has two inputs and payments are open only if BOTH
+# allow it (see resolve_payments_enabled in app/config.py, the one shared
+# definition): the PAYMENTS_ENABLED env var (hard override, Cloud Run env
+# update) and system_config/flags.payments_enabled in Firestore, which
+# launch_bridge_admin.py (the local desktop admin app) flips so pausing/
+# resuming new checkout never needs a redeploy. Either can close payments
+# at any time; neither can re-open what the other closed. If Firestore is
+# unreachable, the last known value is kept (falling back to the env var
+# alone only if there is none), so a hiccup can never silently re-open
+# payments that were deliberately closed.
 _payments_enabled_cache = {"value": None, "checked_at": None}
 PAYMENTS_ENABLED_CACHE_SECONDS = 15
 
@@ -126,14 +130,63 @@ def payments_enabled() -> bool:
     if cached_at and (now - cached_at).total_seconds() < PAYMENTS_ENABLED_CACHE_SECONDS:
         return _payments_enabled_cache["value"]
     try:
-        doc = db.collection("system_config").document("flags").get()
-        value = bool(doc.to_dict().get("payments_enabled", PAYMENTS_ENABLED)) if doc.exists else PAYMENTS_ENABLED
+        doc = db.collection(SYSTEM_CONFIG_COLLECTION).document("flags").get()
+        flag = doc.to_dict().get("payments_enabled") if doc.exists else None
+        value = resolve_payments_enabled(flag)
     except Exception as e:
-        print(f"⚠️ Could not read system_config/flags (payments_enabled) - falling back to last known value: {e}")
-        value = _payments_enabled_cache["value"] if _payments_enabled_cache["value"] is not None else PAYMENTS_ENABLED
+        print(f"⚠️ Could not read {SYSTEM_CONFIG_COLLECTION}/flags (payments_enabled) - falling back to last known value: {e}")
+        value = _payments_enabled_cache["value"] if _payments_enabled_cache["value"] is not None else resolve_payments_enabled(None)
     _payments_enabled_cache["value"] = value
     _payments_enabled_cache["checked_at"] = now
     return value
+
+
+# Case-insensitive "which orders belong to this email" lookup. Firestore's ==
+# is case-sensitive, but order.email is whatever casing Stripe Checkout
+# captured, while customers type (and leads store) lowercase - so a plain
+# where("email", "==", ...) silently misses real orders. Rather than a full
+# ORDERS.stream() on every request (unbounded reads, and reachable by an
+# unauthenticated sign-in form), this keeps a small in-memory index of
+# lowercased email -> [(order_id, stored_email)], rebuilt from one
+# projection scan at most once per _ORDER_EMAIL_INDEX_TTL_SECONDS. A miss
+# may trigger one earlier rebuild (at most every _MIN_REFRESH seconds) so a
+# customer who only just paid isn't turned away by a slightly stale index.
+_ORDER_EMAIL_INDEX_TTL_SECONDS = 60
+_ORDER_EMAIL_INDEX_MIN_REFRESH_SECONDS = 5
+_order_email_index = {"map": None, "built_at": 0.0}
+_order_email_index_lock = threading.Lock()
+
+def _normalize_email(email) -> str:
+    return (email or "").strip().lower()
+
+def _rebuild_order_email_index() -> dict:
+    index = {}
+    for doc in ORDERS.select(["email"]).stream():
+        stored = (doc.to_dict() or {}).get("email")
+        key = _normalize_email(stored)
+        if key:
+            index.setdefault(key, []).append((doc.id, stored))
+    return index
+
+def find_orders_by_email(email) -> list:
+    """Returns [(order_id, stored_email), ...] for every order whose email
+    matches case-insensitively. Ids only - callers that need current order
+    state must re-read the documents, since the index can be up to a minute
+    old."""
+    key = _normalize_email(email)
+    if not key:
+        return []
+    with _order_email_index_lock:
+        age = time.monotonic() - _order_email_index["built_at"]
+        index = _order_email_index["map"]
+        stale = index is None or age > _ORDER_EMAIL_INDEX_TTL_SECONDS
+        if not stale and key not in index and age > _ORDER_EMAIL_INDEX_MIN_REFRESH_SECONDS:
+            stale = True
+        if stale:
+            index = _rebuild_order_email_index()
+            _order_email_index["map"] = index
+            _order_email_index["built_at"] = time.monotonic()
+        return list(index.get(key, []))
 
 # The one message every customer-facing error path collapses to - never
 # stack traces, HTTP codes, or raw exception/library text. Admins still see
@@ -1413,6 +1466,12 @@ async def stripe_activation_scheduler():
                 order = doc.to_dict()
                 if not order.get("stripe_connect_account_id") or order.get("payment_button_live"):
                     continue
+                # Custom-built sites can never be activated automatically (see
+                # check_and_update_website) - once the admin has been alerted
+                # to add the button by hand, there's nothing left for this
+                # sweep to do, so stop re-checking Stripe for them every hour.
+                if order.get("payment_button_manual_alert_sent"):
+                    continue
                 if not reached(order.get("state", "draft"), "ein_issued"):
                     continue
                 result = await loop.run_in_executor(None, check_and_update_website, doc.id)
@@ -1444,6 +1503,7 @@ async def abandoned_cart_scheduler():
             now = datetime.datetime.now(datetime.timezone.utc)
             one_hour_ago = now - datetime.timedelta(hours=1)
             twenty_four_hours_ago = now - datetime.timedelta(hours=24)
+            paid_emails = None  # built lazily, once per tick - not once per lead
             for doc in LEADS.where("converted", "==", False).stream():
                 lead = doc.to_dict()
                 lead_id = doc.id
@@ -1458,13 +1518,13 @@ async def abandoned_cart_scheduler():
                 # send an already-paying customer a needless "come back and
                 # finish" email - same root cause as the dashboard sign-in
                 # bug fixed above.
-                paid = next(
-                    (d for d in ORDERS.stream()
-                     if (d.to_dict().get("email") or "").strip().lower() == email
-                     and d.to_dict().get("state", "draft") != "draft"),
-                    None,
-                )
-                if paid:
+                if paid_emails is None:
+                    paid_emails = set()
+                    for d in ORDERS.select(["email", "state"]).stream():
+                        o = d.to_dict() or {}
+                        if o.get("state", "draft") != "draft":
+                            paid_emails.add(_normalize_email(o.get("email")))
+                if email in paid_emails:
                     LEADS.document(lead_id).set({"converted": True}, merge=True)
                     continue
                 step1_at = lead.get("step1_at")
@@ -1668,6 +1728,7 @@ def run_website_generation(order_id: str) -> dict:
             linkedin_url=order.get("linkedin_url", ""),
             color_preference=order.get("color_preference", "default"),
             custom_primary_color=order.get("custom_primary_color", ""),
+            custom_secondary_color=order.get("custom_secondary_color", ""),
             backdrop_image_choice=order.get("backdrop_image_choice", ""),
             payment_link_url=order.get("stripe_payment_link_url"),
             order_id=order_id,
@@ -1678,6 +1739,7 @@ def run_website_generation(order_id: str) -> dict:
             contact_address=order.get("website_contact_address", ""),
             logo_data_uri=order.get("logo_data_uri"),
             favicon_data_uri=order.get("favicon_data_uri"),
+            testimonials=order.get("testimonials", []),
         )
         deployed = deploy_website(business_name, result["html"], order_id=order_id, live=False)
         if deployed:
@@ -1812,6 +1874,7 @@ def run_website_regeneration(order_id: str) -> dict:
             linkedin_url=order.get("linkedin_url", ""),
             color_preference=order.get("color_preference", "default"),
             custom_primary_color=order.get("custom_primary_color", ""),
+            custom_secondary_color=order.get("custom_secondary_color", ""),
             backdrop_image_choice=order.get("backdrop_image_choice", ""),
             payment_link_url=order.get("stripe_payment_link_url"),
             order_id=order_id,
@@ -1822,6 +1885,7 @@ def run_website_regeneration(order_id: str) -> dict:
             contact_address=order.get("website_contact_address", ""),
             logo_data_uri=order.get("logo_data_uri"),
             favicon_data_uri=order.get("favicon_data_uri"),
+            testimonials=order.get("testimonials", []),
         )
         deployed = deploy_website(business_name, result["html"], order_id=order_id)
         if deployed:
@@ -1899,6 +1963,7 @@ def run_logo_regeneration(order_id: str) -> dict:
             contact_address=order.get("website_contact_address") if order.get("website_contact_show") else None,
             logo_data_uri=logo_update["logo_data_uri"],
             favicon_data_uri=logo_update["favicon_data_uri"],
+            testimonials=order.get("testimonials", []),
         )
         deployed = deploy_website(business_name, html, order_id=order_id)
         if deployed:
@@ -1996,6 +2061,7 @@ async def start(request: Request):
         "business_idea": request.query_params.get("idea", ""),
         "preselected_ra_choice": preselected_ra_choice,
         "payments_enabled": payments_enabled(),
+        "support_email": SUPPORT_EMAIL,
         **_wizard_context(),
     })
 
@@ -2705,20 +2771,16 @@ async def dashboard_login_submit(request: Request):
         # lowercase. A raw case-sensitive match against typed_email above
         # silently found nothing for a real, paid order (confirmed against
         # Nancy Sharkey Consulting's order, 2026-09-20) - not "no order
-        # exists", just a casing mismatch. Small collection (see the same
-        # fetch-then-filter convention used elsewhere in this file), so a
-        # full scan compared case-insensitively is simpler than maintaining
-        # a second lowercase-mirror field.
-        matched_order = next(
-            (doc for doc in ORDERS.stream() if (doc.to_dict().get("email") or "").strip().lower() == typed_email),
-            None,
-        )
-        if matched_order and not over_limit:
+        # exists", just a casing mismatch. find_orders_by_email matches
+        # case-insensitively off a short-lived in-memory index, so this
+        # unauthenticated form can't trigger a full collection scan per hit.
+        matches = find_orders_by_email(typed_email) if not over_limit else []
+        if matches:
             # Use the order's own stored casing, not typed_email - every
             # other session in this codebase (auto-login after Stripe
             # Checkout, etc.) is minted from order.email as-is, and
             # dashboard_orders below matches on that same exact string.
-            order_email = matched_order.to_dict().get("email")
+            order_email = matches[0][1]
             send_magic_link_email(order_email, create_magic_link(order_email))
 
     return templates.TemplateResponse(request, "dashboard_check_email.html", {})
@@ -2764,10 +2826,12 @@ async def dashboard_orders(request: Request):
     # order.email happened to have when the session was minted (see
     # get_owned_order's comment above), so comparing only one side
     # lowercased reproduces the exact bug this was meant to fix.
-    customer_id_lower = (customer_id or "").strip().lower()
+    # The index only supplies which order ids match; each document is
+    # re-read fresh, since this page redirects on current wizard state and
+    # the index can be up to a minute old.
     orders = [
-        doc for doc in ORDERS.stream()
-        if (doc.to_dict().get("email") or "").strip().lower() == customer_id_lower
+        snap for snap in (ORDERS.document(order_id).get() for order_id, _ in find_orders_by_email(customer_id))
+        if snap.exists
     ]
     if len(orders) == 1:
         order_id = orders[0].id
@@ -3342,9 +3406,15 @@ _STEP6_WEBSITE_SIMPLE_FIELDS = [
     "service_1_name", "service_1_desc", "service_2_name", "service_2_desc",
     "service_3_name", "service_3_desc",
     "business_hours", "instagram_url", "facebook_url", "tiktok_url", "linkedin_url",
-    "color_preference", "custom_primary_color", "backdrop_image_choice",
+    "color_preference", "custom_primary_color", "custom_secondary_color", "backdrop_image_choice",
     "website_contact_phone", "website_contact_email", "website_contact_address",
 ]
+
+# Custom colors end up verbatim inside the generated site's CSS, so only a
+# plain #RRGGBB is ever accepted - anything else is dropped (the site falls
+# back to the template's default color) rather than stored.
+_HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
+_STEP6_HEX_COLOR_FIELDS = ("custom_primary_color", "custom_secondary_color")
 
 @app.get("/dashboard/orders/{order_id}/website", response_class=HTMLResponse)
 async def dashboard_website(request: Request, owned: tuple = Depends(get_owned_order)):
@@ -3417,6 +3487,13 @@ async def dashboard_website_submit(
         }, status_code=400)
 
     safe_fields = {k: form[k] for k in _STEP6_WEBSITE_SIMPLE_FIELDS if form.get(k)}
+    for color_field in _STEP6_HEX_COLOR_FIELDS:
+        if color_field in safe_fields:
+            hex_value = str(safe_fields[color_field]).strip()
+            if _HEX_COLOR_RE.fullmatch(hex_value):
+                safe_fields[color_field] = hex_value
+            else:
+                del safe_fields[color_field]
     # Explicit bool rather than the truthy-only filter above: an unchecked
     # checkbox sends no form field at all, so this is the only way to let a
     # customer who opted in turn contact info back off again.
@@ -4312,6 +4389,9 @@ async def contact(request: Request):
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip()
     message = (form.get("message") or "").strip()
+    # Only the two known values are ever stored/acted on - anything else a
+    # client posts is treated as a plain message.
+    message_type = "testimonial" if (form.get("message_type") or "").strip() == "testimonial" else "message"
     is_htmx = request.headers.get("hx-request") == "true"
     back_url = request.headers.get("referer")
 
@@ -4335,10 +4415,10 @@ async def contact(request: Request):
 
     db.collection("contact_messages").add({
         "order_id": order_id, "business_name": business_name, "name": name, "email": email, "message": message,
-        "created_at": firestore.SERVER_TIMESTAMP,
+        "message_type": message_type, "created_at": firestore.SERVER_TIMESTAMP,
     })
 
-    send_visitor_message_email(business_name or "your business", name, email, message, SUPPORT_EMAIL)
+    send_visitor_message_email(business_name or "your business", name, email, message, SUPPORT_EMAIL, message_type=message_type)
     if not is_htmx and order_id:
         # A public website visitor's message also goes straight to the
         # business owner, not just our own support inbox - they're the one
@@ -4347,7 +4427,7 @@ async def contact(request: Request):
         # the order's owner messaging us, not a customer of theirs.
         order = ORDERS.document(order_id).get().to_dict()
         if order and order.get("email"):
-            send_visitor_message_email(business_name or order.get("business_name", "your business"), name, email, message, order["email"])
+            send_visitor_message_email(business_name or order.get("business_name", "your business"), name, email, message, order["email"], message_type=message_type)
 
     if is_htmx:
         return templates.TemplateResponse(request, "contact_result.html", {})

@@ -27,6 +27,7 @@ import webbrowser
 from tkinter import messagebox
 
 import requests
+from google.cloud import firestore as firestore_module
 from PIL import Image, ImageDraw, ImageFont
 
 try:
@@ -38,8 +39,9 @@ except ImportError:
 from playwright.sync_api import sync_playwright
 
 try:
-    from app.main import ORDERS, run_scc_filing, run_ein_filing, EIN_ELIGIBLE_STATES, SCC_FILED_STATES
-    from app.check_scc_status import check_once as check_scc_status_once
+    from app.main import ORDERS, db, run_scc_filing, run_ein_filing, EIN_ELIGIBLE_STATES, SCC_FILED_STATES
+    from app.check_scc_status import check_once as check_scc_status_once, CHECK_INTERVAL_SECONDS as SCC_AUTO_CHECK_INTERVAL_SECONDS
+    from app.config import SMS_LOG_COLLECTION, SYSTEM_CONFIG_COLLECTION, resolve_payments_enabled
     from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 except Exception as e:
     print(f"❌ Could not import the Launch Bridge app package: {e}")
@@ -94,11 +96,24 @@ class AppState:
         self.scc_session_ok = None  # None = not checked yet
         self.pending_orders = []
         self.last_orders_error = None
+        self.payments_enabled = None  # None = not checked yet
+        self.scc_auto_checker_running = False
+        self.scc_auto_checker_last_run = None
+        self.sms_log_entries = []
 
 
 state = AppState()
 shutdown_event = threading.Event()
 ui_queue = queue.Queue()  # (callable, args) pairs to run on the Tk main thread
+
+# Every browser automation here - the SCC filing, the EIN filing, and the SCC
+# status check (manual button and auto-checker alike) - drives the same
+# Chrome over CDP with the same single-session CIS account, so two of them
+# running at once can log each other out mid-wizard. Anything that touches
+# that browser holds this lock for its whole run. Background pollers use
+# acquire(blocking=False) and skip the tick if it's busy; deliberate user
+# actions (a filing) wait their turn instead.
+browser_automation_lock = threading.Lock()
 
 
 def post_to_ui(fn, *args):
@@ -278,6 +293,100 @@ def orders_poller():
 
 
 # ============================================================
+# Payments kill switch (system_config/flags.payments_enabled) - the same
+# Firestore document app/main.py's payments_enabled() reads on every
+# /start hit, so flipping it here takes effect on the live site within
+# that function's ~15s cache window, no redeploy involved.
+# ============================================================
+
+PAYMENTS_FLAG_REF = db.collection(SYSTEM_CONFIG_COLLECTION).document("flags")
+PAYMENTS_POLL_INTERVAL_SECONDS = 10
+
+
+def read_payments_enabled() -> bool:
+    # Same shared resolver the site uses (app/config.py), so a missing flag
+    # document means the same thing here as it does there. Note this app
+    # only sees its own local PAYMENTS_ENABLED env var - a hard override set
+    # on the Cloud Run service can still close checkout while this shows
+    # "Open", so treat that env var as an emergency lever, not a routine one.
+    doc = PAYMENTS_FLAG_REF.get()
+    flag = doc.to_dict().get("payments_enabled") if doc.exists else None
+    return resolve_payments_enabled(flag)
+
+
+def set_payments_enabled(value: bool):
+    PAYMENTS_FLAG_REF.set({"payments_enabled": value}, merge=True)
+
+
+def payments_flag_poller():
+    while not shutdown_event.is_set():
+        try:
+            state.payments_enabled = read_payments_enabled()
+        except Exception as e:
+            log_line(f"⚠️ Could not read payments flag: {e}")
+        shutdown_event.wait(PAYMENTS_POLL_INTERVAL_SECONDS)
+
+
+# ============================================================
+# SCC auto-checker - runs app/check_scc_status.py's own check_once() on a
+# repeating timer in a background thread, so approvals get picked up
+# without a separate `python -m app.check_scc_status` process. Only one of
+# the two should ever run at a time (CIS allows a single session per
+# account - see check_scc_status.py's own docstring), so starting this
+# is meant to replace a standalone process, not run alongside one.
+# ============================================================
+
+scc_auto_check_stop_event = None  # created fresh by on_toggle_scc_auto_checker; None = never started
+
+
+def scc_auto_checker_loop(stop_event: threading.Event):
+    while not stop_event.is_set():
+        # Skip (don't queue) when another automation holds the browser - a
+        # filing mid-wizard, a manual check, or the previous loop's last
+        # tick still finishing after a quick Stop/Start. The next tick
+        # simply tries again.
+        if not browser_automation_lock.acquire(blocking=False):
+            log_line("⏭ SCC auto-check skipped - another browser automation is running.")
+        else:
+            try:
+                check_scc_status_once()
+            except Exception as e:
+                log_line(f"⚠️ SCC auto-checker tick failed: {e}")
+            finally:
+                browser_automation_lock.release()
+            state.scc_auto_checker_last_run = time.time()
+        stop_event.wait(SCC_AUTO_CHECK_INTERVAL_SECONDS)
+
+
+# ============================================================
+# SMS log (app/config.py's SMS_LOG_COLLECTION) - every send_admin_sms
+# attempt, success or failure, so a dropped alert is visible here instead
+# of requiring a Cloud Run logs dig (see app/sms.py).
+# ============================================================
+
+SMS_LOG_POLL_INTERVAL_SECONDS = 30
+
+
+def fetch_recent_sms_log(limit: int = 8) -> list:
+    entries = []
+    query = db.collection(SMS_LOG_COLLECTION).order_by("sent_at", direction=firestore_module.Query.DESCENDING).limit(limit)
+    for doc in query.stream():
+        entry = doc.to_dict() or {}
+        entry["id"] = doc.id
+        entries.append(entry)
+    return entries
+
+
+def sms_log_poller():
+    while not shutdown_event.is_set():
+        try:
+            state.sms_log_entries = fetch_recent_sms_log()
+        except Exception as e:
+            log_line(f"⚠️ Could not fetch SMS log: {e}")
+        shutdown_event.wait(SMS_LOG_POLL_INTERVAL_SECONDS)
+
+
+# ============================================================
 # System tray
 # ============================================================
 
@@ -425,6 +534,10 @@ class DashboardApp:
         self._make_button(btns, "Refresh Orders", COLORS["blue"], self.on_refresh_orders).pack(side="left", padx=4)
         self.check_scc_btn = self._make_button(btns, "Check SCC Status", COLORS["indigo"], self.on_check_scc_status)
         self.check_scc_btn.pack(side="left", padx=4)
+        self.auto_checker_btn = self._make_button(btns, "Start Auto-Checker", COLORS["indigo"], self.on_toggle_scc_auto_checker)
+        self.auto_checker_btn.pack(side="left", padx=4)
+        self.payments_btn = self._make_button(btns, "Payments: ...", COLORS["panel_border"], self.on_toggle_payments)
+        self.payments_btn.pack(side="left", padx=4)
         self._make_button(btns, "Open Admin Dashboard", COLORS["green"], self.on_open_admin).pack(side="left", padx=4)
 
         # ---- status panel ----
@@ -434,6 +547,19 @@ class DashboardApp:
         self.chrome_status_label = self._status_indicator(status_panel, "Chrome debug port")
         self.scc_status_label = self._status_indicator(status_panel, "SCC session")
         self.irs_status_label = self._status_indicator(status_panel, "IRS hours")
+        self.payments_status_label = self._status_indicator(status_panel, "Payments")
+        self.auto_checker_status_label = self._status_indicator(status_panel, "SCC auto-checker")
+
+        # ---- SMS log panel ----
+        sms_panel = tk.Frame(self.root, bg=COLORS["panel"], highlightbackground=COLORS["panel_border"],
+                              highlightthickness=1)
+        sms_panel.pack(fill="x", padx=16, pady=(0, 8))
+        tk.Label(sms_panel, text="Recent Admin SMS Alerts", font=("Segoe UI", 10, "bold"),
+                 bg=COLORS["panel"], fg=COLORS["text_dim"]).pack(anchor="w", padx=14, pady=(10, 4))
+        self.sms_log_frame = tk.Frame(sms_panel, bg=COLORS["panel"])
+        self.sms_log_frame.pack(fill="x", padx=14, pady=(0, 10))
+        tk.Label(self.sms_log_frame, text="Loading...", font=("Segoe UI", 9), bg=COLORS["panel"],
+                 fg=COLORS["text_dim"]).pack(anchor="w")
 
         # ---- orders panel ----
         orders_header = tk.Frame(self.root, bg=COLORS["bg"])
@@ -549,6 +675,26 @@ class DashboardApp:
             eta = format_eta(next_irs_open())
             self.irs_status_label.configure(text=f"❌ Closed · opens {eta}", fg=COLORS["red"])
 
+        if state.payments_enabled is None:
+            self.payments_status_label.configure(text="⏳ Checking...", fg=COLORS["text_dim"])
+            self.payments_btn.configure(text="Payments: ...", state="disabled")
+        else:
+            if state.payments_enabled:
+                self.payments_status_label.configure(text="✅ Open", fg=COLORS["green"])
+                self.payments_btn.configure(text="Close Payments", bg=COLORS["red"], state="normal")
+            else:
+                self.payments_status_label.configure(text="⛔ Closed", fg=COLORS["red"])
+                self.payments_btn.configure(text="Re-open Payments", bg=COLORS["green"], state="normal")
+
+        if state.scc_auto_checker_running:
+            last = state.scc_auto_checker_last_run
+            last_text = time.strftime("%I:%M %p", time.localtime(last)).lstrip("0") if last else "starting..."
+            self.auto_checker_status_label.configure(text=f"✅ Running · last {last_text}", fg=COLORS["green"])
+            self.auto_checker_btn.configure(text="Stop Auto-Checker")
+        else:
+            self.auto_checker_status_label.configure(text="⏹ Stopped", fg=COLORS["text_dim"])
+            self.auto_checker_btn.configure(text="Start Auto-Checker")
+
         if not self.root.winfo_exists():
             return
         self.root.after(2000, self._refresh_status_indicators)
@@ -565,8 +711,30 @@ class DashboardApp:
 
     def _redraw_orders_tick(self):
         self.render_orders(state.pending_orders)
+        self.render_sms_log(state.sms_log_entries)
         if self.root.winfo_exists():
             self.root.after(1000, self._redraw_orders_tick)
+
+    def render_sms_log(self, entries: list):
+        if entries == getattr(self, "_last_sms_log_rendered", None):
+            return
+        self._last_sms_log_rendered = entries
+        for child in self.sms_log_frame.winfo_children():
+            child.destroy()
+        if not entries:
+            tk.Label(self.sms_log_frame, text="No SMS alerts logged yet.", font=("Segoe UI", 9),
+                     bg=COLORS["panel"], fg=COLORS["text_dim"]).pack(anchor="w")
+            return
+        for entry in entries:
+            ok = entry.get("success")
+            icon, color = ("✅", COLORS["green"]) if ok else ("❌", COLORS["red"])
+            sent_at = entry.get("sent_at")
+            ts = fmt_date(sent_at) if sent_at else "-"
+            message = (entry.get("message") or "")[:90]
+            row = tk.Frame(self.sms_log_frame, bg=COLORS["panel"])
+            row.pack(fill="x", anchor="w", pady=1)
+            tk.Label(row, text=f"{icon} {ts} · {message}", font=("Segoe UI", 8),
+                     bg=COLORS["panel"], fg=color).pack(anchor="w")
 
     # ---- button handlers ----
 
@@ -593,13 +761,64 @@ class DashboardApp:
 
     def _check_scc_status_bg(self):
         try:
-            check_scc_status_once()
+            if not browser_automation_lock.acquire(blocking=False):
+                post_to_ui(lambda: messagebox.showinfo(
+                    "Browser busy",
+                    "Another SCC/EIN automation is using the browser right now (a filing or the auto-checker). "
+                    "Try again once it finishes.",
+                ))
+                return
+            try:
+                check_scc_status_once()
+            finally:
+                browser_automation_lock.release()
         except Exception as e:
             post_to_ui(lambda: messagebox.showerror("SCC check failed", str(e)))
         finally:
             self.checking_scc = False
             post_to_ui(lambda: self.check_scc_btn.configure(text="Check SCC Status", state="normal"))
             self.on_refresh_orders()
+
+    def on_toggle_scc_auto_checker(self):
+        global scc_auto_check_stop_event
+        if state.scc_auto_checker_running:
+            if scc_auto_check_stop_event:
+                scc_auto_check_stop_event.set()
+            state.scc_auto_checker_running = False
+            log_line("⏹ SCC auto-checker stopped.")
+            return
+        if not messagebox.askyesno(
+            "Start SCC Auto-Checker",
+            f"This runs a full SCC status check every {SCC_AUTO_CHECK_INTERVAL_SECONDS // 60} minutes using this "
+            "Chrome session, and advances any orders SCC has approved.\n\n"
+            "Make sure no other check_scc_status.py process is running elsewhere - CIS only allows one "
+            "active session per account, and two checkers running at once will keep kicking each other out.\n\n"
+            "Start it?",
+        ):
+            return
+        scc_auto_check_stop_event = threading.Event()
+        state.scc_auto_checker_running = True
+        state.scc_auto_checker_last_run = None
+        threading.Thread(target=scc_auto_checker_loop, args=(scc_auto_check_stop_event,), daemon=True).start()
+        log_line(f"🔁 SCC auto-checker started (every {SCC_AUTO_CHECK_INTERVAL_SECONDS}s).")
+
+    def on_toggle_payments(self):
+        if state.payments_enabled is None:
+            return
+        new_value = not state.payments_enabled
+        action = "re-open" if new_value else "close"
+        if not messagebox.askyesno(
+            f"{action.capitalize()} payments?",
+            f"This will {action} new customer checkout on the live site immediately "
+            "(takes effect within ~15 seconds, no redeploy).\n\nContinue?",
+        ):
+            return
+        try:
+            set_payments_enabled(new_value)
+            state.payments_enabled = new_value
+            log_line(f"{'✅ Payments re-opened.' if new_value else '⛔ Payments closed.'}")
+        except Exception as e:
+            messagebox.showerror("Could not update payments flag", str(e))
 
     def on_approve_scc(self, order_id: str, business_name: str):
         if not messagebox.askyesno(
@@ -620,10 +839,18 @@ class DashboardApp:
         threading.Thread(target=self._run_filing, args=(run_ein_filing, order_id, "EIN filing"), daemon=True).start()
 
     def _run_filing(self, fn, order_id, label):
+        # A filing is a deliberate, already-confirmed action, so it waits for
+        # any status check in progress rather than being dropped - but it
+        # never overlaps one.
+        if not browser_automation_lock.acquire(blocking=False):
+            log_line(f"⏳ {label} waiting - another browser automation is running.")
+            browser_automation_lock.acquire()
         try:
             fn(order_id)
         except Exception as e:
             post_to_ui(lambda: messagebox.showerror(f"{label} failed", str(e)))
+        finally:
+            browser_automation_lock.release()
         self.on_refresh_orders()
 
     # ---- tray integration ----
@@ -702,9 +929,13 @@ def main():
 
         threading.Thread(target=chrome_status_poller, daemon=True).start()
         threading.Thread(target=orders_poller, daemon=True).start()
+        threading.Thread(target=payments_flag_poller, daemon=True).start()
+        threading.Thread(target=sms_log_poller, daemon=True).start()
 
         def on_quit():
             shutdown_event.set()
+            if scc_auto_check_stop_event:
+                scc_auto_check_stop_event.set()
             if dashboard.tray:
                 dashboard.tray.stop()
             post_to_ui(root.destroy)

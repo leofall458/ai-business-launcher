@@ -241,6 +241,35 @@ def check_and_update_website(order_id: str) -> dict:
         except Exception as e:
             return {"updated": False, "reason": f"Could not create payment link: {e}"}
 
+    # Orders whose site was built by the direct-Gemini-prompt path (see
+    # website_generation_method) don't have a website_content dict in the
+    # shape run_website_regeneration/render_website_html expect - calling
+    # it here would silently blow away the custom HTML with a generic
+    # Jinja-template rebuild. The payment link is already saved above (so
+    # nothing is lost), but the live site itself needs a human to add the
+    # button by hand - surface that instead of guessing.
+    if order.get("website_generation_method") == "gemini_direct_custom":
+        # Alert once, not on every call: this branch never sets
+        # payment_button_live (it can't - a human has to add the button), so
+        # without a marker the hourly stripe_activation_scheduler would land
+        # here again every tick for the same order forever. SMS rather than
+        # notify_windows because this normally runs on Cloud Run, where
+        # powershell.exe doesn't exist and a Windows balloon can never reach
+        # the admin.
+        if not order.get("payment_button_manual_alert_sent"):
+            from app.sms import send_admin_sms
+            sent = send_admin_sms(
+                f"{order.get('business_name', '')[:40]}: Stripe active, payment link made, but custom-built "
+                f"site - add Pay button by hand."
+            )
+            if sent:
+                order_ref.set({"payment_button_manual_alert_sent": True}, merge=True)
+        return {
+            "updated": False,
+            "reason": "Payment link created, but this order's site is custom-built (gemini_direct_custom) "
+                       "and needs the payment button added by hand rather than an automatic regeneration.",
+        }
+
     # Deferred import: app.main imports several functions from this module
     # at load time, so importing it back at the top of this file would be
     # a circular import. By the time this function actually runs, both

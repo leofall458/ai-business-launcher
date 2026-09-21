@@ -472,20 +472,27 @@ def send_payment_button_live_email(order: dict, order_id: str, website_url: str)
     html = _wrap_html(html_inner, cta_text="View Your Website", cta_url=website_url)
     _send(email, f"Your payment button is now live! - {business_name}", body, html_body=html)
 
-def send_visitor_message_email(business_name: str, visitor_name: str, visitor_email: str, message: str, to_email: str):
+def send_visitor_message_email(business_name: str, visitor_name: str, visitor_email: str, message: str, to_email: str, message_type: str = "message"):
     """A lead from a deployed customer website's contact form (see the
     website templates' contact sections) - sent both to our own support
     inbox and, separately, straight to the business owner's email, since
-    they're the one who actually needs to follow up with the visitor."""
-    subject = f"New message from your website - {business_name}"
+    they're the one who actually needs to follow up with the visitor.
+
+    message_type distinguishes a plain contact inquiry from a testimonial
+    submission (see the website templates' Testimonials section, which
+    posts to this same /contact route with message_type="testimonial") -
+    just a subject-line/wording cue so the business owner can tell at a
+    glance which kind of message this is, not a separate code path."""
+    label = "testimonial" if message_type == "testimonial" else "message"
+    subject = f"New {label} from your website - {business_name}"
     body = (
-        f"You have a new message from your {business_name} website:\n\n"
+        f"You have a new {label} from your {business_name} website:\n\n"
         f"From: {visitor_name} <{visitor_email}>\n\n"
         f"{message}\n\n"
         f"Reply directly to {visitor_email} to respond."
     )
     html_inner = (
-        f"<p>You have a new message from your <strong>{business_name}</strong> website:</p>"
+        f"<p>You have a new {label} from your <strong>{business_name}</strong> website:</p>"
         + _info_table([("From", f"{visitor_name} ({visitor_email})")])
         + f"<p style=\"white-space:pre-wrap;\">{message}</p>"
         f"<p>Reply directly to <a href=\"mailto:{visitor_email}\">{visitor_email}</a> to respond.</p>"

@@ -63,6 +63,18 @@ def _normalize(name: str) -> str:
 def _login(page):
     page.goto("https://cis.scc.virginia.gov/Account/Login")
     page.wait_for_load_state("networkidle")
+    # is_visible() answers immediately (unlike click(), which auto-waits up
+    # to 30s for the element to become actionable), so a banner that's
+    # already been dismissed - or an "Accept" button that's in the DOM but
+    # hidden - costs nothing instead of stalling every 30-minute tick. A
+    # banner we can't dismiss is never worth failing the login over.
+    cookie_accept = page.locator('button:has-text("Accept")').first
+    try:
+        if cookie_accept.is_visible():
+            cookie_accept.click(timeout=3000)
+            page.wait_for_timeout(500)
+    except Exception as e:
+        print(f"⚠️ Could not dismiss SCC cookie banner (continuing): {e}")
     if page.locator("#txtUsername").count() > 0:
         page.fill("#txtUsername", SCC_USERNAME)
         page.fill("#txtPassword", SCC_PASSWORD)
@@ -159,56 +171,65 @@ def check_once():
 
             context = browser.contexts[0]
             page = context.new_page()
-            _login(page)
+            try:
+                _login(page)
 
-            submissions = _scrape_submissions(page)
-            approved_names = {_normalize(s["entity_name"]) for s in submissions if s["status"] in APPROVED_STATUSES}
-            print(f"📋 SCC dashboard shows {len(submissions)} submission(s), {len(approved_names)} approved.")
+                submissions = _scrape_submissions(page)
+                approved_names = {_normalize(s["entity_name"]) for s in submissions if s["status"] in APPROVED_STATUSES}
+                print(f"📋 SCC dashboard shows {len(submissions)} submission(s), {len(approved_names)} approved.")
 
-            confirmation_numbers = None  # scraped lazily - only if something actually matches
+                confirmation_numbers = None  # scraped lazily - only if something actually matches
 
-            for doc in ORDERS.where("state", "==", "filing_submitted").stream():
-                order_id = doc.id
-                order = doc.to_dict()
-                business_name = order.get("business_name", "")
-                if not business_name or _normalize(business_name) not in approved_names:
-                    continue
+                for doc in ORDERS.where("state", "==", "filing_submitted").stream():
+                    order_id = doc.id
+                    order = doc.to_dict()
+                    business_name = order.get("business_name", "")
+                    if not business_name or _normalize(business_name) not in approved_names:
+                        continue
 
-                print(f"✅ {business_name} is now Approved on the Virginia SCC dashboard!")
+                    print(f"✅ {business_name} is now Approved on the Virginia SCC dashboard!")
 
-                if confirmation_numbers is None:
-                    confirmation_numbers = _scrape_confirmation_numbers(page)
-                confirmation_number = confirmation_numbers.get(_normalize(business_name), "")
+                    if confirmation_numbers is None:
+                        confirmation_numbers = _scrape_confirmation_numbers(page)
+                    confirmation_number = confirmation_numbers.get(_normalize(business_name), "")
 
-                certificate_bytes = None
-                try:
-                    certificate_bytes = _fetch_certificate(context, page, business_name)
-                except Exception as e:
-                    print(f"⚠️ Could not fetch certificate for {business_name}: {e}")
-
-                order_ref = doc.reference
-                firestore_update = {}
-                if confirmation_number:
-                    firestore_update["scc_confirmation_number"] = confirmation_number
-                if certificate_bytes:
+                    certificate_bytes = None
                     try:
-                        object_name = upload_document(order_id, certificate_bytes, "application/pdf", "pdf")
-                        firestore_update["documents.certificate"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+                        certificate_bytes = _fetch_certificate(context, page, business_name)
                     except Exception as e:
-                        print(f"⚠️ Could not upload certificate for order {order_id}: {e}")
-                if firestore_update:
-                    # .update(), not .set(merge=True) - only .update() treats
-                    # the dotted "documents.certificate" key above as a
-                    # nested field path rather than a literal dotted name.
-                    order_ref.update(firestore_update)
+                        print(f"⚠️ Could not fetch certificate for {business_name}: {e}")
 
-                trigger_assets = advance_past_filing_confirmed(order_ref, order)
-                send_llc_approved_email(order, order_id, confirmation_number)
-                if trigger_assets:
-                    run_asset_generation(order_id)
-                notify_windows("Launch Bridge LLC", f"{business_name} approved by Virginia SCC!")
+                    order_ref = doc.reference
+                    firestore_update = {}
+                    if confirmation_number:
+                        firestore_update["scc_confirmation_number"] = confirmation_number
+                    if certificate_bytes:
+                        try:
+                            object_name = upload_document(order_id, certificate_bytes, "application/pdf", "pdf")
+                            firestore_update["documents.certificate"] = {"object_name": object_name, "uploaded_at": firestore.SERVER_TIMESTAMP}
+                        except Exception as e:
+                            print(f"⚠️ Could not upload certificate for order {order_id}: {e}")
+                    if firestore_update:
+                        # .update(), not .set(merge=True) - only .update() treats
+                        # the dotted "documents.certificate" key above as a
+                        # nested field path rather than a literal dotted name.
+                        order_ref.update(firestore_update)
 
-            page.close()
+                    trigger_assets = advance_past_filing_confirmed(order_ref, order)
+                    send_llc_approved_email(order, order_id, confirmation_number)
+                    if trigger_assets:
+                        run_asset_generation(order_id)
+                    notify_windows("Launch Bridge LLC", f"{business_name} approved by Virginia SCC!")
+
+            finally:
+                # Always close the tab we opened, even if login or a scrape
+                # raised - otherwise each failed tick leaks a Chrome tab in the
+                # long-lived CDP browser, and with the auto-checker running every
+                # 30 minutes they pile up.
+                try:
+                    page.close()
+                except Exception:
+                    pass
     except Exception as e:
         print(f"⚠️ SCC dashboard check crashed: {e}")
         traceback.print_exc()
