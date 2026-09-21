@@ -25,6 +25,7 @@
     {% endif %}
     <style>
         @media (max-width: 640px) { input, textarea { font-size: 16px !important; } }
+        #auto-check-btn:disabled { opacity: .6; cursor: not-allowed; }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: block !important; }
         .htmx-request.htmx-indicator { display: block !important; }
@@ -122,7 +123,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#name-check-spinner"
                 hx-disabled-elt="this"
-                class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2 disabled:opacity-60">
+                class="inline-flex items-center justify-center w-full bg-[#0e2148] hover:bg-[#0e2148]/90 text-white font-semibold py-3 rounded-full text-sm transition mb-2">
                 Check availability now →
             </button>
             <p id="name-check-spinner" class="htmx-indicator text-xs text-[#0e2148]/60 text-center">Checking with the Virginia SCC - usually a few seconds, occasionally up to 30…</p>

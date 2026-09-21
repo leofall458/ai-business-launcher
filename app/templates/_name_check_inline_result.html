@@ -4,14 +4,14 @@
 <p class="mt-2 text-xs text-red-600">{{ error }}</p>
 {% elif result %}
   {% if result.status == 'AVAILABLE' %}
-  <div class="mt-3 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+  <div class="mt-3 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-900">
     <p>✅ <strong>{{ result.name }}</strong> looks available on the Virginia SCC right now.</p>
     <p class="text-xs text-green-700 mt-1">If you're happy with it, use it below and tick the box to continue. We re-verify it before filing.</p>
     <button type="button" data-use-name="{{ result.name }}"
-        class="mt-2 text-xs font-semibold underline text-green-800">Use this name</button>
+        class="mt-2 text-xs font-semibold underline text-green-900">Use this name</button>
   </div>
   {% elif result.status == 'TAKEN' %}
-  <div class="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+  <div class="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
     <p>❌ <strong>{{ result.name }}</strong> isn't available on the Virginia SCC.</p>
     {% if result.conflicts %}
     <p class="text-xs text-red-700 mt-1">Already on file: {{ result.conflicts | join(', ') }}</p>
