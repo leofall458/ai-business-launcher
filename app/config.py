@@ -91,6 +91,11 @@ SMS_LOG_COLLECTION = "staging_sms_log" if APP_ENV == "staging" else "sms_log"
 # from the admin app can never close staging checkout, or the reverse.
 SYSTEM_CONFIG_COLLECTION = "staging_system_config" if APP_ENV == "staging" else "system_config"
 
+# Internal review copy: emails that go out to visitors from the name checker
+# are also BCC'd here so the team (and Claude, via the Gmail connector) can see
+# exactly what was sent. Set the env var to an empty string to turn it off.
+EMAIL_REVIEW_COPY = os.getenv("EMAIL_REVIEW_COPY", "leofall@launchbridge.ai").strip()
+
 GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "")
 
