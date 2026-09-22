@@ -5,6 +5,20 @@ from playwright.sync_api import sync_playwright
 CDP_URL = "http://172.27.176.1:9222"
 EIN_PATTERN = re.compile(r"\b\d{2}-\d{7}\b")
 
+# The IRS EIN address form is stricter than Virginia SCC's - it explicitly
+# rejects anything but letters, digits, spaces, hyphens and forward slashes
+# (confirmed live, 2026-09-22: "7201 Beachway Ct." - a plain trailing period
+# after an abbreviation, already filed fine with SCC - was rejected with
+# "The only special characters allowed are '-' and '/'."). Scoped to this
+# module only: customer_data["address"] itself (and order["address"] it's
+# read from) is left untouched everywhere else - this is the character set
+# the IRS's own page enforces, not a rule for addresses in general.
+_IRS_ADDRESS_DISALLOWED = re.compile(r"[^A-Za-z0-9 \-/]")
+
+def _sanitize_irs_address_field(value: str) -> str:
+    cleaned = _IRS_ADDRESS_DISALLOWED.sub("", value or "")
+    return re.sub(r" {2,}", " ", cleaned).strip()
+
 def fill_field(page, selector, value):
     try:
         field = page.locator(selector).first
@@ -184,7 +198,7 @@ def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
     middle_name = customer_data.get("middle_name", "")
     last_name = customer_data["last_name"]
     ssn = customer_data["ssn"]
-    street = customer_data["address"]
+    street = _sanitize_irs_address_field(customer_data["address"])
     city = customer_data["city"]
     state = customer_data.get("state", "VA")
     zipcode = customer_data["zipcode"]
