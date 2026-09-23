@@ -37,7 +37,7 @@
   @media (max-width: 768px) { .hero-bg { background-attachment: scroll; } }
 
   .service-card { transition: transform 0.25s ease, box-shadow 0.25s ease; }
-  .service-card:hover { transform: translateY(-6px); box-shadow: 0 20px 40px -12px rgba(14,33,72,0.25); }
+  .service-card:hover { transform: translateY(-6px); box-shadow: 0 20px 40px -12px rgba({{ primary_color_rgb }},0.25); }
 
   .cta-btn { transition: transform 0.2s ease, box-shadow 0.2s ease; }
   .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -6px rgba(201,162,39,0.5); }
@@ -81,7 +81,7 @@
   <!-- Hero -->
   <section class="relative hero-bg text-center overflow-hidden"
     {% if hero_image_url %}style="background-image:url('{{ hero_image_url }}');"{% else %}style="background: linear-gradient(135deg, {{ primary_color }} 0%, #0c1a2b 100%);"{% endif %}>
-    <div class="absolute inset-0" style="background: linear-gradient(180deg, rgba(14,33,72,0.88) 0%, rgba(14,33,72,0.78) 50%, rgba(14,33,72,0.92) 100%);"></div>
+    <div class="absolute inset-0" style="background: linear-gradient(180deg, rgba({{ primary_color_rgb }},0.88) 0%, rgba({{ primary_color_rgb }},0.78) 50%, rgba({{ primary_color_rgb }},0.92) 100%);"></div>
     <div class="max-w-4xl mx-auto relative z-10 px-6 py-28 md:py-40">
       {% if logo_data_uri %}
       <div class="inline-block bg-white/95 rounded-lg px-5 py-3 mb-6">

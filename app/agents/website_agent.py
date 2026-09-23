@@ -20,6 +20,18 @@ TEMPLATE_FILES = {
 # baked-in look, not an AI-invented palette.
 _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 
+def _hex_to_rgb_str(hex_color: str) -> str:
+    """'#1A2B3C' -> '26, 43, 60', for templates that need the primary color
+    as an rgba() component (e.g. a hero overlay tint) rather than a flat
+    background-color. Falls back to the professional template's own
+    previously-hardcoded default (14, 33, 72 = #0e2148) if given something
+    that isn't a real 6-digit hex, so a bad value degrades to the old
+    look instead of breaking the page."""
+    if not _is_hex_color(hex_color):
+        return "14, 33, 72"
+    h = hex_color.strip().lstrip("#")
+    return f"{int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}"
+
 def _is_hex_color(value) -> bool:
     """Custom colors are interpolated verbatim into the generated site's CSS,
     so only a plain #RRGGBB is trusted - anything else falls back to the
@@ -340,6 +352,7 @@ def render_website_html(content: dict, business_name: str,
         cta_text=content.get("cta_text") or "Get in Touch",
         faq=content.get("faq") or [],
         primary_color=content["primary_color"],
+        primary_color_rgb=_hex_to_rgb_str(content["primary_color"]),
         secondary_color=content["secondary_color"],
         payment_link_url=payment_link_url,
         hero_photo=hero_photo,
