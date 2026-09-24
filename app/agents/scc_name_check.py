@@ -86,7 +86,33 @@ def sanitize_business_name(name: str) -> tuple[str, str | None]:
     if len(cleaned) < 5:
         return cleaned, "Business name is too short — please enter your full name"
 
+    irs_length = len(irs_form_name(cleaned))
+    if irs_length > IRS_NAME_MAX:
+        return cleaned, (
+            f"Please shorten your business name to {IRS_NAME_MAX} characters or fewer, including \"LLC\" "
+            f"(punctuation doesn't count) - it's {irs_length} now. That's the longest name the IRS EIN "
+            "application accepts on one line."
+        )
+
     return cleaned, None
+
+
+# The IRS EIN form's legal-name box holds 35 characters. A longer name has to
+# be split across a second "continuation" box, and on 2026-09-24 that split
+# went wrong and an EIN was issued under a truncated name (see
+# app/ein_filer.py). So every name Launch Bridge accepts has to fit in the
+# first box, measured the way the EIN filer types it: only letters, digits,
+# spaces, "-" and "&" survive, and " LLC" is appended if it isn't already there.
+IRS_NAME_MAX = 35
+_IRS_DISALLOWED = re.compile(r"[^A-Za-z0-9 \-&]")
+
+
+def irs_form_name(name: str) -> str:
+    """The legal name exactly as app/ein_filer.py enters it on the IRS form."""
+    cleaned = _MULTI_SPACE.sub(" ", _IRS_DISALLOWED.sub("", name or "")).strip()
+    if not cleaned.upper().endswith(" LLC"):
+        cleaned += " LLC"
+    return cleaned
 
 
 # ── Name-check result cache ─────────────────────────────────────────────────
