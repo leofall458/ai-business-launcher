@@ -94,6 +94,10 @@
     </div>
     {% endif %}
 
+    <!-- The name check is the first thing a visitor can do: it answers "is my
+         name free?" on the spot and emails the result with a nudge to start. -->
+    {% include "_name_check_widget.html" %}
+
     <!-- Already have an order? -->
     <a href="/dashboard"
         class="flex items-center justify-between bg-white border border-[#0e2148]/15 hover:border-[#c9a227] rounded-xl p-4 mb-6 text-sm font-semibold text-[#0e2148] transition shadow-sm">
@@ -102,8 +106,6 @@
     </a>
 
     {% include "_hero_idea_form.html" %}
-
-    {% include "_name_check_widget.html" %}
 
     <!-- ── CONTACT US ── -->
     <div class="bg-[#0e2148] rounded-2xl p-5 sm:p-6 mb-6 text-center shadow-sm">

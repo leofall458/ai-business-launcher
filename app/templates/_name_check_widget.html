@@ -1,7 +1,7 @@
 <!-- Free, automatic Virginia SCC name-availability check for visitors who haven't paid.
      POSTs to /api/name-check, which checks the SCC live, records the lead, and emails
      the result with a button to continue. Included by index.html and the done-for-you page. -->
-<div class="bg-white border border-[#0e2148]/10 rounded-2xl p-5 sm:p-6 shadow-sm mb-6" id="name-check">
+<div class="bg-white border-2 border-[#c9a227] rounded-2xl p-5 sm:p-6 shadow-sm mb-6" id="name-check">
     <h2 class="text-lg sm:text-xl font-bold text-[#0e2148] mb-1">Is your business name available in Virginia?</h2>
     <p class="text-sm text-[#0e2148]/60 mb-4">Check it against the Virginia SCC's live records in seconds - free. We'll email you the result.</p>
 
@@ -73,7 +73,8 @@
         if (data.status === 'AVAILABLE') {
             box.classList.add('bg-green-50', 'border-green-200', 'text-green-900');
             const p = el('p'); p.append('✅ ', el('strong', '', data.name), ' looks available on the Virginia SCC right now.');
-            box.append(p, el('p', 'text-xs mt-1', "Names aren't held for anyone until an LLC is filed, so it's worth moving soon."));
+            box.append(p, el('p', 'text-xs mt-1', "Names aren't held for anyone until an LLC is filed, so it's worth moving soon."),
+                       el('p', 'text-xs mt-2', "Lock it in with an LLC: your name on the state record, your personal assets kept separate from the business, and an EIN, website, and payments set up for you - filed within 72 hours."));
             cta = 'Claim this name - start my LLC →';
         } else if (data.status === 'TAKEN') {
             box.classList.add('bg-red-50', 'border-red-200', 'text-red-700');

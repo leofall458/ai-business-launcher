@@ -733,22 +733,38 @@ def send_name_check_result_email(email: str, result: dict, start_url: str = NAME
     conflicts = result.get("conflicts") or []
     price = LLC_FORMATION_PRICE_CENTS // 100
 
+    # The pitch: why turn the idea into a real business now, and what we do for them.
     included_txt = (
-        f"Launch Bridge forms your Virginia LLC for ${price} flat (the $100 state filing fee is included):\n"
+        "Why form your LLC now:\n"
+        "  - Protect yourself: an LLC keeps your personal savings, car, and home separate from business debts.\n"
+        "  - Look legit from day one: a registered business name, an EIN, and a business bank account build trust with clients.\n"
+        "  - Get paid properly: invoice and take card payments under your business name, not your personal one.\n"
+        "  - Make the name yours: once your LLC is filed, no one else can register that name in Virginia.\n\n"
+        f"Launch Bridge handles the setup for ${price} flat (the $100 state filing fee is included):\n"
         "  - We prepare and file your Articles of Organization\n"
         "  - We apply for your federal EIN\n"
         "  - Brand kit and a professional website\n"
-        "100% refund until we file. Filed within 72 hours.\n"
+        "  - A Stripe account so you can accept payments\n"
+        "It only takes a few minutes of your time. Filed within 72 hours, and a 100% refund until we file.\n"
     )
     included_html = (
-        f"<p><strong>Launch Bridge forms your Virginia LLC for ${price} flat</strong> "
+        "<p style='margin:16px 0 8px;'><strong>Why form your LLC now</strong></p>"
+        "<ul style='margin:0 0 16px;padding-left:20px;'>"
+        "<li><strong>Protect yourself:</strong> an LLC keeps your personal savings, car, and home separate from business debts.</li>"
+        "<li><strong>Look legit from day one:</strong> a registered business name, an EIN, and a business bank account build trust with clients.</li>"
+        "<li><strong>Get paid properly:</strong> invoice and take card payments under your business name, not your personal one.</li>"
+        "<li><strong>Make the name yours:</strong> once your LLC is filed, no one else can register that name in Virginia.</li>"
+        "</ul>"
+        f"<p><strong>Launch Bridge handles the setup for ${price} flat</strong> "
         "(the $100 state filing fee is included):</p>"
         "<ul style='margin:0 0 16px;padding-left:20px;'>"
         "<li>We prepare and file your Articles of Organization</li>"
         "<li>We apply for your federal EIN</li>"
         "<li>Brand kit and a professional website</li>"
+        "<li>A Stripe account so you can accept payments</li>"
         "</ul>"
-        "<p style='margin:0 0 8px;'>100% refund until we file. Filed within 72 hours.</p>"
+        "<p style='margin:0 0 8px;'>It only takes a few minutes of your time. Filed within 72 hours, "
+        "and a 100% refund until we file.</p>"
     )
     fine_print_txt = (
         "\nThis check reflects Virginia SCC's records at the moment we looked. A name isn't reserved for you "
@@ -770,12 +786,17 @@ def send_name_check_result_email(email: str, result: dict, start_url: str = NAME
 
     if status == "AVAILABLE":
         subject = f"Good news - {name} is available in Virginia"
-        lead_txt = f'Good news: "{name}" is available on the Virginia SCC right now.\n\n'
+        lead_txt = (
+            f'Good news: "{name}" is available on the Virginia SCC right now.\n\n'
+            "Names aren't held for anyone until an LLC is filed, so if you like it, it's worth moving on it "
+            "soon. You've already picked the name - the rest is paperwork, and we handle that for you.\n\n"
+        )
         lead_html = (
             f"<p>Good news: <strong>{esc(name)}</strong> is <strong style='color:#15803d;'>available</strong> "
             "on the Virginia SCC right now.</p>"
             "<p>Names aren't held for anyone until an LLC is filed, so if you like it, it's worth "
-            "moving on it soon.</p>"
+            "moving on it soon. You've already picked the name - the rest is paperwork, and we handle "
+            "that for you.</p>"
         )
         cta = "Claim my name - start my LLC \u2192"
     elif status == "TAKEN":
