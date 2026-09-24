@@ -315,6 +315,7 @@
     </div>
     <p>© <span id="year"></span> {{ business_name }} · Built in {{ service_area }}</p>
     <p class="mt-1">Website by <a href="https://launchbridge.ai" class="underline hover:text-gray-300">Launch Bridge</a></p>
+    {% if photo_credit %}<p class="mt-1">Photo by <a href="{{ photo_credit.profile_url | e }}" target="_blank" rel="noopener" class="underline">{{ photo_credit.name | e }}</a> on <a href="{{ photo_credit.unsplash_url | e }}" target="_blank" rel="noopener" class="underline">Unsplash</a></p>{% endif %}
   </footer>
 
   <script>

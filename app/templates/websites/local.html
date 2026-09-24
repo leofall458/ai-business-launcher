@@ -259,6 +259,7 @@
     </div>
     <p class="text-xs text-white/50">© <span id="year"></span> {{ business_name }} · Made with ❤️ in {{ service_area }}</p>
     <p class="text-xs text-white/40 mt-1">Website by <a href="https://launchbridge.ai" class="underline hover:text-white/70">Launch Bridge</a></p>
+    {% if photo_credit %}<p class="text-xs text-white/40 mt-1">Photo by <a href="{{ photo_credit.profile_url | e }}" target="_blank" rel="noopener" class="underline">{{ photo_credit.name | e }}</a> on <a href="{{ photo_credit.unsplash_url | e }}" target="_blank" rel="noopener" class="underline">Unsplash</a></p>{% endif %}
   </footer>
 
   <script>

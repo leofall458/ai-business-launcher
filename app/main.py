@@ -41,6 +41,7 @@ from app.ein_filer import file_ein_with_irs
 from app.utils.irs_hours import is_irs_open, next_irs_open, format_eta
 from app.secrets import preload as preload_secrets
 from app.agents.website_agent import generate_website, render_website_html, TEMPLATE_DEFAULT_COLORS, get_backdrop_image_options
+from app.agents.unsplash import is_stale_stock_url
 from app.deployer import deploy_website, make_site_id, get_website_html, check_iframe_embeddable
 from app import ai_ops
 from app.photo_utils import process_photo, MAX_UPLOAD_BYTES
@@ -3538,6 +3539,8 @@ async def dashboard_website(request: Request, owned: tuple = Depends(get_owned_o
     # Gemini call and, worse, keep reshuffling the candidate grid out from
     # under whatever the customer already clicked.
     backdrop_options = order.get("backdrop_image_options")
+    if backdrop_options and any(is_stale_stock_url(u) for u in backdrop_options):
+        backdrop_options = None  # cached from the dead loremflickr integration - regenerate
     if not backdrop_options:
         try:
             backdrop_options = get_backdrop_image_options(order.get("business_idea", ""))

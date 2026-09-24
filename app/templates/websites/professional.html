@@ -339,6 +339,7 @@
     <div class="text-center text-xs text-gray-600 mt-10 space-y-1">
       <p>© <span id="year"></span> {{ business_name }} · {{ service_area }}</p>
       <p>Website by <a href="https://launchbridge.ai" class="hover:text-gray-400 underline">Launch Bridge</a></p>
+      {% if photo_credit %}<p>Photo by <a href="{{ photo_credit.profile_url | e }}" target="_blank" rel="noopener" class="underline">{{ photo_credit.name | e }}</a> on <a href="{{ photo_credit.unsplash_url | e }}" target="_blank" rel="noopener" class="underline">Unsplash</a></p>{% endif %}
     </div>
   </footer>
 

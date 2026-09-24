@@ -6,6 +6,7 @@ from google.genai import types
 from app.agents import generate_content
 from app.agents.brand_agent import generate_logo_variations, generate_favicon_svg, svg_to_data_uri
 from app.ai_ops import instrumented
+from app.agents import unsplash
 
 MODEL = "gemini-2.5-flash"
 
@@ -82,11 +83,8 @@ KEYWORD_SCHEMA = {
 
 def get_image_keywords(business_idea: str, industry: str = None) -> str:
     """Asks Gemini for 2-3 stock-photo search keywords specific to this
-    business, then builds a loremflickr.com URL from them - loremflickr is
-    a free, keyless, keyword-driven photo service (source.unsplash.com,
-    Unsplash's old free/keyless endpoint, was shut down some time ago and
-    now just 503s; loremflickr is the closest live equivalent that doesn't
-    need an API key or account).
+    business, which _image_url turns into an Unsplash photo (see
+    app/agents/unsplash.py).
 
     Falls back to INDUSTRY_IMAGE_KEYWORDS[industry] if that's a known
     label, or DEFAULT_IMAGE_KEYWORDS otherwise, whenever the Gemini call
@@ -119,8 +117,11 @@ def get_image_keywords(business_idea: str, industry: str = None) -> str:
     industry_key = (industry or "").strip().lower()
     return INDUSTRY_IMAGE_KEYWORDS.get(industry_key, DEFAULT_IMAGE_KEYWORDS)
 
-def _image_url(keywords: str, width: int, height: int, lock: int) -> str:
-    return f"https://loremflickr.com/{width}/{height}/{keywords}?lock={lock}"
+def _image_url(keywords: str, width: int, height: int, lock: int):
+    """The lock-th Unsplash photo for these keywords, or None (no API key,
+    no match, or Unsplash is down) - templates then use their plain
+    background instead."""
+    return unsplash.photo_url(keywords, width, height, index=lock - 1)
 
 IMAGE_OPTIONS_SCHEMA = {
     "type": "OBJECT",
@@ -146,11 +147,9 @@ def get_image_option_keywords(business_idea: str, industry: str = None) -> list:
     Deliberately steered away from portrait/face/team-style keywords: a
     stranger's identifiable close-up face makes an odd backdrop for someone
     else's business website, whereas a wide, anonymous shot (a busy street,
-    a crowd from a distance) is fine if it comes up naturally. loremflickr
-    has no orientation/content-type API param to enforce this directly (see
-    get_image_keywords's docstring on why this integration is keyless
-    Flickr-tag search, not the real Unsplash API) - keyword steering is the
-    only lever available.
+    a crowd from a distance) is fine if it comes up naturally. Unsplash
+    search has no "no people" filter, so keyword steering is the only lever
+    available.
 
     Falls back to a handful of deterministic variations built from
     get_image_keywords()'s single result if the Gemini call itself fails -
@@ -198,9 +197,12 @@ def get_backdrop_image_options(business_idea: str, industry: str = None,
     """Returns 4-5 candidate backdrop-image URLs for the website
     customization step's image picker - one per keyword combination from
     get_image_option_keywords, each with its own lock so every candidate is
-    a distinct photo rather than the same one repeated."""
+    a distinct photo rather than the same one repeated. Keyword sets
+    Unsplash has nothing for are dropped, so this can return fewer (or
+    none, without an API key)."""
     keyword_sets = get_image_option_keywords(business_idea, industry)
-    return [_image_url(keywords, width, height, lock=i + 1) for i, keywords in enumerate(keyword_sets)]
+    urls = [_image_url(keywords, width, height, lock=i + 1) for i, keywords in enumerate(keyword_sets)]
+    return [u for u in urls if u]
 
 CONTENT_SCHEMA = {
     "type": "OBJECT",
@@ -321,7 +323,8 @@ def render_website_html(content: dict, business_name: str,
                          contact_phone: str = None, contact_email: str = None,
                          contact_address: str = None,
                          logo_data_uri: str = None, favicon_data_uri: str = None,
-                         testimonials: list = None) -> str:
+                         testimonials: list = None,
+                         photo_credit: dict = None) -> str:
     """Renders one of the Jinja2 website templates with the fully-resolved
     content dict (tagline/about_text/services/colors already merged by the
     caller).
@@ -329,7 +332,9 @@ def render_website_html(content: dict, business_name: str,
     hero_photo/gallery_photos are the customer's own uploaded photos (Step
     6) and always take priority when present; hero_image_url/about_image_url
     are the stock-photo fallback from get_image_keywords, used only when the
-    customer hasn't uploaded anything of their own.
+    customer hasn't uploaded anything of their own. photo_credit is the
+    Unsplash photographer credit for that stock photo (see
+    unsplash.photo_credit), shown in the footer.
 
     contact_phone/email/address are the customer's own opt-in choice of what
     to publish in the site's Contact section - see generate_website, which
@@ -377,6 +382,8 @@ def render_website_html(content: dict, business_name: str,
         testimonial_invite_heading=content.get("testimonial_invite_heading", ""),
         testimonial_invite_subtext=content.get("testimonial_invite_subtext", ""),
         testimonials=testimonials or [],
+        # Only credit a stock photo the page actually shows.
+        photo_credit=photo_credit if not hero_photo and (hero_image_url or about_image_url) else None,
     )
 
 @instrumented(
@@ -456,6 +463,8 @@ def generate_website(
     ai_content = generate_website_content(business_name, business_idea, target_customer)
 
     backdrop_image_choice = (backdrop_image_choice or "").strip()
+    if unsplash.is_stale_stock_url(backdrop_image_choice):
+        backdrop_image_choice = ""  # the dead loremflickr integration - auto-pick a working photo instead
     if backdrop_image_choice.startswith("http://") or backdrop_image_choice.startswith("https://"):
         hero_image_url = about_image_url = backdrop_image_choice
     elif backdrop_image_choice in ("none", "custom_upload"):
@@ -464,6 +473,9 @@ def generate_website(
         image_keywords = get_image_keywords(business_idea, industry)
         hero_image_url = _image_url(image_keywords, 1600, 900, lock=1)
         about_image_url = _image_url(image_keywords, 900, 700, lock=2)
+    photo_credit = None
+    if hero_image_url and not any(photos or []):
+        photo_credit = unsplash.photo_credit(hero_image_url)
 
     final_tagline = tagline or ai_content["tagline"]
     final_about = description or ai_content["about_text"]
@@ -537,6 +549,7 @@ def generate_website(
         logo_data_uri=logo_data_uri,
         favicon_data_uri=favicon_data_uri,
         testimonials=testimonials or [],
+        photo_credit=photo_credit,
     )
 
     return {"html": html, "template": template_name, "content": content, "generated_logo": generated_logo}
