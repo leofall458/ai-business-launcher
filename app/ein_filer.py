@@ -19,6 +19,47 @@ def _sanitize_irs_address_field(value: str) -> str:
     cleaned = _IRS_ADDRESS_DISALLOWED.sub("", value or "")
     return re.sub(r" {2,}", " ", cleaned).strip()
 
+# Same story for the legal name: the IRS EIN form accepts only letters,
+# digits, spaces, hyphens and "&" - so "Nancy Sharkey Consulting Services,
+# LLC" (the comma is fine with SCC) is entered as "... Services LLC", which
+# is the standard way the IRS records it. The name on the order/SCC filing
+# itself is left untouched.
+_IRS_NAME_DISALLOWED = re.compile(r"[^A-Za-z0-9 \-&]")
+
+def _sanitize_irs_legal_name(value: str) -> str:
+    cleaned = _IRS_NAME_DISALLOWED.sub("", value or "")
+    return re.sub(r" {2,}", " ", cleaned).strip()
+
+# The legal-name box takes 35 characters and its "Continuation" box 34
+# (confirmed live, 2026-09-24). Typing a longer name lets the page's own JS
+# spill the overflow into the continuation box mid-word ("...Services L" /
+# "LC"), which the IRS rejects ("Words cannot be split between lines"), and
+# a continuation holding only the suffix ("LLC") is rejected too.
+IRS_LEGAL_NAME_LINE1_MAX = 35
+IRS_LEGAL_NAME_LINE2_MAX = 34
+_SUFFIX_ONLY = re.compile(r"^(LLC|L L C|LC|L C)$", re.IGNORECASE)
+
+def _review_shows_legal_name(review_text_upper: str, business_name: str) -> bool:
+    """review_text_upper: the Review page's text, uppercased with whitespace
+    collapsed. On that page the "Legal name" row is followed by "County", so
+    the name is whatever sits between those two labels - it must match
+    exactly, not merely start the same way."""
+    match = re.search(r"LEGAL NAME (.+?) COUNTY ", review_text_upper)
+    return bool(match) and match.group(1) == " ".join(business_name.upper().split())
+
+def _split_irs_legal_name(name: str) -> tuple:
+    """(line1, continuation) split on a word boundary; continuation is ""
+    when the name fits on one line. Raises ValueError if it can't fit."""
+    if len(name) <= IRS_LEGAL_NAME_LINE1_MAX:
+        return name, ""
+    words = name.split(" ")
+    for cut in range(len(words) - 1, 0, -1):
+        line1, line2 = " ".join(words[:cut]), " ".join(words[cut:])
+        if (len(line1) <= IRS_LEGAL_NAME_LINE1_MAX and len(line2) <= IRS_LEGAL_NAME_LINE2_MAX
+                and not _SUFFIX_ONLY.match(line2)):
+            return line1, line2
+    raise ValueError(f"Legal name is too long for the IRS form ({len(name)} characters)")
+
 def fill_field(page, selector, value):
     try:
         field = page.locator(selector).first
@@ -190,7 +231,7 @@ def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
     crashes afterward, so a caller can durably record "this is now a real,
     permanent IRS filing" before attempting anything as fallible as
     reading the confirmation page back."""
-    business_name = customer_data["business_name"]
+    business_name = _sanitize_irs_legal_name(customer_data["business_name"])
     if not business_name.upper().endswith(" LLC"):
         business_name = business_name + " LLC"
 
@@ -265,7 +306,14 @@ def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
 
         # === STEP 4: ADDITIONAL DETAILS (LLC info) ===
         print("📌 Step 4: Additional Details...")
-        fill_field(page, "#legalNameInput", business_name)
+        name_line1, name_line2 = _split_irs_legal_name(business_name)
+        fill_field(page, "#legalNameInput", name_line1)
+        if name_line2 and not fill_field(page, "#legalNameInputContinuation", name_line2):
+            # Never continue with a truncated name: on 2026-09-24 this field
+            # failed to fill and "Nancy Sharkey Consulting Services LLC" was
+            # issued an EIN as "NANCY SHARKEY CONSULTING".
+            return {"success": False, "submitted": False,
+                    "error": f"Could not enter the second line of the legal name ({name_line2!r}) - not submitted."}
         fill_field(page, "#countyInput", county)
         select_field(page, "#stateInput", value=state)
         select_field(page, "#StateFiledArticlesOrganizationInput", value=state)
@@ -310,6 +358,14 @@ def file_ein_with_irs(customer_data: dict, interactive=True, on_submitted=None):
         page.screenshot(path="/tmp/ein_review.png", full_page=True)
         print("\n✅ All steps filled!")
         print("📸 Screenshot saved as /tmp/ein_review.png")
+
+        # Last line of defense before a permanent filing: the Review page
+        # must show the full legal name exactly as intended.
+        review_text = " ".join(page.inner_text("body").upper().split())
+        if not _review_shows_legal_name(review_text, business_name):
+            print(f"❌ Review page does not show the full legal name {business_name!r} - NOT submitting.")
+            return {"success": False, "submitted": False,
+                    "error": f"The IRS Review page did not show the full legal name {business_name!r} - not submitted."}
 
         if interactive:
             print("\n⚠️  REVIEW EVERYTHING IN THE BROWSER BEFORE SUBMITTING")
